@@ -1,0 +1,10 @@
+{
+  "name": "silly-skills",
+  "private": true,
+  "scripts": {
+    "validate": "bun scripts/validate.ts",
+    "test": "bun test",
+    "bump-skill": "bun scripts/bump-skill-version.ts",
+    "prepare-release": "bun scripts/prepare-release.ts"
+  }
+}

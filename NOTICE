@@ -1,0 +1,7 @@
+All repository content—including skill prose, TypeScript scripts, GitHub Actions workflows, and configuration files—is © Sillybit and licensed under CC BY-ND 4.0.
+
+Installing skills onto a machine or project via an agent-skills CLI (for example, `npx skills add ...`) and using them, including commercially, is expressly permitted and is not redistribution. Copying for use is permitted; copying or publishing modified versions is not.
+
+Publishing modified versions of this repository's content requires prior written approval from Sillybit. Contact Sillybit via GitHub issues on this repository.
+
+Attribution must include a link to https://github.com/Sillybit-io/silly-skills.

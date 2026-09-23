@@ -1,0 +1,269 @@
+name: Release
+
+# Manual only. This workflow never starts on a push, on a pull request, or on a
+# schedule. The one way to cut a release is the "Run workflow" button in the
+# Actions tab. RELEASING.md documents the same sequence as by-hand commands.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "X.Y.Z to release, e.g. 0.2.0. Leave blank to auto-suggest the next version from Conventional Commits since the last tag."
+        required: false
+        default: ""
+        type: string
+      dry_run:
+        description: "Preview only — never commit, tag, push, or create a release"
+        required: false
+        default: false
+        type: boolean
+
+# Enough to push the release commit, push the tag, and publish the Release with
+# the default token. Nothing wider is needed, so nothing wider is granted.
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      # 1. A release only ever comes off the default branch. The branch dropdown
+      #    on the "Run workflow" form lets you pick any branch, so check it.
+      - name: Verify this run started from the default branch
+        env:
+          REF_NAME: ${{ github.ref_name }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          if [ "$REF_NAME" != "$DEFAULT_BRANCH" ]; then
+            echo "::error::Releases run only from the default branch '$DEFAULT_BRANCH', but this run selected '$REF_NAME'. Re-run it with the default branch chosen in the branch dropdown."
+            exit 1
+          fi
+          echo "Branch check passed: running from '$REF_NAME'."
+
+      # 2. Full history and every existing tag: the next step reads the tag list
+      #    and the commit log to work out a version, prepare-release.ts compares
+      #    the requested version against what CHANGELOG.md already records, and
+      #    the later steps push a commit and a tag with the default token, which
+      #    needs the credentials checkout persists by default.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # 3. Where $VERSION comes from, once, for the whole job. A version typed
+      #    into the form wins. A blank field means "work it out": read the
+      #    Conventional Commit subjects since the newest v* tag and take the
+      #    highest-severity bump they imply. The arithmetic mirrors
+      #    scripts/bump-skill-version.ts's nextVersion() exactly — patch adds one
+      #    to z, minor adds one to y and zeroes z, major adds one to x and zeroes
+      #    y and z.
+      #
+      #    A value from the form is not echoed here. It is unvalidated at this
+      #    point, and a value carrying a newline could otherwise forge a second
+      #    `::` workflow-command line in the log; step 4 echoes it once it has
+      #    passed the shape check. A computed value is built by integer
+      #    arithmetic, so it is already known to be digits and dots.
+      - name: Resolve the release version
+        id: resolve_version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+
+          if [ -n "$INPUT_VERSION" ]; then
+            # $GITHUB_ENV is a line-based file that every later step reads, so a
+            # newline in this value would define extra variables for all of them.
+            # Refuse that shape before the write at the end of this step; the
+            # full X.Y.Z grammar is still step 4's job.
+            if [ "$(printf '%s' "$INPUT_VERSION" | wc -l | tr -d '[:space:]')" != "0" ]; then
+              echo "::error::The version must be a single line holding a plain X.Y.Z version."
+              exit 1
+            fi
+            VERSION="$INPUT_VERSION"
+            VERSION_SOURCE="manual"
+            VERSION_BUMP="none"
+            echo "Using the version provided in the trigger form."
+          else
+            VERSION_SOURCE="computed"
+            LAST_TAG="$(git tag -l 'v*' --sort=-v:refname | head -n1)"
+
+            if [ -z "$LAST_TAG" ]; then
+              # Nothing released yet: read the whole history and bump from 0.0.0.
+              BASE="0.0.0"
+              SUBJECTS="$(git log --format='%s')"
+              BODIES="$(git log --format='%B')"
+            else
+              BASE="${LAST_TAG#v}"
+              if ! printf '%s' "$BASE" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+                echo "::error::The newest v* tag is not a plain vX.Y.Z tag, so the next version cannot be computed from it. Re-run the workflow with the version typed into the form."
+                exit 1
+              fi
+              SUBJECTS="$(git log --format='%s' "$LAST_TAG..HEAD")"
+              BODIES="$(git log --format='%B' "$LAST_TAG..HEAD")"
+            fi
+
+            # Highest severity wins. A `!` after the type or scope and a
+            # BREAKING CHANGE footer both mean major, then feat means minor, then
+            # fix means patch. Anything else leaves the default in place. These
+            # read from here-strings rather than a pipe on purpose: `grep -q`
+            # stops at its first match, and under `pipefail` the writer losing
+            # the pipe would turn a real match into a false negative.
+            VERSION_BUMP="patch-default"
+            if grep -Eq '^[a-zA-Z]+(\([^)]*\))?!:' <<<"$SUBJECTS" ||
+              grep -Eq '^BREAKING[ -]CHANGE:' <<<"$BODIES"; then
+              VERSION_BUMP="major"
+            elif grep -Eq '^feat(\([^)]*\))?:' <<<"$SUBJECTS"; then
+              VERSION_BUMP="minor"
+            elif grep -Eq '^fix(\([^)]*\))?:' <<<"$SUBJECTS"; then
+              VERSION_BUMP="patch"
+            fi
+
+            X="${BASE%%.*}"
+            REST="${BASE#*.}"
+            Y="${REST%%.*}"
+            Z="${REST#*.}"
+
+            case "$VERSION_BUMP" in
+              major) VERSION="$((X + 1)).0.0" ;;
+              minor) VERSION="$X.$((Y + 1)).0" ;;
+              *) VERSION="$X.$Y.$((Z + 1))" ;;
+            esac
+
+            if [ "$VERSION_BUMP" = "patch-default" ]; then
+              echo "::warning::No feat, fix, or breaking-change commits were found since ${LAST_TAG:-the first commit}, so the version defaulted to a patch bump. Re-run the workflow with the version typed into the form if that is wrong."
+            fi
+            echo "Suggested version: $VERSION (bump: $VERSION_BUMP, since ${LAST_TAG:-the first commit})"
+          fi
+
+          # Written once, here. Every later step in this job inherits $VERSION
+          # from $GITHUB_ENV, so none of them carries an `env:` mapping for it.
+          {
+            echo "VERSION=$VERSION"
+            echo "VERSION_SOURCE=$VERSION_SOURCE"
+            echo "VERSION_BUMP=$VERSION_BUMP"
+          } >> "$GITHUB_ENV"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      # 4. The same plain-SemVer shape prepare-release.ts enforces, checked
+      #    before the test run so a typo fails in seconds instead of after it.
+      #    This guards a computed value as well as a typed one. The rejected
+      #    value is deliberately not echoed: a value carrying a newline could
+      #    otherwise forge a second `::` workflow-command line in the log.
+      - name: Verify the release version is a plain X.Y.Z version
+        run: |
+          set -euo pipefail
+          if ! printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::The version is not a plain X.Y.Z version. Expected three numbers separated by dots, such as 0.2.0."
+            exit 1
+          fi
+          echo "Version check passed: $VERSION"
+
+      - uses: oven-sh/setup-bun@v2
+
+      # 5. A broken tree never becomes a release.
+      - run: bun run validate
+      - run: bun test
+
+      # 6. From here on every input reaches the shell through an `env:` mapping
+      #    and is read only as a shell variable. An expression interpolation
+      #    written inside a `run:` body would be spliced into the script as raw
+      #    text before bash ever sees it, which is the GitHub Actions script
+      #    injection hole. That rule has no exceptions in this file: every
+      #    interpolation below sits on the right-hand side of an `env:` key.
+
+      # 7. Dry run: work on a throwaway copy so the real checkout keeps every
+      #    byte it had. No add, no commit, no tag, no push, no release.
+      - name: Preview the release without changing anything
+        if: inputs.dry_run
+        run: |
+          set -euo pipefail
+          SCRATCH="$(mktemp -d)"
+          cp -a . "$SCRATCH/repo"
+          ( cd "$SCRATCH/repo" && bun run prepare-release "$VERSION" ) > "$RUNNER_TEMP/release-notes.md"
+
+          echo "### CHANGELOG.md diff this release would make"
+          git diff --no-index CHANGELOG.md "$SCRATCH/repo/CHANGELOG.md" || true
+
+          echo "### Release notes this release would publish"
+          cat "$RUNNER_TEMP/release-notes.md"
+
+          echo "Dry run only. The checkout is untouched and nothing was pushed."
+
+      - name: Upload the previewed release notes
+        if: inputs.dry_run
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-notes-preview
+          path: ${{ runner.temp }}/release-notes.md
+          retention-days: 7
+
+      # 8. Real release. prepare-release.ts writes CHANGELOG.md and prints the
+      #    moved notes to stdout and nothing else, so stdout redirects straight
+      #    into the file `gh release create` reads. It exits 1 and leaves the
+      #    file byte-identical when there is nothing to release, when the shape
+      #    is wrong, or when the version is not higher than the newest one
+      #    recorded; that failure is left to fail the job.
+      - name: Move [Unreleased] into a dated section
+        if: '!inputs.dry_run'
+        run: |
+          set -euo pipefail
+          bun run prepare-release "$VERSION" > "$RUNNER_TEMP/release-notes.md"
+
+          echo "### Release notes"
+          cat "$RUNNER_TEMP/release-notes.md"
+
+      # 9. GitHub's own bot identity, the one every widely used release action
+      #    commits under.
+      - name: Configure the committer identity
+        if: '!inputs.dry_run'
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Commit the changelog
+        if: '!inputs.dry_run'
+        run: |
+          set -euo pipefail
+          git add CHANGELOG.md
+          git commit -m "chore(release): v$VERSION"
+
+      - name: Tag the release commit
+        if: '!inputs.dry_run'
+        run: |
+          set -euo pipefail
+          git tag -a "v$VERSION" -m "silly-skills $VERSION"
+
+      # 12. Plain pushes. A published tag or branch is never rewritten, so no
+      #     push in this file forces anything.
+      - name: Push the commit and the tag
+        if: '!inputs.dry_run'
+        run: |
+          set -euo pipefail
+          git push
+          git push origin "v$VERSION"
+
+      - name: Create the GitHub Release
+        if: '!inputs.dry_run'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh release create "v$VERSION" --title "v$VERSION" --notes-file "$RUNNER_TEMP/release-notes.md"
+
+      - name: Write the job summary
+        env:
+          DRY_RUN: ${{ inputs.dry_run }}
+          REPO_URL: ${{ github.server_url }}/${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if [ "$VERSION_SOURCE" = "computed" ]; then
+            echo "Version **v$VERSION** was suggested from the Conventional Commits since the last tag, as a \`$VERSION_BUMP\` bump." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Version **v$VERSION** was typed into the trigger form." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          if [ "$DRY_RUN" = "true" ]; then
+            echo "Dry run for **v$VERSION**. Nothing was committed, tagged, pushed, or released. The previewed notes are attached to this run as the \`release-notes-preview\` artifact." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Released **v$VERSION**: [tag]($REPO_URL/tree/v$VERSION) · [release]($REPO_URL/releases/tag/v$VERSION)" >> "$GITHUB_STEP_SUMMARY"
+          fi
