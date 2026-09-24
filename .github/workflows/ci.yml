@@ -17,11 +17,16 @@ jobs:
       - uses: DavidAnson/markdownlint-cli2-action@v20
         with:
           globs: "**/*.md"
+      # www.npmjs.com answers automated clients with 403 Forbidden — the runner
+      # and a plain local curl both get it — so the package link in README.md can
+      # never be verified from here. Excluded by host rather than by accepting
+      # 403 everywhere, so a genuine 403 on any other link still fails the job.
       - uses: lycheeverse/lychee-action@v2
         with:
           args: >-
             --no-progress
             --accept 200..=204,429
             --exclude '^https://linear\.app'
+            --exclude '^https://www\.npmjs\.com'
             --exclude '^mailto:'
             '**/*.md'
