@@ -16,6 +16,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - Every comment body is now written to a file and read back from that file by the posting command, so review text is never pasted inline into a shell command whatever characters it contains.
   - A failed inline comment post — a cited line outside the diff, or a head commit that moved underneath the review — is no longer retried blindly. The finding already lives in the main review body, and every failed inline post is named in the reply.
   - Every run now writes or updates a stable report at `reports/ai-review-<id>.md`, keyed by pull request, merge request, commit, or branch. A later review of the same change reads it first as background, re-verifies every prior finding against the current code, and tracks each one as `open`, `resolved`, or `still present`.
+  - The review's closing section is now "Needs human judgment". Instead of a blanket disclaimer, it names what the review could not settle — the unchecked areas, every `question` finding, every reduced-depth file, and the product decisions the code alone cannot answer — and ends with a "Look beyond these findings" line that points at the files or areas that got the least attention. Every `blocker` or `major` finding that could not be confirmed without running the code now carries a "Human verification" line naming what to run or check.
 
 ## [0.1.0] - 2026-09-24
 

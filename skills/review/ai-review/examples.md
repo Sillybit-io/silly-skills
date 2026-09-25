@@ -80,12 +80,13 @@ Following ai-review against the same commit: step 1 derived the report id `commi
 | `scripts/validate.ts` | modified | all seven | findings 1, 2, 3 |
 | `scripts/validate.test.ts` | modified | all seven | finding 2 |
 
-### Not covered by this review
+### Needs human judgment
 
 - No test run. `scripts/validate.test.ts` was read, not executed, so this reports the shape of the four new cases and not their result.
 - Finding 1 was reasoned from the size guard at `scripts/validate.ts:237`. No oversized `examples.md` was built to watch the validator misreport it.
 - With no `AGENTS.md` and no `CONVENTIONS.md`, the standardization axis was judged against the two files in the diff alone. A convention this repository keeps elsewhere and breaks here would not have been caught.
 - The commit message predicts 9 `MISSING_EXAMPLES` errors against the shipped skills. That count was not verified against the tree at this commit.
+- Look beyond these findings: the parts of `scripts/validate.test.ts` outside the four new cases got the least attention. The `writeSkill` fixture helper and the `Overrides` type were opened only to trace finding 2, and the pre-existing test cases that call the same helper were not walked one by one to see how the new `examples.md` default changes what they exercise.
 ````
 
 One candidate finding did not survive step 8 and so is absent above. Line 502 rebuilds the companion path from `category` and `dirName` rather than deriving it from `rel`, which would point at the wrong directory for a misplaced `SKILL.md`. Opening the caller settled it: the `LAYOUT` guard at `scripts/validate.ts:713-720` runs `continue` before `validateSkill` is reached unless `rel` splits into exactly four segments, so the reconstruction cannot diverge from the real directory. The suspicion was reasonable from the diff alone and wrong against the code, which is the case the verification step exists for.
