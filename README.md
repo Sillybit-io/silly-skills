@@ -57,17 +57,17 @@ npx skills remove ai-review
 
 ## Skills
 
-| Category | Name | Description | Version |
-| --- | --- | --- | --- |
-| ai-health | [ai-audit](skills/ai-health/ai-audit/SKILL.md) | Read-only audit of every AI surface in a project — embedded prompts, skill files, agent configs, tool and MCP descriptions, model IDs — scored by severity into one report file. | 0.1.0 |
-| docs | [doc-cleanup](skills/docs/doc-cleanup/SKILL.md) | Checks every command, path, script name, and environment variable in the docs against the real repository, fixes what is provably stale, then rewrites the prose in simple English. | 0.1.0 |
-| review | [ai-review](skills/review/ai-review/SKILL.md) | Reviews a pull request, merge request, or branch diff as a senior developer who knows the codebase; every finding is labelled fact or opinion and carries a severity from blocker to question. | 0.1.0 |
-| review | [pr-description](skills/review/pr-description/SKILL.md) | Writes the review-guidance block of a pull request description from the real diff: complexity, risk, rollback, which files need human eyes, and an AI-authorship disclosure. | 0.1.0 |
-| review | [review-response](skills/review/review-response/SKILL.md) | Triages every comment on your own pull request as must-fix, valid-suggestion, opinion, or question, and drafts a substantive reply for each one before anything is posted. | 0.1.0 |
-| workflow | [conventions-codifier](skills/workflow/conventions-codifier/SKILL.md) | Writes down the conventions a repository actually follows into a generated block in AGENTS.md or CONVENTIONS.md, with at least two file-and-line citations behind every rule. | 0.1.0 |
-| workflow | [issue-refiner](skills/workflow/issue-refiner/SKILL.md) | Turns a vague ticket into a decision-complete brief — problem, outcome, acceptance criteria, risks, open questions — and writes it back to Linear, Jira, GitHub, or GitLab. | 0.1.0 |
-| workflow | [secret-and-privacy-sweep](skills/workflow/secret-and-privacy-sweep/SKILL.md) | Judges whether a diff or working tree is too sensitive to publish across six categories, masking every value it reports and ending with a single verdict line. | 0.1.0 |
-| workflow | [skill-writer](skills/workflow/skill-writer/SKILL.md) | Authors and reviews SKILL.md files for this repository: the frontmatter contract, the mandatory section order, the tone rules, version bumps, and the attribution footer. | 0.1.0 |
+| Category | Name | Description |
+| --- | --- | --- |
+| ai-health | [ai-audit](skills/ai-health/ai-audit/SKILL.md) | Read-only audit of every AI surface in a project — embedded prompts, skill files, agent configs, tool and MCP descriptions, model IDs — scored by severity into one report file. |
+| docs | [doc-cleanup](skills/docs/doc-cleanup/SKILL.md) | Checks every command, path, script name, and environment variable in the docs against the real repository, fixes what is provably stale, then rewrites the prose in simple English. |
+| review | [ai-review](skills/review/ai-review/SKILL.md) | Reviews a pull request, merge request, or branch diff as a senior developer who knows the codebase; every finding is labelled fact or opinion and carries a severity from blocker to question. |
+| review | [pr-description](skills/review/pr-description/SKILL.md) | Writes the review-guidance block of a pull request description from the real diff: complexity, risk, rollback, which files need human eyes, and an AI-authorship disclosure. |
+| review | [review-response](skills/review/review-response/SKILL.md) | Triages every comment on your own pull request as must-fix, valid-suggestion, opinion, or question, and drafts a substantive reply for each one before anything is posted. |
+| workflow | [conventions-codifier](skills/workflow/conventions-codifier/SKILL.md) | Writes down the conventions a repository actually follows into a generated block in AGENTS.md or CONVENTIONS.md, with at least two file-and-line citations behind every rule. |
+| workflow | [issue-refiner](skills/workflow/issue-refiner/SKILL.md) | Turns a vague ticket into a decision-complete brief — problem, outcome, acceptance criteria, risks, open questions — and writes it back to Linear, Jira, GitHub, or GitLab. |
+| workflow | [secret-and-privacy-sweep](skills/workflow/secret-and-privacy-sweep/SKILL.md) | Judges whether a diff or working tree is too sensitive to publish across six categories, masking every value it reports and ending with a single verdict line. |
+| workflow | [skill-writer](skills/workflow/skill-writer/SKILL.md) | Authors and reviews SKILL.md files for this repository: the frontmatter contract, the mandatory section order, the tone rules, version bumps, and the attribution footer. |
 
 ## Versioning
 
