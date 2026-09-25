@@ -35,15 +35,16 @@ Everything above is accurate, and none of it required reading the code. The four
 
 ## With skill
 
-Following ai-review against the same commit: conventions gathered first, the full diff read with `git show 77335a5`, both changed files put on the queue, all seven axes asked of each, and every candidate finding checked at its line in `scripts/validate.ts` before it was written down. `readTextFile` and the `validate` entry point are not in the diff; they were opened because two candidate findings depended on what they do.
+Following ai-review against the same commit: the stated intent gathered first with `git show -s --format=%B 77335a5`, the single-commit form step 3 gives, and treated as claims to verify; conventions gathered next under step 4 — no `AGENTS.md` and no `CONVENTIONS.md` at the repository root or in `scripts/`, so the patterns came from the changed files themselves; the full diff read with `git show 77335a5` in step 5; the queue written in step 6 as two `(path, status)` rows, both `modified`, and at two files no batching was needed; all seven axes asked of each file in step 7; and every candidate finding checked at its line in `scripts/validate.ts` before it was written down, per step 8. `readTextFile` and the `validate` entry point are not in the diff; they were opened because two candidate findings depended on what they do.
 
 ````markdown
 ## AI code review
 
 > AI-generated review. An automated agent read the diff and wrote these findings. Each item is a claim to check, not a verdict.
 
-**Reviewed:** local commit `77335a5` on the local working branch, read with `git show 77335a5` — 2 files, 3 findings.
-**Conventions source:** no `AGENTS.md` and no `CONVENTIONS.md` at the repository root; patterns observed in `scripts/validate.ts` and `scripts/validate.test.ts`.
+**Reviewed:** local commit `77335a5` on the local working branch, read with `git show 77335a5` — 2 files (2 reviewed, 0 skipped), 3 findings.
+**Stated intent:** the commit message — "feat(validate): require a non-blank examples.md for every skill".
+**Conventions source:** no `AGENTS.md` and no `CONVENTIONS.md` at the repository root or in `scripts/`; patterns observed in `scripts/validate.ts` and `scripts/validate.test.ts`.
 
 ### Findings
 
@@ -74,10 +75,10 @@ Following ai-review against the same commit: conventions gathered first, the ful
 
 ### What I checked
 
-| File | Axes | Result |
-| --- | --- | --- |
-| `scripts/validate.ts` | all seven | findings 1, 2, 3 |
-| `scripts/validate.test.ts` | all seven | finding 2 |
+| File | Status | Axes | Result |
+| --- | --- | --- | --- |
+| `scripts/validate.ts` | modified | all seven | findings 1, 2, 3 |
+| `scripts/validate.test.ts` | modified | all seven | finding 2 |
 
 ### Not covered by this review
 
@@ -87,4 +88,4 @@ Following ai-review against the same commit: conventions gathered first, the ful
 - The commit message predicts 9 `MISSING_EXAMPLES` errors against the shipped skills. That count was not verified against the tree at this commit.
 ````
 
-One candidate finding did not survive step 7 and so is absent above. Line 502 rebuilds the companion path from `category` and `dirName` rather than deriving it from `rel`, which would point at the wrong directory for a misplaced `SKILL.md`. Opening the caller settled it: the `LAYOUT` guard at `scripts/validate.ts:713-720` runs `continue` before `validateSkill` is reached unless `rel` splits into exactly four segments, so the reconstruction cannot diverge from the real directory. The suspicion was reasonable from the diff alone and wrong against the code, which is the case the verification step exists for.
+One candidate finding did not survive step 8 and so is absent above. Line 502 rebuilds the companion path from `category` and `dirName` rather than deriving it from `rel`, which would point at the wrong directory for a misplaced `SKILL.md`. Opening the caller settled it: the `LAYOUT` guard at `scripts/validate.ts:713-720` runs `continue` before `validateSkill` is reached unless `rel` splits into exactly four segments, so the reconstruction cannot diverge from the real directory. The suspicion was reasonable from the diff alone and wrong against the code, which is the case the verification step exists for.
