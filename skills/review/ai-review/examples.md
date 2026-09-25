@@ -35,15 +35,16 @@ Everything above is accurate, and none of it required reading the code. The four
 
 ## With skill
 
-Following ai-review against the same commit: conventions gathered first, the full diff read with `git show 77335a5`, both changed files put on the queue, all seven axes asked of each, and every candidate finding checked at its line in `scripts/validate.ts` before it was written down. `readTextFile` and the `validate` entry point are not in the diff; they were opened because two candidate findings depended on what they do.
+Following ai-review against the same commit: step 1 derived the report id `commit-77335a5` and found no existing `reports/ai-review-commit-77335a5.md`, so this is the first run for this target; the stated intent then gathered with `git show -s --format=%B 77335a5`, the single-commit form step 3 gives, and treated as claims to verify; conventions gathered next under step 4 — no `AGENTS.md` and no `CONVENTIONS.md` at the repository root or in `scripts/`, so the patterns came from the changed files themselves; the full diff read with `git show 77335a5` in step 5; the queue written in step 6 as two `(path, status)` rows, both `modified`, and at two files no batching was needed; all seven axes asked of each file in step 7; and every candidate finding checked at its line in `scripts/validate.ts` before it was written down, per step 8. `readTextFile` and the `validate` entry point are not in the diff; they were opened because two candidate findings depended on what they do. Once the body below was written, step 12 wrote it into `reports/ai-review-commit-77335a5.md`.
 
 ````markdown
 ## AI code review
 
 > AI-generated review. An automated agent read the diff and wrote these findings. Each item is a claim to check, not a verdict.
 
-**Reviewed:** local commit `77335a5` on the local working branch, read with `git show 77335a5` — 2 files, 3 findings.
-**Conventions source:** no `AGENTS.md` and no `CONVENTIONS.md` at the repository root; patterns observed in `scripts/validate.ts` and `scripts/validate.test.ts`.
+**Reviewed:** local commit `77335a5` on the local working branch, read with `git show 77335a5` — 2 files (2 reviewed, 0 skipped), 3 findings.
+**Stated intent:** the commit message — "feat(validate): require a non-blank examples.md for every skill".
+**Conventions source:** no `AGENTS.md` and no `CONVENTIONS.md` at the repository root or in `scripts/`; patterns observed in `scripts/validate.ts` and `scripts/validate.test.ts`.
 
 ### Findings
 
@@ -74,17 +75,18 @@ Following ai-review against the same commit: conventions gathered first, the ful
 
 ### What I checked
 
-| File | Axes | Result |
-| --- | --- | --- |
-| `scripts/validate.ts` | all seven | findings 1, 2, 3 |
-| `scripts/validate.test.ts` | all seven | finding 2 |
+| File | Status | Axes | Result |
+| --- | --- | --- | --- |
+| `scripts/validate.ts` | modified | all seven | findings 1, 2, 3 |
+| `scripts/validate.test.ts` | modified | all seven | finding 2 |
 
-### Not covered by this review
+### Needs human judgment
 
 - No test run. `scripts/validate.test.ts` was read, not executed, so this reports the shape of the four new cases and not their result.
 - Finding 1 was reasoned from the size guard at `scripts/validate.ts:237`. No oversized `examples.md` was built to watch the validator misreport it.
 - With no `AGENTS.md` and no `CONVENTIONS.md`, the standardization axis was judged against the two files in the diff alone. A convention this repository keeps elsewhere and breaks here would not have been caught.
 - The commit message predicts 9 `MISSING_EXAMPLES` errors against the shipped skills. That count was not verified against the tree at this commit.
+- Look beyond these findings: the parts of `scripts/validate.test.ts` outside the four new cases got the least attention. The `writeSkill` fixture helper and the `Overrides` type were opened only to trace finding 2, and the pre-existing test cases that call the same helper were not walked one by one to see how the new `examples.md` default changes what they exercise.
 ````
 
-One candidate finding did not survive step 7 and so is absent above. Line 502 rebuilds the companion path from `category` and `dirName` rather than deriving it from `rel`, which would point at the wrong directory for a misplaced `SKILL.md`. Opening the caller settled it: the `LAYOUT` guard at `scripts/validate.ts:713-720` runs `continue` before `validateSkill` is reached unless `rel` splits into exactly four segments, so the reconstruction cannot diverge from the real directory. The suspicion was reasonable from the diff alone and wrong against the code, which is the case the verification step exists for.
+One candidate finding did not survive step 8 and so is absent above. Line 502 rebuilds the companion path from `category` and `dirName` rather than deriving it from `rel`, which would point at the wrong directory for a misplaced `SKILL.md`. Opening the caller settled it: the `LAYOUT` guard at `scripts/validate.ts:713-720` runs `continue` before `validateSkill` is reached unless `rel` splits into exactly four segments, so the reconstruction cannot diverge from the real directory. The suspicion was reasonable from the diff alone and wrong against the code, which is the case the verification step exists for.
