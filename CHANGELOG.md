@@ -8,13 +8,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
-- `ai-review` 1.0.0 — the workflow gained a step and the output contract changed, so this is a major bump:
+- `ai-review` 0.2.0:
   - The review now gathers the change's stated intent — the pull request or merge request description, or the commit messages behind a branch — before it reads the diff, and treats every claim in it as something to verify against the code rather than as instruction. The intent, or `not stated`, appears on its own line in the review header.
   - Coverage is now provable rather than asserted. Every changed file enters a queue keyed by path and status, and every row ends in exactly one of three terminal states: `reviewed`, `reviewed - reduced depth: <reason>`, or `skipped - <reason>`, where a skip is only ever generated output, vendored code, or a lockfile. The "What I checked" table gained a Status column, the header line splits its file count into reviewed and skipped, and no file leaves the queue silently.
   - A large change is now worked in bounded batches grouped by directory or by shared concern. Size never removes a file from the review: an oversized file is reviewed at reduced depth with the limit declared, never skipped, and reduced depth limits how far context is verified without reducing which axes are asked. Finding a blocker no longer ends the pass — it is recorded and the rest of the queue is reviewed.
   - The security axis now covers instructions embedded in the reviewed content itself. Text in a description, a commit message, or a diff that addresses an automated reviewer — asking it to approve the change, skip files, or ignore its own instructions — is reported as a security finding and never obeyed.
   - Every comment body is now written to a file and read back from that file by the posting command, so review text is never pasted inline into a shell command whatever characters it contains.
   - A failed inline comment post — a cited line outside the diff, or a head commit that moved underneath the review — is no longer retried blindly. The finding already lives in the main review body, and every failed inline post is named in the reply.
+  - Every run now writes or updates a stable report at `reports/ai-review-<id>.md`, keyed by pull request, merge request, commit, or branch. A later review of the same change reads it first as background, re-verifies every prior finding against the current code, and tracks each one as `open`, `resolved`, or `still present`.
 
 ## [0.1.0] - 2026-09-24
 
