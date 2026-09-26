@@ -30,9 +30,13 @@ This baseline never opens `skill-writer/SKILL.md` to check the six-section contr
 
 **Step 2 — resume check.** No `docs/plans/*release-notes*` file exists yet. Start fresh.
 
-**Step 3 — explore.** Reads, in order: `README.md` (the roadmap line at `:83`, the Skills table, the badge line), `skills/workflow/skill-writer/SKILL.md` (the category list at `:35`, the six-section contract), `scripts/validate.ts` (`CATEGORIES` at `:83-89`, `checkBadgeCount` at `:463`), `CHANGELOG.md` (the `## [Unreleased]` heading at `:7`), and `skills/workflow/issue-refiner/SKILL.md` for the shape of a "preference order" table, since release-notes will need one for how it sources pull requests. 12 files read, under budget.
+**Step 3 — idea refinement.** The request already names a concrete deliverable (a skill that turns merged pull requests into a changelog and a bump recommendation), so it passes the idea-vagueness test. Skipped; noted in one line and moved on.
 
-**Step 4 — IS/GAP ledger.**
+**Step 4 — branch name.** `CONTRIBUTING.md` states no branch convention. Sampling this repository's own recent branches (`git branch -a`) shows two real patterns: `feat/<slug>` and `<username>/<ticket-id>-<slug>`. This request has no tracked ticket, so the `<username>/...` pattern does not apply; the observed `feat/<slug>` pattern does. Branch: `feat/add-release-notes-skill`.
+
+**Step 5 — explore.** Reads, in order: `README.md` (the roadmap line at `:83`, the Skills table, the badge line), `skills/workflow/skill-writer/SKILL.md` (the category list at `:35`, the six-section contract), `scripts/validate.ts` (`CATEGORIES` at `:83-89`, `checkBadgeCount` at `:463`), `CHANGELOG.md` (the `## [Unreleased]` heading at `:7`), and `skills/workflow/issue-refiner/SKILL.md` for the shape of a "preference order" table, since release-notes will need one for how it sources pull requests. 12 files read, under budget.
+
+**Step 6 — IS/GAP ledger.**
 
 | Gap | IS today (evidence) | GAP |
 | --- | --- | --- |
@@ -41,18 +45,18 @@ This baseline never opens `skill-writer/SKILL.md` to check the six-section contr
 | G3 | `scripts/validate.ts:463` (`checkBadgeCount`) fails the build unless the README badge equals the discovered skill count | Adding a skill without updating the badge and the Roadmap line breaks `bun run validate` |
 | G4 | `CHANGELOG.md:7` (`## [Unreleased]`) has no entry for this skill | A new skill needs a `### Added` line in the same change, per `CONTRIBUTING.md` |
 
-**Step 5 — vagueness test.** Not applicable; this came as a direct request, not a tracked ticket.
+**Step 7 — vagueness test.** Not applicable; this came as a direct request, not a tracked ticket.
 
-**Step 6 — hidden requirements and risks.**
+**Step 8 — hidden requirements and risks.**
 
 | Risk | What breaks | Mitigation | Carried by |
 | --- | --- | --- | --- |
 | Description over 500 characters | Costs tokens in every session's system prompt, against the house rule this repository now follows | Keep the description under 500 characters and verify with a length check | T1 |
 | Badge count drifts from the real skill count | `bun run validate` fails with `BADGE_COUNT` | Bump the badge in the same commit that adds the skill | T3 |
 
-**Step 7 — question vetting and slop check.** Filter 1 (evidence): none of the open questions are answered by the code. Filter 2 (default): the category defaults to `workflow` — it produces a repository artifact from git history the way `conventions-codifier` does, not a review of a diff the way the `review` skills do. One question survives both filters, because it is cross-cutting: **"Should release-notes write its entry directly into `CHANGELOG.md`, or only print it for the user to paste?"** Writing directly touches a file `scripts/prepare-release.ts` also parses, so a wrong default could corrupt a release. Default if unanswered: print only. Slop check cuts one item a first draft might add: a new `bun run release-notes` package script — the request never asked for a script, only a skill.
+**Step 9 — question vetting and slop check.** Filter 1 (evidence): none of the open questions are answered by the code. Filter 2 (default): the category defaults to `workflow` — it produces a repository artifact from git history the way `conventions-codifier` does, not a review of a diff the way the `review` skills do. One question survives both filters, because it is cross-cutting: **"Should release-notes write its entry directly into `CHANGELOG.md`, or only print it for the user to paste?"** Writing directly touches a file `scripts/prepare-release.ts` also parses, so a wrong default could corrupt a release. Default if unanswered: print only. Slop check cuts one item a first draft might add: a new `bun run release-notes` package script — the request never asked for a script, only a skill.
 
-**Step 8 — draft file and gate.** Because one owner question is open, plan-writer writes the draft and stops.
+**Step 10 — draft file and gate.** Because one owner question is open, plan-writer writes the draft and stops.
 
 ```markdown
 Plan drafted: `docs/plans/2026-09-26-add-release-notes-skill.md` — tier standard.
@@ -66,7 +70,7 @@ Owner decisions needed before this plan can be filled in:
 1. Write into `CHANGELOG.md` directly, or print the entry only? — only the owner can accept the risk of an automated edit to a file the release tooling parses. Default if unanswered: print only.
 ```
 
-**After the answer ("print only, for now").** plan-writer resumes from step 8 and fills in the rest. `ui: no` — this is a Bun CLI repository with no web or mobile surface, so the final verification wave has no UI QA todo.
+**After the answer ("print only, for now").** plan-writer resumes from step 10 and fills in the rest. `ui: no` — this is a Bun CLI repository with no web or mobile surface, so the final verification wave has no UI QA todo.
 
 ```markdown
 ---
@@ -77,6 +81,7 @@ date: 2026-09-26
 status: planned
 tier: standard
 intent: build
+branch: feat/add-release-notes-skill
 ui: no
 review: optional
 review_round: 0
@@ -91,6 +96,7 @@ review_round: 0
 - Decisions made: category is `workflow` because the skill produces a repository artifact from git history, not a diff review; pull-request source order follows `issue-refiner`'s preference-table pattern (`gh` first, `glab` second, `git log <tag>..HEAD` as a fallback)
 - Owner decisions pending: none — write into `CHANGELOG.md` directly, or print only? Answered: print only
 - Cut from scope: a `bun run release-notes` package script — not requested
+- Branch: `feat/add-release-notes-skill` — follows this repository's own observed `feat/<slug>` pattern; no tracked ticket, so the `<username>/<ticket-id>-<slug>` pattern seen elsewhere does not apply
 
 ## Scope
 
@@ -221,5 +227,19 @@ Plan written: `docs/plans/2026-09-26-add-release-notes-skill.md` — tier standa
 - Decisions made: category is `workflow`; pull-request source order follows `issue-refiner`'s preference-table pattern
 - Owner decisions pending: none
 - Cut from scope: a `bun run release-notes` package script — not requested
+- Branch: `feat/add-release-notes-skill`
 Next: (a) run plan-review on this path on a different model family — recommended; (b) start building from the plan. Which?
 ```
+
+### When idea refinement actually fires
+
+The prompt above already names a concrete deliverable, so step 3 skips straight past idea refinement. A fuzzier version of the same request shows the other branch: "We should make it easier for maintainers to see what changed before they cut a release." This states a problem area, not a change, and neither who benefits precisely nor what "easier" means can be inferred from the request alone — it fails the idea-vagueness test.
+
+```markdown
+Before I explore the codebase, three quick questions:
+1. Who hits this most — the person cutting the release, or reviewers checking what shipped?
+2. What would "easier" look like when it's done: a generated changelog draft, a dashboard, something else?
+3. Any constraint I should design around — must it avoid touching CHANGELOG.md directly, must it need no new dependency, anything else out of scope?
+```
+
+Answering "the person cutting the release; a generated changelog draft; must not write CHANGELOG.md directly" turns the fuzzy idea into exactly the request used above, and step 1 restates and classifies it from there. In a non-interactive run, or if the user has nothing to add, plan-writer proceeds on its own best reading and records the assumption under "Decisions made" instead of stopping.

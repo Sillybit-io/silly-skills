@@ -76,7 +76,7 @@ Fix these blockers and re-review until approved? (yes / I will fix them myself)
 
 **Step 13.** Because the original prompt already asked for "fix it until it passes," this counts as an up-front loop instruction: loop mode is confirmed and a `consent` row is added to the round history without waiting for a further answer.
 
-**Step 14.** `plan-writer` is available in this session. It is loaded and run only through its step 16: it re-reads the plan from disk, fixes exactly the two listed blockers (corrects the T3 reference, restores T2's acceptance criterion), leaves every other section untouched, and appends a `#### Fixed` list to round 1 before plan-review's next pass reads it.
+**Step 14.** `plan-writer` is available in this session. It is loaded and run only through its fix-only follow-up step: it re-reads the plan from disk, fixes exactly the two listed blockers (corrects the T3 reference, restores T2's acceptance criterion), leaves every other section untouched, and appends a `#### Fixed` list to round 1 before plan-review's next pass reads it.
 
 **Round 2.** plan-review re-reads the plan from disk.
 

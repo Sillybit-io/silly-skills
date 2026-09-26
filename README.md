@@ -125,7 +125,9 @@ Claude Code runs Claude models only, so a wrapper for a skill that suggests a no
 
 ## Planning flow
 
-`plan-writer` explores the codebase and writes a plan to `docs/plans/`, moving it through `draft` (while an owner question is open), `planned` (the full task breakdown), and `reviewed` (once `plan-review` approves it). After a plan is written, run `plan-review` — ideally on a different model family than the one that wrote the plan — for the cheapest independent second opinion available. On a rejection, `plan-review` can fix the listed blockers and re-review on its own, looping up to five rounds before it stops and asks whether to continue.
+`plan-writer` sharpens a vague idea with up to three questions when it needs to, explores the codebase, and writes a plan to `docs/plans/` — with a branch name that follows the repository's own observed convention — moving it through `draft` (while an owner question is open), `planned` (the full task breakdown), and `reviewed` (once `plan-review` approves it). After a plan is written, run `plan-review` — ideally on a different model family than the one that wrote the plan — for the cheapest independent second opinion available. On a rejection, `plan-review` can fix the listed blockers and re-review on its own, looping up to five rounds before it stops and asks whether to continue.
+
+Both skills compose with a tool's own read-only planning mode instead of needing it turned off: the exploration and the questions run the same way inside Claude Code's Plan Mode or Cursor's Plan mode, and the plan file's write waits for that mode's own approval step, same as any other edit would. Neither skill's agent wrapper sets a plan-only permission mode of its own, since that would deny the write with no way to approve past it.
 
 ## Versioning
 

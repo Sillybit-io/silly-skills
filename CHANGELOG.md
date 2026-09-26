@@ -10,7 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Two categories, `planning` and `engineering`, alongside `review`, `ai-health`, `docs`, and `workflow`.
 - Four skills, each shipping `examples.md` and three ready-to-copy agent wrappers under `agents/` (`claude-code.md`, `opencode.md`, `cursor.md`) that pin the skill's suggested model:
-  - `plan-writer` — explores the codebase, then writes a decision-complete implementation plan of verifiable todos, asking only the questions evidence and defaults cannot settle.
+  - `plan-writer` — sharpens a vague idea with up to three questions, explores the codebase, then writes a decision-complete implementation plan of verifiable todos and a branch name that follows the repository's own convention, asking only the questions evidence and defaults cannot settle.
   - `plan-review` — reviews an implementation plan for blockers only, reports at most three with fixes, and can loop, fixing and re-reviewing up to five rounds, until the plan is approved.
   - `ui-engineering` — builds UI code design-system first: reads existing components, extends tokens instead of hardcoding values, checks WCAG 2.2 accessibility, and renders or screenshots the result.
   - `tech-writing` — writes a new README, how-to, reference page, or decision record from repository facts, naming the reader and their next action before it writes a word of prose.

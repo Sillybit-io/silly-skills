@@ -13,7 +13,7 @@ metadata:
 
 ## Purpose
 
-plan-review is a blocker-finder, not a perfectionist. It exists to answer one question about a plan file written by `plan-writer`: can a capable developer execute it without getting stuck? It checks references, startability, contradictions, and QA executability, reports at most three blockers with a concrete fix for each, and approves when in doubt — a plan that is 80% clear is good enough. Running it on a model from a different family than the one that wrote the plan is the cheapest independent second opinion available: two models built differently tend to miss different things, where a same-family review tends to agree with itself. plan-review can also loop: on a rejection, it offers to fix the listed blockers and re-review, repeating without asking again until the plan is approved or a five-round cap is reached. The `suggested-model` hint above is advisory; this skill runs on any model.
+plan-review is a blocker-finder, not a perfectionist. It exists to answer one question about a plan file written by `plan-writer`: can a capable developer execute it without getting stuck? It checks references, startability, contradictions, and QA executability, reports at most three blockers with a concrete fix for each, and approves when in doubt — a plan that is 80% clear is good enough. Running it on a model from a different family than the one that wrote the plan is the cheapest independent second opinion available: two models built differently tend to miss different things, where a same-family review tends to agree with itself. plan-review can also loop: on a rejection, it offers to fix the listed blockers and re-review, repeating without asking again until the plan is approved or a five-round cap is reached. Like `plan-writer`, it composes with your tool's own read-only planning mode rather than conflicting with it: its checks run the same way inside Claude Code's Plan Mode or Cursor's Plan mode, but writing `## Review` into the plan file waits for that mode's own approval step, the same as any other edit would. The `suggested-model` hint above is advisory; this skill runs on any model.
 
 ## When to use / when NOT to use
 
@@ -48,7 +48,7 @@ plan-review runs in one of two modes. **Review mode** (the default) does one rou
 11. Write `## Review` in the plan file in the shape given in Output format: append this round to the history table, then write its `### Round n` body. Set `review_round` to this round's number. Set `status: reviewed` on `OKAY`; otherwise leave it `planned`.
 12. On `OKAY`, in either mode: reply with the verdict block and stop. This is the only way the run ends successfully.
 13. On `REJECT` in review mode: reply with the verdict block, ending it with "Fix these blockers and re-review until approved? (yes / I will fix them myself)". A yes switches to loop mode, adds a `consent` row to the round history, and continues to step 14.
-14. On `REJECT` in loop mode: check whether the `plan-writer` skill is available in this session. If it is, load it and run only its step 16 — its fix-only follow-up, never its exploration steps — against this same plan file, then go to step 2 for the next round without asking again. If `plan-writer` is not available, say so plainly and stop at the verdict; loop mode cannot proceed without it.
+14. On `REJECT` in loop mode: check whether the `plan-writer` skill is available in this session. If it is, load it and run only its fix-only follow-up step — the last step in its Workflow, never its exploration steps — against this same plan file, then go to step 2 for the next round without asking again. If `plan-writer` is not available, say so plainly and stop at the verdict; loop mode cannot proceed without it.
 15. On a re-review round (round 2 or later), re-verify each previously listed blocker is actually fixed, then re-run checks A through E only on the sections that changed since the last round; never re-open a section that already passed. Then walk the QA checklist.
 
 ### Handling feedback
@@ -140,7 +140,7 @@ MUST:
 NEVER:
 
 - NEVER judge architecture choice, naming, code style, or optimality. Those are not blockers.
-- NEVER edit the plan file outside `## Review` and the two frontmatter keys it owns, except through `plan-writer`'s own step 16 during the fix loop.
+- NEVER edit the plan file outside `## Review` and the two frontmatter keys it owns, except through `plan-writer`'s own fix-only follow-up step during the fix loop.
 - NEVER fix a plan itself; only `plan-writer`, invoked explicitly, changes the plan's content.
 - NEVER add a blocker to look thorough. Zero blockers is a legitimate, common outcome.
 - NEVER run a round past the fifth since the last consent without asking again.
@@ -160,7 +160,7 @@ NEVER:
 - [ ] `## Review` was written with the round appended to the history table, never overwriting an earlier round's body.
 - [ ] `review_round` and `status` match the outcome of this round.
 - [ ] From round 2 on, no blocker outside the frozen set appears without being a regression or a genuinely new execution-stopping find.
-- [ ] Nothing outside `## Review` and the two frontmatter keys changed, unless `plan-writer`'s step 16 ran during a loop round.
+- [ ] Nothing outside `## Review` and the two frontmatter keys changed, unless `plan-writer`'s fix-only follow-up step ran during a loop round.
 
 <!-- markdownlint-disable-next-line MD034 -->
 © Sillybit — https://github.com/Sillybit-io/silly-skills — CC BY-ND 4.0. Attribution required; do not republish modified versions without written approval.
