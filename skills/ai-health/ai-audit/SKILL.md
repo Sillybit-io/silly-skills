@@ -91,7 +91,7 @@ Do NOT use ai-audit when you:
    - `opencode.json` and anything under `.opencode/`.
    - Claude Code settings, such as `.claude/settings.json` and its local variants.
    - Tool descriptions, including MCP server tool and parameter descriptions, wherever they are defined.
-   - Every model ID referenced anywhere in the project, in code, in configuration, in documentation, and in lock files. Every model ID entry must also record which provider owns it, inferred from the ID's namespace or prefix or from the surrounding code, so that step 2's per-provider vendor-guidance fetch and step 7's per-model judgement always have a provider to work from. Record both the id and the provider on every row; if the provider cannot be determined, write that explicitly in the row rather than leaving the field out.
+   - Every model ID referenced anywhere in the project, in code, in configuration, in documentation, and in lock files. Every model ID entry must also record which provider owns it, inferred from the ID's namespace or prefix or from the surrounding code, so that step 2's per-provider vendor-guidance fetch and step 7's per-model judgement always have a provider to work from. Record both the id and the provider on every row; if the provider cannot be determined, write that explicitly in the row rather than leaving the field out. A routed model ID with no step-2 catalogue lookup on record, or a provider with no step-2 vendor pages fetched, triggers a return to step 2 to perform that specific fetch before step 7 begins. Do not carry an unattempted lookup forward into step 7.
 
    Apply these rules to the inventory:
 
@@ -100,7 +100,7 @@ Do NOT use ai-audit when you:
    - Batching. When the inventory is large, work it in batches grouped by directory and record the batch boundaries in your notes. A batch boundary is never a reason to stop. Vendored third-party skill directories installed by a skills CLI are read in full too; mark their findings `vendor-owned` so the reader knows the fix lives upstream.
    - Runtime-assembled prompts are two surfaces, and both are inventoried. The assembly is the code that builds the prompt, meaning the template functions, the string concatenation, and the conditional fragments. It lives in the repository, so you MUST read it and judge it: list every fragment it splices, classify each fragment's origin as a static literal, a stored record, user input, retrieved memory, or a tool result, and record the splice order, the fencing or delimiters around untrusted fragments, any size cap, and what happens when a fragment is empty. The stored values are the records spliced in at run time. Read them through the proxies the repository holds, such as seed scripts, fixtures, eval cassettes, snapshot tests, and migration defaults, and name each proxy in the inventory row as `yes — proxy`. Only a stored value with genuinely no proxy anywhere goes to "Not covered by this audit", and that entry MUST name which proxy locations were searched, for example "searched seed scripts, fixtures/, and migration defaults; none found". A surface outside the repository, such as a live external service, still goes in the report as a gap in the traditional sense. Do not guess its contents. This two-surface split applies to runtime-assembled prompts specifically, not to every surface you cannot read.
 6. If the audited project's `package.json`, or the equivalent manifest for its language, depends on `mastra` or on any `@mastra/*` package, audit its agent, tool, workflow, and memory definitions against the Mastra pages fetched in step 2. Compare the declared and resolved Mastra versions recorded in step 2 against what those pages document, and raise any guidance the pinned version cannot follow. Cite the specific Mastra pages fetched in step 2, by their Sources-block names, as the source for every Mastra-specific finding, and name the page and the guidance you applied. Skip this step entirely when the dependency is absent, and say in the report that it was skipped.
-7. Judge every routed model and the target model, using only what step 2 fetched. Nothing in this step comes from memory: when a page or catalogue entry was not fetched, or the fetch failed, the finding says so and the judgement is marked unsupported rather than filled in from recall.
+7. Judge every routed model and the target model, using only what step 2 fetched. Nothing in this step comes from memory: when a fetch for a page or catalogue entry was attempted and failed, the finding says so and the judgement is marked unsupported rather than filled in from recall. A fetch that was never attempted is a step-5 gap, and step 5 sends it back to step 2 before this step starts; if one still surfaces here, return to step 2 for it, and never fill the judgement in from recall in the meantime.
 
    - (a) Define the judged set first. A routed model is any ID that a live code path passes to a model call — a router default, a task pin, or an environment default resolved in code. The target model is the one step 1 resolved. An ID that appears only in tests, fixtures, comments, or eval provenance stays in the model ID inventory but is not judged for fit. Say which class every ID belongs to, so that the inventory carries one `Routed model` row per routed ID, exactly one `Target model` row, and a plain inventory row for everything else.
    - (b) Answer four questions for each judged model, from the files fetched in step 2 and from nothing else.
@@ -188,7 +188,7 @@ Write one report file in this shape. Proposed changes are report text only. Noth
 | Tool description | `path/to/tools` | yes |
 | Model ID | `path/to/file:12` | yes |
 | Routed model | `path/to/router:12` — `<provider/model>` serves <task> | yes |
-| Target model | `<provider/model>` — resolved from <request | migration doc | repository reference> | yes |
+| Target model | `<provider/model>` — resolved from <request, migration doc, or repository reference> | yes |
 | Runtime-assembled prompt (assembly) | `path/to/builder` | yes |
 | Runtime-assembled prompt (stored values) | `path/to/seed-or-fixture` | yes — proxy |
 | Runtime-assembled prompt (stored values) | <record kind> | no — searched <proxy locations> |
@@ -239,7 +239,7 @@ Rules for the report:
 - Order findings by severity, `critical` first, then by path.
 - One finding per block. Do not merge two problems into one entry to shorten the list.
 - The health summary and the "What I checked" table are mandatory in every report, and above all in a report with no findings. Reporting a surface as clean is a real result; handing back nothing at all is not.
-- Fill the "Checklist areas" column from whichever checklist step 3 actually produced. The upstream file is not organised into nine areas, so write `all nine` only where the embedded fallback was the checklist in play.
+- Fill the "Checklist areas" column from whichever checklist step 3 actually produced. The upstream file is not organised into ten areas, so write `all ten` only where the embedded fallback was the checklist in play.
 - Name the checklist revision and its kind in the header. A report that cannot say which checklist it used is not reproducible.
 - State proposed changes in words. Do not attach a patch and do not apply one.
 - The `**Sources:**` block is mandatory. It lists every fetch attempted in step 2, each with a handle or a failure reason, so a reader can tell what the judgements rest on.
@@ -258,11 +258,15 @@ MUST:
 - MUST say in the report when the fetch failed, why it failed, and that the embedded fallback checklist was used instead.
 - MUST inventory every surface named in the workflow, and MUST list the inventory in the report before any judgement.
 - MUST record a surface it could not read as a gap rather than guessing its contents.
-- MUST run the research step before judging any surface, and MUST record every source it fetched, with a handle or a failure reason, in the report header.
-- MUST read every inventoried file in full, and MUST derive multi-file counts from a listing command recorded in the report.
-- MUST read and judge the code that assembles a runtime prompt, and MUST name the proxy locations searched for any stored value it reports as a gap.
+- MUST run the research step before judging any surface.
+- MUST record every source it fetched, with a handle or a failure reason, in the report header.
+- MUST read every inventoried file in full.
+- MUST derive multi-file counts from a listing command recorded in the report.
+- MUST read and judge the code that assembles a runtime prompt.
+- MUST name the proxy locations searched for any stored value it reports as a gap.
 - MUST audit against Mastra guidance when the manifest depends on `mastra` or `@mastra/*`, and MUST cite the specific Mastra pages fetched in step 2, by their Sources-block names, for each such finding.
-- MUST judge every routed model and the target model for currency, fit, better option, and price from the fetched data, and MUST give Models its own health-summary row.
+- MUST judge every routed model and the target model for currency, fit, better option, and price from the fetched data.
+- MUST give Models its own health-summary row.
 - MUST give every finding exactly one severity from `critical`, `major`, `minor`, `info`.
 - MUST include a per-area health summary covering prompts, skills, config files, tool descriptions, and models.
 - MUST verify a finding against the file at its cited line before writing it.
@@ -282,7 +286,8 @@ NEVER:
 - NEVER recommend trimming a tool description that is already too short. Say what to add.
 - NEVER invent a finding so the report looks thorough, and never invent checklist content. Fetch it or use the embedded fallback.
 - NEVER report a surface as clean without listing it in the "What I checked" table.
-- NEVER sample an inventory, and never write `sampled`, `by size and form`, `not judged line by line`, or `inventoried but not reviewed` as a Read value.
+- NEVER sample an inventory.
+- NEVER write `sampled`, `by size and form`, `not judged line by line`, or `inventoried but not reviewed` as a Read value.
 - NEVER judge a model from memory. Judge it only from the catalogue and vendor pages fetched in this run.
 - NEVER treat popularity alone, or absence from the OpenRouter catalogue alone, as a reason to recommend a switch.
 - NEVER store, print, or require an API key. None is needed.
@@ -311,8 +316,10 @@ Run this list before you hand over the report.
 - [ ] The limits of the audit are stated.
 - [ ] The Sources block lists every fetch from step 2 with a handle or a failure reason.
 - [ ] Every routed model and the target model has a fit verdict and a "What I checked" row.
-- [ ] Every multi-file inventory row shows its listing command and count, and every Read value is `yes`, `yes — proxy`, or `no — <reason>`, never `sampled`, `by size and form`, `not judged line by line`, or `inventoried but not reviewed`.
-- [ ] Every runtime-assembled prompt has an assembly row, and every stored-values gap names the proxies searched.
+- [ ] Every multi-file inventory row shows its listing command and count.
+- [ ] Every Read value is `yes`, `yes — proxy`, or `no — <reason>`, never `sampled`, `by size and form`, `not judged line by line`, or `inventoried but not reviewed`.
+- [ ] Every runtime-assembled prompt has an assembly row.
+- [ ] Every stored-values gap names the proxies searched.
 - [ ] No model ID, price, or checklist line was pinned into the skill.
 - [ ] No API key was used.
 

@@ -126,4 +126,4 @@ Checked and deliberately not raised: description length. The three fields measur
 - Vendor guidance for providers other than Anthropic. No OpenAI or Google model is routed or targeted, so neither vendor's pages were fetched.
 ````
 
-Two notes on how the guided run reached that output. The report is shown here for illustration only; a real run writes it to `reports/ai-audit-2026-09-26.md` inside the audited project and nothing else changes there. And the checklist fetch succeeded, so the "Checklist areas" column names real sections of the upstream file — `all nine` belongs there only when the fetch failed and the skill's embedded fallback was the checklist in play.
+Two notes on how the guided run reached that output. The report is shown here for illustration only; a real run writes it to `reports/ai-audit-2026-09-26.md` inside the audited project and nothing else changes there. And the checklist fetch succeeded, so the "Checklist areas" column names real sections of the upstream file — `all ten` belongs there only when the fetch failed and the skill's embedded fallback was the checklist in play.
