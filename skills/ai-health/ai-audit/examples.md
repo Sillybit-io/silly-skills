@@ -42,10 +42,10 @@ And the one defect actually present on this surface goes unmentioned. Finding it
 
 ## With skill
 
-Following ai-audit against the identical three fields fixes the scope and the target model first, fetches the pinned upstream checklist and records the revision, inventories before judging, and files each finding at a line it verified. Two findings, both `minor`, no surface clean.
+Following ai-audit against the identical three fields runs the research step before any judgement is made. Mastra is skipped because `package.json` declares no dependency at all. The two Anthropic pages, the prompt-engineering overview and the model deprecations page, both return 200; neither serves an `etag`, so each is recorded by its UTC fetch timestamp. The upstream `model-migration.md` is fetched because a Claude model is the target, and its `gh api` handle is a commit sha. The OpenRouter top thirty by weekly usage is fetched with its UTC timestamp, and the per-model lookup for `anthropic/claude-opus-5` returns 200 with a null `expiration_date`. The checklist fetch then returns the same sha the previous run recorded, and every quoted checklist phrase is re-checked against the freshly fetched file rather than assumed. The inventory is derived from `find skills/review -name SKILL.md`, which lists three files, and gains a Target-model row because step 7 judges the target as well as every routed model. That judgement, made only from the fetched pages, finds the target current and fit on every source, and a newer same-author entry at a lower price in the same top thirty, which the step-7 mapping files as `minor`. Three findings, all `minor`, no surface clean.
 
 ````markdown
-# AI health audit — silly-skills — 2026-09-24
+# AI health audit — silly-skills — 2026-09-26
 
 > AI-generated audit. An automated agent read this project's AI surfaces and wrote these findings. Each item is a claim to check, not a verdict.
 
@@ -53,6 +53,12 @@ Following ai-audit against the identical three fields fixes the scope and the ta
 **Target model:** `claude-opus-5` — resolved from request
 **Checklist:** upstream prompt-audit at `53048666b05b4799081517d00e09e0a2dd688678`, kind `sha`
 **Mastra audit:** skipped, dependency absent
+**Sources:**
+
+- Mastra docs: skipped, dependency absent
+- Vendor guidance (Anthropic): `https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/overview` (200), `https://platform.claude.com/docs/en/about-claude/model-deprecations` (200) — no `etag` served; UTC fetch timestamps 2026-09-26T14:17:54Z and 2026-09-26T14:17:55Z, kind `timestamp`
+- Upstream model-migration: `33375500bcea98d610eb30ce10ac4e59b89c390d`, kind `sha`
+- OpenRouter catalogue: top 30 by weekly usage — 2026-09-26T14:17:58Z; lookups: `anthropic/claude-opus-5` — 200
 
 ## Health summary
 
@@ -62,6 +68,7 @@ Following ai-audit against the identical three fields fixes the scope and the ta
 | Skills | Three routing descriptions read. One systemic pattern across all three, one contract mismatch on one. | 0 | 0 | 2 | 0 |
 | Config files | Out of scope this run. | 0 | 0 | 0 | 0 |
 | Tool descriptions | Out of scope this run. No MCP or tool definitions in scope. | 0 | 0 | 0 | 0 |
+| Models | Target model current and fit on every fetched source. A newer same-author entry at a lower price sits in the fetched top thirty. | 0 | 0 | 1 | 0 |
 
 ## Inventory
 
@@ -70,6 +77,7 @@ Following ai-audit against the identical three fields fixes the scope and the ta
 | Skill routing description | `skills/review/ai-review/SKILL.md:3` | yes |
 | Skill routing description | `skills/review/pr-description/SKILL.md:3` | yes |
 | Skill routing description | `skills/review/review-response/SKILL.md:3` | yes |
+| Target model | `claude-opus-5` — resolved from request; no routed model pin inside the audited scope | yes |
 
 ## Findings
 
@@ -90,6 +98,14 @@ Following ai-audit against the identical three fields fixes the scope and the ta
 - **Why it matters:** the description is the only text available at routing time. An agent that loaded this skill for a one-line fix has been told to expect seven sections and will find the body withholding one of them, which is the point at which a model either invents the missing section or stalls on the discrepancy. The two sibling descriptions have no equivalent gap: `ai-review:3` claims it "posts the review through gh or glab, or writes a report file when neither tool is available", which matches its posting modes at `:46` and `:117`; `review-response:3` claims "nothing is posted until you approve the text" and that it "never resolves threads", which match `:48`, `:236`, `:242`, and `:244`.
 - **Proposed change:** make the clause conditional in the description — "draws a Mermaid diagram of what actually changed, unless the change is trivial" — so the routing text and the body state the same contract. Nine words. Not applied.
 
+### 3. [minor] A newer same-author entry at a lower price sits in the fetched catalogue — `claude-opus-5` (target)
+
+- **Area:** models
+- **Evidence:** `anthropic/claude-opus-5` is the target model, resolved from the request; nothing inside the three-field scope routes to it. Vendor lifecycle page, fetched 200: the row reads "claude-opus-5 Active N/A Not sooner than July 24, 2027". Upstream `model-migration.md` at `33375500bcea98d610eb30ce10ac4e59b89c390d`: the ID appears in neither the "Retired Model Replacements" table nor the "Deprecated Models (retiring soon)" table, and the destination-model table names `claude-opus-5` as the current Opus target. OpenRouter lookup, 200: `expiration_date: null`, `context_length: 1000000`, `architecture.input_modalities: ["text", "image", "file"]`, `pricing.prompt: "0.000005"`, `pricing.completion: "0.000025"`, `created: 1784912544`, rank 26 of 30. Same author, later entry in the same top thirty: `anthropic/claude-opus-5.5`, `created: 1790094732`, rank 30, `context_length: 1000000`, identical `input_modalities` and `supported_parameters`, `pricing.prompt: "0.000004"`, `pricing.completion: "0.00002"`, `expiration_date: null`; its vendor row reads "claude-opus-5-5 Active N/A Not sooner than September 22, 2027".
+- **Checklist item:** model currency and fit (step 7) — better option.
+- **Why it matters:** nothing is urgent. The target is current on every fetched source, and the three descriptions are plain routing text that either model reads without any modality or context constraint coming into play. What the data shows is a successor from the same author, four days old at fetch time, priced lower per token on both input and output, with no fit constraint lost. The upstream migration document does not yet mention it and still names `claude-opus-5` as the default upgrade target, which is why this is filed `minor` and not as a recommendation to move today.
+- **Proposed change:** re-run this audit with `claude-opus-5.5` as the target once the upstream migration document carries a section for it, and compare the two verdicts on finding 1, since which model reads a description decides what counts as inert filler. Not applied.
+
 ## What I checked
 
 | Surface | Checklist areas | Result |
@@ -97,14 +113,17 @@ Following ai-audit against the identical three fields fixes the scope and the ta
 | `skills/review/ai-review/SKILL.md:3` | Group 2 brittle skill files; Group 3 contract accuracy; keep list items 2 and 6 | finding 1 |
 | `skills/review/pr-description/SKILL.md:3` | Group 2 brittle skill files; Group 3 contract accuracy; keep list items 2 and 6 | findings 1 and 2 |
 | `skills/review/review-response/SKILL.md:3` | Group 2 brittle skill files; Group 3 contract accuracy; keep list items 2 and 6 | finding 1 |
+| `claude-opus-5` (target) | model currency and fit | finding 3 |
 
-Checked and deliberately not raised: description length. The three fields measure 843, 716, and 889 characters against the validator's 1024-character cap. Keep-list item 2 rules out a finding grounded in volume, and none of the three is over budget.
+Checked and deliberately not raised: description length. The three fields measure 877, 770, and 886 characters against the validator's 1024-character cap. Keep-list item 2 rules out a finding grounded in volume, and none of the three is over budget.
 
 ## Not covered by this audit
 
 - Every AI surface outside the three named fields. The bodies of the three `SKILL.md` files were opened only to verify whether each description matches the behaviour it promises; they were not themselves audited.
 - The other six skills in this repository, `AGENTS.md`, `.cursor/rules/`, `opencode.json`, `.claude/` settings, and CI workflow text. All out of the requested scope.
 - Whether the enumerated trigger phrases actually under-perform intent categories on this repository's routing. Finding 1 rests on the upstream checklist's reasoning, not on a trigger eval run here. No such eval exists in the project.
+- No runtime-assembled prompt and no routed model pin exist inside the three-field scope, so the assembly, stored-values, and Routed-model inventory rows are empty by scope, not by omission.
+- Vendor guidance for providers other than Anthropic. No OpenAI or Google model is routed or targeted, so neither vendor's pages were fetched.
 ````
 
-Two notes on how the guided run reached that output. The report is shown here for illustration only; a real run writes it to `reports/ai-audit-2026-09-24.md` inside the audited project and nothing else changes there. And the checklist fetch succeeded, so the "Checklist areas" column names real sections of the upstream file — `all nine` belongs there only when the fetch failed and the skill's embedded fallback was the checklist in play.
+Two notes on how the guided run reached that output. The report is shown here for illustration only; a real run writes it to `reports/ai-audit-2026-09-26.md` inside the audited project and nothing else changes there. And the checklist fetch succeeded, so the "Checklist areas" column names real sections of the upstream file — `all nine` belongs there only when the fetch failed and the skill's embedded fallback was the checklist in play.
