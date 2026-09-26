@@ -147,11 +147,13 @@ describe("nextVersion", () => {
 });
 
 describe("findSkillFile", () => {
-  test("finds a skill in any of the four category directories", () => {
+  test("finds a skill in any category directory", () => {
     const root = newRoot();
     writeSkill(root, "ai-health", "ai-audit");
+    writeSkill(root, "planning", "plan-writer");
 
     expect(findSkillFile(root, "ai-audit")).toBe("skills/ai-health/ai-audit/SKILL.md");
+    expect(findSkillFile(root, "plan-writer")).toBe("skills/planning/plan-writer/SKILL.md");
   });
 
   test("an unknown skill name throws a BumpError naming the searched categories", () => {
