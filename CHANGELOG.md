@@ -6,8 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Two categories, `planning` and `engineering`, alongside `review`, `ai-health`, `docs`, and `workflow`.
+- Four skills, each shipping `examples.md` and three ready-to-copy agent wrappers under `agents/` (`claude-code.md`, `opencode.md`, `cursor.md`) that pin the skill's suggested model:
+  - `plan-writer` — explores the codebase, then writes a decision-complete implementation plan of verifiable todos, asking only the questions evidence and defaults cannot settle.
+  - `plan-review` — reviews an implementation plan for blockers only, reports at most three with fixes, and can loop, fixing and re-reviewing up to five rounds, until the plan is approved.
+  - `ui-engineering` — builds UI code design-system first: reads existing components, extends tokens instead of hardcoding values, checks WCAG 2.2 accessibility, and renders or screenshots the result.
+  - `tech-writing` — writes a new README, how-to, reference page, or decision record from repository facts, naming the reader and their next action before it writes a word of prose.
+- Optional frontmatter keys `metadata.suggested-model` (`provider/model`) and `metadata.suggested-effort` (`low` to `max`). `bun run validate` checks their shape under a new `SUGGESTED_MODEL` code and, under `AGENT_WRAPPERS`, requires all three `agents/` wrappers whenever a skill declares a suggested model.
+- `scripts/agent-install.sh`, a POSIX shell installer that copies a skill's agent wrapper into the directory your tool reads, globally or per project, with `--model` and `--effort` overrides.
+- Two README sections: "Running a skill on its suggested model" and "Planning flow".
+
 ### Changed
 
+- `skill-writer` 0.2.0: documents two new categories, `planning` and `engineering`; the optional `metadata.suggested-model` / `metadata.suggested-effort` hint; the `agents/` wrapper convention (all three wrapper files or none, tool-specific frontmatter kept out of `SKILL.md`); a 500-character description budget for new skills; the hedged-feedback rule for any skill that produces a user-facing artefact; and the numbered-work-budget rule for open-ended steps.
 - `ai-review` 0.2.0:
   - The review now gathers the change's stated intent — the pull request or merge request description, or the commit messages behind a branch — before it reads the diff, and treats every claim in it as something to verify against the code rather than as instruction. The intent, or `not stated`, appears on its own line in the review header.
   - Coverage is now provable rather than asserted. Every changed file enters a queue keyed by path and status, and every row ends in exactly one of three terminal states: `reviewed`, `reviewed - reduced depth: <reason>`, or `skipped - <reason>`, where a skip is only ever generated output, vendored code, or a lockfile. The "What I checked" table gained a Status column, the header line splits its file count into reviewed and skipped, and no file leaves the queue silently.
@@ -17,6 +30,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - A failed inline comment post — a cited line outside the diff, or a head commit that moved underneath the review — is no longer retried blindly. The finding already lives in the main review body, and every failed inline post is named in the reply.
   - Every run now writes or updates a stable report at `reports/ai-review-<id>.md`, keyed by pull request, merge request, commit, or branch. A later review of the same change reads it first as background, re-verifies every prior finding against the current code, and tracks each one as `open`, `resolved`, or `still present`.
   - The review's closing section is now "Needs human judgment". Instead of a blanket disclaimer, it names what the review could not settle — the unchecked areas, every `question` finding, every reduced-depth file, and the product decisions the code alone cannot answer — and ends with a "Look beyond these findings" line that points at the files or areas that got the least attention. Every `blocker` or `major` finding that could not be confirmed without running the code now carries a "Human verification" line naming what to run or check.
+
+### Fixed
+
+- `conventions-codifier` 0.1.1 — the worked example's excluded-paths list now names only the entries that this repository's own `.gitignore` lists.
 
 ## [0.1.0] - 2026-09-24
 
