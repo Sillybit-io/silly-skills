@@ -46,7 +46,11 @@ type Overrides = {
   category?: string | null;
   footer?: "valid" | "missing" | "wrong";
   examples?: ExamplesMode;
+  suggestedModel?: string;
+  suggestedEffort?: string;
 };
+
+type AgentWrapperMode = "all-valid" | "missing-all" | "missing-one" | "wrong-name";
 
 function sectionsBody(sections: string[]): string {
   return sections
@@ -112,6 +116,12 @@ function writeSkill(
     lines.push("metadata:");
     if (version !== null) lines.push(`  version: "${version}"`);
     if (categoryValue !== null) lines.push(`  category: ${categoryValue}`);
+    if (overrides.suggestedModel !== undefined) {
+      lines.push(`  suggested-model: ${overrides.suggestedModel}`);
+    }
+    if (overrides.suggestedEffort !== undefined) {
+      lines.push(`  suggested-effort: ${overrides.suggestedEffort}`);
+    }
   }
   lines.push("---", "", "## Purpose", "", "Do one thing well.", "");
 
@@ -134,6 +144,43 @@ function writeSkill(
   }
 
   return rel;
+}
+
+/**
+ * Writes skills/<category>/<dirName>/agents/{claude-code,opencode,cursor}.md.
+ * "missing-all" writes none. "missing-one" omits cursor.md. "wrong-name" gives
+ * claude-code.md's `name` a value other than the skill name.
+ */
+function writeAgentWrappers(
+  root: string,
+  category: string,
+  dirName: string,
+  mode: AgentWrapperMode,
+): void {
+  if (mode === "missing-all") return;
+
+  const agentsDir = join(root, "skills", category, dirName, "agents");
+  mkdirSync(agentsDir, { recursive: true });
+
+  const claudeCodeName = mode === "wrong-name" ? "some-other-name" : dirName;
+
+  writeFileSync(
+    join(agentsDir, "claude-code.md"),
+    `---\nname: ${claudeCodeName}\ndescription: Runs the ${dirName} skill.\nmodel: opus\neffort: max\n---\n`,
+    "utf8",
+  );
+  writeFileSync(
+    join(agentsDir, "opencode.md"),
+    `---\ndescription: Runs the ${dirName} skill.\nmode: subagent\nmodel: openai/gpt-6-astra\n---\n`,
+    "utf8",
+  );
+  if (mode !== "missing-one") {
+    writeFileSync(
+      join(agentsDir, "cursor.md"),
+      `---\nname: ${dirName}\ndescription: Runs the ${dirName} skill.\nmodel: gpt-6-astra[effort=max]\n---\n`,
+      "utf8",
+    );
+  }
 }
 
 function codes(findings: { code: string }[]): string[] {
@@ -487,6 +534,129 @@ describe("validate", () => {
 
     expect(codes(result.errors)).not.toContain("FORBIDDEN_CONTENT");
   });
+
+  test("a skill in the planning category with a valid model hint and all three wrappers passes", () => {
+    const root = newRoot();
+    writeSkill(root, "planning", "plan-review", {
+      suggestedModel: "openai/gpt-6-astra",
+      suggestedEffort: "max",
+    });
+    writeAgentWrappers(root, "planning", "plan-review", "all-valid");
+
+    const result = validate(root);
+
+    expect(result.errors).toEqual([]);
+    expect(result.skillCount).toBe(1);
+  });
+
+  test("a skill in the engineering category passes LAYOUT", () => {
+    const root = newRoot();
+    writeSkill(root, "engineering", "ui-engineering");
+
+    const result = validate(root);
+
+    expect(codes(result.errors)).not.toContain("LAYOUT");
+  });
+
+  test("a malformed suggested-model fails with SUGGESTED_MODEL", () => {
+    const root = newRoot();
+    writeSkill(root, "planning", "plan-writer", { suggestedModel: "Claude Fable" });
+    writeAgentWrappers(root, "planning", "plan-writer", "all-valid");
+
+    const result = validate(root);
+
+    const finding = result.errors.find((error) => error.code === "SUGGESTED_MODEL");
+    expect(finding).toBeDefined();
+    expect(finding?.message).toContain("provider/model");
+  });
+
+  test("an unrecognized suggested-effort fails with SUGGESTED_MODEL", () => {
+    const root = newRoot();
+    writeSkill(root, "planning", "plan-writer", {
+      suggestedModel: "anthropic/claude-fable-5-1",
+      suggestedEffort: "ultra",
+    });
+    writeAgentWrappers(root, "planning", "plan-writer", "all-valid");
+
+    const result = validate(root);
+
+    const finding = result.errors.find((error) => error.code === "SUGGESTED_MODEL");
+    expect(finding).toBeDefined();
+    expect(finding?.message).toContain("low | medium | high | xhigh | max");
+  });
+
+  test("suggested-effort without suggested-model fails with SUGGESTED_MODEL", () => {
+    const root = newRoot();
+    writeSkill(root, "planning", "plan-writer", { suggestedEffort: "max" });
+    writeAgentWrappers(root, "planning", "plan-writer", "all-valid");
+
+    const result = validate(root);
+
+    const finding = result.errors.find((error) => error.code === "SUGGESTED_MODEL");
+    expect(finding).toBeDefined();
+    expect(finding?.message).toContain("suggested-model is missing");
+  });
+
+  test("a declared suggested-model with no agents/ directory fails with three AGENT_WRAPPERS findings", () => {
+    const root = newRoot();
+    writeSkill(root, "planning", "plan-writer", {
+      suggestedModel: "anthropic/claude-fable-5-1",
+      suggestedEffort: "max",
+    });
+
+    const result = validate(root);
+
+    const findings = result.errors.filter((error) => error.code === "AGENT_WRAPPERS");
+    expect(findings).toHaveLength(3);
+    expect(findings.map((f) => f.file).sort()).toEqual([
+      "skills/planning/plan-writer/agents/claude-code.md",
+      "skills/planning/plan-writer/agents/cursor.md",
+      "skills/planning/plan-writer/agents/opencode.md",
+    ]);
+  });
+
+  test("a partial agents/ directory reports only the missing wrapper", () => {
+    const root = newRoot();
+    writeSkill(root, "planning", "plan-writer", {
+      suggestedModel: "anthropic/claude-fable-5-1",
+      suggestedEffort: "max",
+    });
+    writeAgentWrappers(root, "planning", "plan-writer", "missing-one");
+
+    const result = validate(root);
+
+    const findings = result.errors.filter((error) => error.code === "AGENT_WRAPPERS");
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.file).toBe("skills/planning/plan-writer/agents/cursor.md");
+  });
+
+  test("a wrapper whose name does not match the skill fails with AGENT_WRAPPERS", () => {
+    const root = newRoot();
+    writeSkill(root, "planning", "plan-writer", {
+      suggestedModel: "anthropic/claude-fable-5-1",
+      suggestedEffort: "max",
+    });
+    writeAgentWrappers(root, "planning", "plan-writer", "wrong-name");
+
+    const result = validate(root);
+
+    const finding = result.errors.find(
+      (error) =>
+        error.code === "AGENT_WRAPPERS" &&
+        error.file === "skills/planning/plan-writer/agents/claude-code.md",
+    );
+    expect(finding).toBeDefined();
+    expect(finding?.message).toContain("must equal the skill name");
+  });
+
+  test("a skill with no model hint and no agents/ directory reports no AGENT_WRAPPERS finding", () => {
+    const root = newRoot();
+    writeSkill(root, "review", "ai-review");
+
+    const result = validate(root);
+
+    expect(codes(result.errors)).not.toContain("AGENT_WRAPPERS");
+  });
 });
 
 describe("the real repository", () => {
@@ -495,6 +665,17 @@ describe("the real repository", () => {
 
     expect(result.skillCount).toBeGreaterThan(0);
     expect(result.errors.filter((error) => error.code === "MISSING_EXAMPLES")).toEqual([]);
+  });
+
+  test("the repository has 13 skills and no model-hint or agent-wrapper errors", () => {
+    const result = validate(join(import.meta.dir, ".."));
+
+    expect(result.skillCount).toBe(13);
+    expect(
+      result.errors.filter(
+        (error) => error.code === "AGENT_WRAPPERS" || error.code === "SUGGESTED_MODEL",
+      ),
+    ).toEqual([]);
   });
 });
 

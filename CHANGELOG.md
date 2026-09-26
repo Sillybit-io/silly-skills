@@ -6,6 +6,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Two categories, `planning` and `engineering`, alongside `review`, `ai-health`, `docs`, and `workflow`.
+- Four skills, each shipping `examples.md` and three ready-to-copy agent wrappers under `agents/` (`claude-code.md`, `opencode.md`, `cursor.md`) that pin the skill's suggested model:
+  - `plan-writer` — sharpens a vague idea with up to three questions, explores the codebase, then writes a decision-complete implementation plan of verifiable todos and a branch name that follows the repository's own convention, asking only the questions evidence and defaults cannot settle.
+  - `plan-review` — reviews an implementation plan for blockers only, reports at most three with fixes, and can loop, fixing and re-reviewing up to five rounds, until the plan is approved.
+  - `ui-engineering` — builds UI code design-system first: reads existing components, extends tokens instead of hardcoding values, checks WCAG 2.2 accessibility, and renders or screenshots the result.
+  - `tech-writing` — writes a new README, how-to, reference page, or decision record from repository facts, naming the reader and their next action before it writes a word of prose.
+- Optional frontmatter keys `metadata.suggested-model` (`provider/model`) and `metadata.suggested-effort` (`low` to `max`). `bun run validate` checks their shape under a new `SUGGESTED_MODEL` code and, under `AGENT_WRAPPERS`, requires all three `agents/` wrappers whenever a skill declares a suggested model.
+- `scripts/agent-install.sh`, a POSIX shell installer that copies a skill's agent wrapper into the directory your tool reads, globally or per project, with `--model` and `--effort` overrides.
+- Two README sections: "Running a skill on its suggested model" and "Planning flow".
+
+### Changed
+
+- `skill-writer` 0.2.0: documents two new categories, `planning` and `engineering`; the optional `metadata.suggested-model` / `metadata.suggested-effort` hint; the `agents/` wrapper convention (all three wrapper files or none, tool-specific frontmatter kept out of `SKILL.md`); a 500-character description budget for new skills; the hedged-feedback rule for any skill that produces a user-facing artefact; and the numbered-work-budget rule for open-ended steps.
+
+### Fixed
+
+- `conventions-codifier` 0.1.1 — the worked example's excluded-paths list now names only the entries that this repository's own `.gitignore` lists.
+
 ## [0.2.0] - 2026-09-26
 
 ### Changed

@@ -3,9 +3,9 @@
 [![CI](https://github.com/Sillybit-io/silly-skills/actions/workflows/ci.yml/badge.svg)](https://github.com/Sillybit-io/silly-skills/actions/workflows/ci.yml)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/Sillybit-io/silly-skills/badge)](https://scorecard.dev/viewer/?uri=github.com/Sillybit-io/silly-skills)
 ![License: CC BY-ND 4.0](https://img.shields.io/badge/license-CC%20BY--ND%204.0-lightgrey)
-![Skills: 9](https://img.shields.io/badge/skills-9-blue)
+![Skills: 13](https://img.shields.io/badge/skills-13-blue)
 
-AI skills for work quality, review, speed, and standardization. Each skill is a single `SKILL.md` file that runs unchanged in Claude Code, Cursor, and OpenCode: it reviews a diff like a senior developer, writes the review-guidance half of a pull request, triages the comments that come back, audits how a project uses AI, keeps documentation honest, sweeps a branch for secrets before you publish it, codifies the conventions a repository actually follows, and turns a vague ticket into a decision-complete brief — the same way every time, for everyone on the team.
+AI skills for work quality, review, speed, and standardization. Each skill is a `SKILL.md` file that runs unchanged in Claude Code, Cursor, and OpenCode, and a skill that recommends a model also ships a ready-to-copy agent wrapper for each of the three tools: it reviews a diff like a senior developer, writes the review-guidance half of a pull request, triages the comments that come back, audits how a project uses AI, keeps documentation honest, sweeps a branch for secrets before you publish it, codifies the conventions a repository actually follows, turns a vague ticket into a decision-complete brief, writes an implementation plan and reviews it for blockers, builds UI code design-system first, and writes a new document or decision record a named reader can act on — the same way every time, for everyone on the team.
 
 ## License
 
@@ -15,7 +15,7 @@ Free to use, including commercially, with attribution. Source-available under CC
 
 Skills are installed with the [`skills`](https://www.npmjs.com/package/skills) CLI. No clone, no build step.
 
-Install everything — all nine skills:
+Install everything — all thirteen skills:
 
 ```bash
 npx skills add Sillybit-io/silly-skills --all
@@ -27,7 +27,7 @@ Install one skill by name:
 npx skills add Sillybit-io/silly-skills --skill ai-review
 ```
 
-Install one category, using the tree-path source format. Swap `review` for `ai-health`, `docs`, or `workflow`:
+Install one category, using the tree-path source format. Swap `review` for `ai-health`, `docs`, `engineering`, `planning`, or `workflow`:
 
 ```bash
 npx skills add https://github.com/Sillybit-io/silly-skills/tree/main/skills/review
@@ -61,6 +61,10 @@ npx skills remove ai-review
 | --- | --- | --- |
 | ai-health | [ai-audit](skills/ai-health/ai-audit/SKILL.md) | Read-only audit of every AI surface in a project — embedded prompts, skill files, agent configs, tool and MCP descriptions, model IDs — scored by severity into one report file. |
 | docs | [doc-cleanup](skills/docs/doc-cleanup/SKILL.md) | Checks every command, path, script name, and environment variable in the docs against the real repository, fixes what is provably stale, then rewrites the prose in simple English. |
+| docs | [tech-writing](skills/docs/tech-writing/SKILL.md) | Writes a new README, how-to, reference page, or decision record from repository facts, naming the reader and their next action before it writes a word of prose. |
+| engineering | [ui-engineering](skills/engineering/ui-engineering/SKILL.md) | Builds UI code design-system first: reads existing components, extends tokens instead of hardcoding values, checks WCAG 2.2 accessibility, and renders or screenshots the result. |
+| planning | [plan-review](skills/planning/plan-review/SKILL.md) | Reviews an implementation plan for blockers only, reports at most three with fixes, and can loop — fixing and re-reviewing up to five rounds — until the plan is approved. |
+| planning | [plan-writer](skills/planning/plan-writer/SKILL.md) | Explores the codebase, then writes a decision-complete implementation plan of verifiable todos, asking only the questions evidence and defaults cannot settle. |
 | review | [ai-review](skills/review/ai-review/SKILL.md) | Reviews a pull request, merge request, or branch diff as a senior developer who knows the codebase; every finding is labelled fact or opinion and carries a severity from blocker to question. |
 | review | [pr-description](skills/review/pr-description/SKILL.md) | Writes the review-guidance block of a pull request description from the real diff: complexity, risk, rollback, which files need human eyes, and an AI-authorship disclosure. |
 | review | [review-response](skills/review/review-response/SKILL.md) | Triages every comment on your own pull request as must-fix, valid-suggestion, opinion, or question, and drafts a substantive reply for each one before anything is posted. |
@@ -68,6 +72,62 @@ npx skills remove ai-review
 | workflow | [issue-refiner](skills/workflow/issue-refiner/SKILL.md) | Turns a vague ticket into a decision-complete brief — problem, outcome, acceptance criteria, risks, open questions — and writes it back to Linear, Jira, GitHub, or GitLab. |
 | workflow | [secret-and-privacy-sweep](skills/workflow/secret-and-privacy-sweep/SKILL.md) | Judges whether a diff or working tree is too sensitive to publish across six categories, masking every value it reports and ending with a single verdict line. |
 | workflow | [skill-writer](skills/workflow/skill-writer/SKILL.md) | Authors and reviews SKILL.md files for this repository: the frontmatter contract, the mandatory section order, the tone rules, version bumps, and the attribution footer. |
+
+## Running a skill on its suggested model
+
+Some skills carry a model hint in their frontmatter: `metadata.suggested-model` (a `provider/model` id) and `metadata.suggested-effort` (`low`, `medium`, `high`, `xhigh`, or `max`). The hint is advisory — `SKILL.md` never pins a model, so every skill still runs on whatever model your tool is using. For a one-off, just switch the model in your tool before invoking the skill.
+
+To pin the suggested model, each of those skills ships three ready-to-copy agent definitions under `agents/`, and the repository ships one installer that copies the right one and rewrites its model line:
+
+```bash
+sh scripts/agent-install.sh --tool opencode --agent plan-review --global
+sh scripts/agent-install.sh --tool claude-code --all
+sh scripts/agent-install.sh --tool cursor --agent ui-engineering --model claude-opus-5-5 --effort xhigh
+```
+
+After `npx skills add` without a clone of this repository, download the installer once:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Sillybit-io/silly-skills/main/scripts/agent-install.sh -o agent-install.sh
+sh agent-install.sh --tool opencode --agent plan-review --global
+```
+
+Run `sh scripts/agent-install.sh --help` for every flag, including `--dest` for a custom directory and `--force` to overwrite. Re-run with `--force` after `npx skills update` refreshes a skill, since the installer never touches an agent file it already wrote.
+
+| Tool | Wrapper installs to | Invoke it |
+| --- | --- | --- |
+| Claude Code | `.claude/agents/<skill>.md` (or `~/.claude/agents/` with `--global`) | the subagent name, e.g. `plan-review` |
+| OpenCode | `.opencode/agents/<skill>.md` (or `~/.config/opencode/agents/`) | `@<skill>`, e.g. `@plan-review` |
+| Cursor | `.cursor/agents/<skill>.md` (or `~/.cursor/agents/`) | the subagent name, e.g. `plan-review` |
+
+Claude Code runs Claude models only, so a wrapper for a skill that suggests a non-Anthropic model pins the nearest Claude tier and says so in its own text.
+
+| Skill | Suggested model | Effort | Cheaper alternative |
+| --- | --- | --- | --- |
+| plan-writer | `anthropic/claude-fable-5-1` | max | `anthropic/claude-opus-5-5` at xhigh |
+| plan-review | `openai/gpt-6-astra` | max | `anthropic/claude-opus-5-5` at xhigh |
+| ui-engineering | `anthropic/claude-opus-5-5` | max | `anthropic/claude-sonnet-5` at high |
+| tech-writing | `anthropic/claude-fable-5-1` | medium | `anthropic/claude-sonnet-5` at medium |
+
+### Models these skills were designed around
+
+| Model | Tier | Effort levels | Best for |
+| --- | --- | --- | --- |
+| `anthropic/claude-opus-5-5` | Flagship, long-running agentic work | low – max | Coding and agentic work |
+| `anthropic/claude-fable-5-1` | Deepest reasoning, slowest | low – max | Long-horizon reasoning and research |
+| `anthropic/claude-sonnet-5` | Speed and intelligence balance | low – max | Everyday coding and writing |
+| `openai/gpt-6-astra` | Flagship | low – max | Complex reasoning and coding |
+| `openai/gpt-6-sol` | Coding and agentic workflows | none – max | Coding and agentic workflows |
+| `openai/gpt-6-luna` | Cheapest, most efficient | none – max | Fast, high-volume tasks |
+| `openai/gpt-5.6-terra` | Balanced cost and intelligence | none – max | Cost-aware work |
+
+`openai/gpt-6-sol-fast` and `openai/gpt-6-luna-fast` are OpenCode's own catalog aliases for `gpt-6-sol` and `gpt-6-luna` run at a priority service tier — they trade a roughly 2x price increase for lower latency, not a different model. Full model and pricing details live on each vendor's own model pages: `platform.claude.com` and `developers.openai.com`.
+
+## Planning flow
+
+`plan-writer` sharpens a vague idea with up to three questions when it needs to, explores the codebase, and writes a plan to `docs/plans/` — with a branch name that follows the repository's own observed convention — moving it through `draft` (while an owner question is open), `planned` (the full task breakdown), and `reviewed` (once `plan-review` approves it). After a plan is written, run `plan-review` — ideally on a different model family than the one that wrote the plan — for the cheapest independent second opinion available. On a rejection, `plan-review` can fix the listed blockers and re-review on its own, looping up to five rounds before it stops and asks whether to continue.
+
+Both skills compose with a tool's own read-only planning mode instead of needing it turned off: the exploration and the questions run the same way inside Claude Code's Plan Mode or Cursor's Plan mode, and the plan file's write waits for that mode's own approval step, same as any other edit would. Neither skill's agent wrapper sets a plan-only permission mode of its own, since that would deny the write with no way to approve past it.
 
 ## Versioning
 

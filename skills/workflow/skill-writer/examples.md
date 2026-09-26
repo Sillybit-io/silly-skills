@@ -4,7 +4,7 @@
 
 ## Without skill
 
-An agent with no house style still writes a usable file. It reaches for the frontmatter shape it has seen in other agent-skill catalogues — `name` and `description`, plus whatever else looks useful — and invents a body outline that suits the topic. The prose below is competent and the instructions are sound. What is missing is the contract: nothing in it is checkable by a validator, and nothing matches the eight skills already in this repository.
+An agent with no house style still writes a usable file. It reaches for the frontmatter shape it has seen in other agent-skill catalogues — `name` and `description`, plus whatever else looks useful — and invents a body outline that suits the topic. The prose below is competent and the instructions are sound. What is missing is the contract: nothing in it is checkable by a validator, and nothing matches the other skills already in this repository.
 
 ````markdown
 ---
@@ -53,7 +53,7 @@ Measured against this repository's contract, that draft deviates in eight ways:
 
 ## With skill
 
-Following skill-writer against the same request produces the same idea inside the contract: the five-key frontmatter, the six H2 sections in the fixed order, and the footer as the final line. The section bodies below are abbreviated. The structure is not.
+Following skill-writer against the same request produces the same idea inside the contract: the five required frontmatter keys, the six H2 sections in the fixed order, and the footer as the final line. The section bodies below are abbreviated. The structure is not.
 
 ````markdown
 ---

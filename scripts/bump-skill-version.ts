@@ -102,10 +102,10 @@ function isFile(abs: string): boolean {
 }
 
 /**
- * Finds skills/<category>/<skillName>/SKILL.md across the 4 category
- * directories. Throws BumpError on zero matches, and on more than one — which
- * validate.ts's DUPLICATE_NAME check should already prevent, but is handled
- * here rather than silently picking the first.
+ * Finds skills/<category>/<skillName>/SKILL.md across every category
+ * directory in CATEGORIES. Throws BumpError on zero matches, and on more than
+ * one — which validate.ts's DUPLICATE_NAME check should already prevent, but
+ * is handled here rather than silently picking the first.
  */
 export function findSkillFile(root: string, skillName: string): string {
   const matches = CATEGORIES.map(

@@ -84,7 +84,7 @@ Then the run report, handed back rather than written into the repository:
 ## Conventions codified — AGENTS.md
 
 - Target: `AGENTS.md`. The repository root had no `AGENTS.md` and no reservation on the name, so no fallback to `CONVENTIONS.md` was needed.
-- Sample: 13 files across 6 directories — `skills/review`, `skills/docs`, `skills/ai-health`, `skills/workflow`, `scripts`, and the repository root. Excluded: `node_modules/`, `.omo/`, `reports/`, and `*.log`, all four listed in `.gitignore`.
+- Sample: 13 files across 6 directories — `skills/review`, `skills/docs`, `skills/ai-health`, `skills/workflow`, `scripts`, and the repository root. Excluded: `node_modules/`, `reports/`, and `*.log`, all three listed in `.gitignore`.
 - Rules written: 7. Contradictions listed: 1. Candidates dropped for thin evidence: 2.
 - Block action: created the file, wrote the one-line generated-block notice above the start marker, then wrote the block.
 - Outside the block: 0 bytes before, 86 bytes after. The file did not exist, so the only content outside the block is the notice line this run wrote. No pre-existing byte was touched.

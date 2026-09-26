@@ -19,7 +19,8 @@
  * ── Error codes ──────────────────────────────────────────────────────────────
  *   LAYOUT              A SKILL.md under skills/ is not at exactly
  *                       skills/<category>/<skill-name>/SKILL.md, or its category
- *                       directory is not review | ai-health | docs | workflow.
+ *                       directory is not review | ai-health | docs | engineering |
+ *                       planning | workflow.
  *   FRONTMATTER         Frontmatter is missing or malformed: no `---` on line 1,
  *                       no closing `---`, an unparsable line, a duplicate key, a
  *                       missing required key (`name`, `description`, `license`,
@@ -56,6 +57,18 @@
  *                       appears more than once, or reports a number other than
  *                       the discovered skill count.
  *   DUPLICATE_NAME      Two or more skills declare the same frontmatter `name`.
+ *   SUGGESTED_MODEL     `metadata.suggested-model` is present but does not match
+ *                       provider/model (`^[a-z0-9-]+/[a-z0-9.-]+$`), or
+ *                       `metadata.suggested-effort` is present but is not one of
+ *                       low | medium | high | xhigh | max, or is present without
+ *                       `metadata.suggested-model`. One code covers both keys.
+ *   AGENT_WRAPPERS      A skill that declares `metadata.suggested-model`, or that
+ *                       has an agents/ directory, is missing one of the three
+ *                       wrapper files agents/claude-code.md, agents/opencode.md,
+ *                       agents/cursor.md, or a wrapper is blank, has malformed
+ *                       frontmatter, lacks `description` or `model`, or (for
+ *                       claude-code.md and cursor.md) has a `name` that is not
+ *                       the skill name.
  *
  * ── Warning codes ────────────────────────────────────────────────────────────
  *   BADGE_COUNT         Skipped because the repository has 0 skills or has no
@@ -67,7 +80,14 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
-export const CATEGORIES = ["review", "ai-health", "docs", "workflow"] as const;
+export const CATEGORIES = [
+  "review",
+  "ai-health",
+  "docs",
+  "engineering",
+  "planning",
+  "workflow",
+] as const;
 
 export const FOOTER =
   "© Sillybit — https://github.com/Sillybit-io/silly-skills — CC BY-ND 4.0. Attribution required; do not republish modified versions without written approval.";
@@ -84,6 +104,10 @@ const NAME_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 export const RESERVED_NAME_WORDS = ["anthropic", "claude"] as const;
 const SEMVER_RE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
 const BADGE_SOURCE = "https://img\\.shields\\.io/badge/skills-(\\d+)-blue";
+
+export const SUGGESTED_EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
+const SUGGESTED_MODEL_RE = /^[a-z0-9-]+\/[a-z0-9.-]+$/;
+export const AGENT_WRAPPERS = ["claude-code.md", "opencode.md", "cursor.md"] as const;
 
 /**
  * Secret / privacy patterns. Every pattern is written with character classes so
@@ -543,6 +567,132 @@ function hasRequiredExampleSections(text: string): boolean {
   return false;
 }
 
+/**
+ * Checks the optional `metadata.suggested-model` / `metadata.suggested-effort`
+ * hint. Both keys are optional and advisory — no tool reads them — but when
+ * present their shape is checked so a typo does not silently ship.
+ */
+function checkModelHint(
+  rel: string,
+  metadata: Record<string, string>,
+  lineOf: Record<string, number>,
+  errors: Finding[],
+): void {
+  const model = metadata["suggested-model"];
+  const effort = metadata["suggested-effort"];
+
+  if (model !== undefined && !SUGGESTED_MODEL_RE.test(model)) {
+    errors.push({
+      code: "SUGGESTED_MODEL",
+      file: rel,
+      line: lineOf["metadata.suggested-model"] ?? 1,
+      message: `metadata.suggested-model '${model}' must look like provider/model, matching ^[a-z0-9-]+/[a-z0-9.-]+$`,
+    });
+  }
+
+  if (effort !== undefined) {
+    if (model === undefined) {
+      errors.push({
+        code: "SUGGESTED_MODEL",
+        file: rel,
+        line: lineOf["metadata.suggested-effort"] ?? 1,
+        message: "metadata.suggested-effort is set but metadata.suggested-model is missing",
+      });
+    }
+    if (!(SUGGESTED_EFFORTS as readonly string[]).includes(effort)) {
+      errors.push({
+        code: "SUGGESTED_MODEL",
+        file: rel,
+        line: lineOf["metadata.suggested-effort"] ?? 1,
+        message: `metadata.suggested-effort '${effort}' must be one of ${SUGGESTED_EFFORTS.join(" | ")}`,
+      });
+    }
+  }
+}
+
+/**
+ * Checks the optional agents/ wrapper set. A skill ships all three wrappers or
+ * none. The check activates when the skill either declares
+ * `metadata.suggested-model` or already has an agents/ directory, so a plain
+ * skill with neither is left untouched.
+ */
+function validateAgentWrappers(
+  root: string,
+  category: string,
+  dirName: string,
+  fm: Frontmatter,
+  errors: Finding[],
+): void {
+  const declaresModel =
+    "metadata" in fm.nested && "suggested-model" in fm.nested.metadata;
+
+  const agentsDir = join(root, "skills", category, dirName, "agents");
+  let agentsDirExists = false;
+  try {
+    agentsDirExists = statSync(agentsDir).isDirectory();
+  } catch {
+    agentsDirExists = false;
+  }
+
+  if (!declaresModel && !agentsDirExists) return;
+
+  for (const wrapper of AGENT_WRAPPERS) {
+    const rel = `skills/${category}/${dirName}/agents/${wrapper}`;
+    const text = readTextFile(join(root, rel));
+
+    if (text === null || text.trim() === "") {
+      errors.push({
+        code: "AGENT_WRAPPERS",
+        file: rel,
+        line: 1,
+        message:
+          "agents/" +
+          wrapper +
+          " is missing or blank; a skill that declares metadata.suggested-model or has an agents/ directory ships all three wrapper files (claude-code.md, opencode.md, cursor.md)",
+      });
+      continue;
+    }
+
+    const wrapperFm = parseFrontmatter(text.split(/\r?\n/));
+    if (wrapperFm.problems.length > 0) {
+      for (const problem of wrapperFm.problems) {
+        errors.push({
+          code: "AGENT_WRAPPERS",
+          file: rel,
+          line: problem.line,
+          message: `agents/${wrapper}: ${problem.message}`,
+        });
+      }
+      continue;
+    }
+
+    if (!("description" in wrapperFm.top)) {
+      errors.push({
+        code: "AGENT_WRAPPERS",
+        file: rel,
+        line: 1,
+        message: `agents/${wrapper} is missing required frontmatter key 'description'`,
+      });
+    }
+    if (!("model" in wrapperFm.top)) {
+      errors.push({
+        code: "AGENT_WRAPPERS",
+        file: rel,
+        line: 1,
+        message: `agents/${wrapper} is missing required frontmatter key 'model'`,
+      });
+    }
+    if (wrapper !== "opencode.md" && wrapperFm.top.name !== dirName) {
+      errors.push({
+        code: "AGENT_WRAPPERS",
+        file: rel,
+        line: wrapperFm.lineOf.name ?? 1,
+        message: `agents/${wrapper} 'name' must equal the skill name '${dirName}', got '${wrapperFm.top.name ?? "(missing)"}'`,
+      });
+    }
+  }
+}
+
 function validateSkill(
   root: string,
   rel: string,
@@ -734,6 +884,8 @@ function validateSkill(
         message: `metadata.category '${metadata.category}' does not match its category directory '${category}'`,
       });
     }
+
+    checkModelHint(rel, metadata, fm.lineOf, errors);
   }
 
   // footer: exact full-string match on the last non-empty line
@@ -759,6 +911,8 @@ function validateSkill(
       message: `last non-empty line must be exactly the attribution footer, got '${lines[lastIndex].trimEnd()}'`,
     });
   }
+
+  validateAgentWrappers(root, category, dirName, fm, errors);
 
   return name;
 }
