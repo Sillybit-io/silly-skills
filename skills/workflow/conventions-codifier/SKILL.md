@@ -3,7 +3,7 @@ name: conventions-codifier
 description: Writes down the conventions a repository actually follows, with evidence, into a generated block inside AGENTS.md or CONVENTIONS.md. It samples files across the whole tree to find the real patterns in naming, folder structure, error handling, test style and location, import ordering, logging, and commit subjects. Every rule carries at least two file:line citations, and competing patterns are listed under "Contradictions to resolve" with counts on both sides instead of being decided. Use when you codify this repo's conventions, generate an AGENTS.md from what's actually here, extract our real coding conventions, write down how this codebase actually does things, document our patterns so agents stop inventing their own, or rebuild AGENTS.md from the code. It writes one file, replaces only its own marked block, and never changes code.
 license: CC-BY-ND-4.0
 metadata:
-  version: "0.1.0"
+  version: "0.1.1"
   category: workflow
 ---
 
