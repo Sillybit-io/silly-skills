@@ -34,7 +34,7 @@ An early-round answer is written once, in the group it belongs to. The later rou
 
 Do not stop before the draft file exists. In an interactive session, stop after that draft is written when at least one later-round question is still open, or when the tier is `architecture`. Do not stop when both groups contain only settled decisions and the tier is `standard`.
 
-In a non-interactive run, record each default and continue, including when the tier is `architecture`. An agent wrapper that cannot wait does the same: it writes the question and the default into `## Questions` and continues.
+In a non-interactive run, record each default and continue, including when the tier is `architecture`. A session that was told to ask and wait is interactive: write the draft, reply with the draft-gate block, and stop. Do not record a default and continue.
 
 The draft at this gate holds the TL;DR, Scope (including the IS/GAP ledger and the Risks table), `## Research`, and `## Questions`. The other headings are present and empty.
 

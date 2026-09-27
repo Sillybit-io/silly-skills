@@ -4,7 +4,7 @@ Read this file when you add the final verification wave. It comes after every im
 
 ## The four gates
 
-Title them `F1`, `F2`, `F3`, and `F4`, in that order. They are one parallel wave: none depends on another. The execution-strategy line names them as `F1, F2, F3, F4`, plus any extra.
+Title them `F1`, `F2`, `F3`, and `F4`, in that order. They are one parallel wave: none depends on another. The execution-strategy line names them as `F1, F2, F3, F4`, plus any extra. Each gate starts with `- [ ] Open`. The builder changes that line to `- [x] Done` in the project copy when the gate is finished.
 
 - **F1 Plan compliance.** Every Must Have is present. Every Must NOT Have is absent. Cite the evidence.
 - **F2 Code quality.** Run the test, lint, and build commands the project actually defines. Name any of the three the project does not have. Then a language-appropriate slop pass: empty catches, debug logs, commented-out code, unused imports, and the local equivalent of a type escape.

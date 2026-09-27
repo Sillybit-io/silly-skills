@@ -1,9 +1,9 @@
 ---
 name: plan-review
-description: Reviews an implementation plan and answers one question. Can a developer execute it without getting stuck? Checks cited paths, startability, contradictions, QA, recorded research, product-then-technical questions, a design diagram when the request needs one, and a final verification wave of at least four gates. Reports at most three blockers with fixes, writes the verdict into the plan, and can loop up to five rounds, fixing and re-reviewing, until approved. Use when you review this plan, check this plan before I execute it, or give me the plan-review verdict.
+description: Reviews an implementation plan and answers one question. Can a developer execute it without getting stuck? Checks cited paths, startability, contradictions, QA, recorded research, product-then-technical questions, a design diagram when the request needs one, and a final verification wave of at least four gates. Reports at most three blockers with fixes, writes the verdict into the plan, and can loop up to five rounds, fixing and re-reviewing, until approved. It rejects a missing todo checkbox or a missing T0 that copies the plan into the project. Use when reviewing this plan, checking this plan before execution, or asking for the plan-review verdict.
 license: CC-BY-ND-4.0
 metadata:
-  version: "0.2.0"
+  version: "0.3.0"
   category: planning
   suggested-model: openai/gpt-6-astra
   suggested-effort: max
@@ -38,19 +38,19 @@ plan-review runs in one of two modes. **Review mode** (the default) does one rou
 1. Take a plan file path as input. Never review a plan pasted into chat; if no path was given, ask for one. Record which mode this run is in.
 2. Read the plan's frontmatter from disk. `status: draft` means the plan is not finished yet — say so and stop. `status: reviewed` means it already passed — say so and stop unless a re-review was explicitly asked for. Otherwise this round's number is the last recorded round plus one.
 3. Cap check: this round would be the sixth since the round history's last `consent` row (or the first ever consent, if none exists) only when five rounds have already run without a fresh yes. When that is true, stop and ask: "Five rounds used and the plan is still rejected. Continue for up to five more, stop here so you can fix it by hand, or accept the plan as is?" In a non-interactive run, stop with the current verdict and this same question in the reply instead of guessing. A yes here adds a `consent` row to the round history and continues to step 4.
-4. Check A — references. Open every `path:line` the plan cites, reading about 20 lines of context around each rather than the whole file. Budget: 40 references per round. Past that, sample the references in the first two waves' todos and say so under "Checked". A cited path that does not exist, or a line that does not support the claim, is a candidate blocker only when a todo depends on it.
+4. Check A — references. Open every `path:line` the plan cites, reading about 20 lines of context around each rather than the whole file. Budget: 40 references per round. Past that, sample the references in the first two waves' todos and say so under "Checked". A cited path that does not exist, or a line that does not support the claim, is a candidate blocker only when a todo depends on it. T0 may cite `this file`; that citation is not a broken path.
 5. Check B — startability. For each todo, ask: could a developer start this now with what the plan gives? Flag a missing input, an undefined term, a dependency on an "Owner decisions pending" item that was never answered, or a dependency on a todo that does not exist.
 6. Check C — contradictions. Flag two todos that disagree, a "Must have" a "Must NOT have" forbids, a dependency cycle, or a success criterion no todo produces.
 7. Check D — QA executability. Flag any acceptance criterion or QA scenario that names no tool or command, gives no concrete data, or reads like "test manually" or "verify it works". A prose deliverable with a grep-for-a-sentence acceptance criterion is also a flag here.
 8. Check E — UI QA. Verify the plan's `ui:` claim with the same signals plan-writer uses: a web framework in the manifest, an `index.html`, a templates or views directory, a mobile app target, or a plan that itself adds a web or mobile surface. When the project has a UI, or the plan adds one, the plan's last todo must be the automated UI QA task with a tool, a route, viewport widths, steps, and a screenshot path; its absence or vagueness is a flag.
-9. Checks F through I. Read [references/writer-contract.md](references/writer-contract.md) and run research, questions, diagram, and the final wave. Budget for research sources: 5 URLs opened. Past that, say so under "Checked" and do not open more.
+9. Checks F through J. Read [references/writer-contract.md](references/writer-contract.md) and run research, questions, diagram, the final wave, and the todo-box and T0 check. Budget for research sources: 5 URLs opened. Past that, say so under "Checked" and do not open more.
 10. Challenge the plan's assumptions once: name the edge cases and failure modes it never mentions. Each becomes a blocker only if it would stop execution; otherwise it goes under "Notes (non-blocking)", capped at five.
 11. Decide the verdict. Keep at most three blockers — the three most likely to actually stop execution — each naming the todo or section, the gap, and a concrete fix. When more than three flags exist, report in the order in `references/writer-contract.md` and add one line: "and N more of the same kind." From round 2 onward the blocker set is frozen: a later round may only report an unfixed listed blocker, a regression the fixes introduced, or a genuinely new item that would stop execution — never a new item of the kind already checked and passed. Zero blockers means `PLAN-REVIEW: OKAY`.
 12. Write `## Review` in the plan file in the shape given in Output format: append this round to the history table, then write its `### Round n` body. Set `review_round` to this round's number. Set `status: reviewed` on `OKAY`; otherwise leave it `planned`.
 13. On `OKAY`, in either mode: reply with the verdict block and stop. This is the only way the run ends successfully.
 14. On `REJECT` in review mode: reply with the verdict block, ending it with "Fix these blockers and re-review until approved? (yes / I will fix them myself)". A yes switches to loop mode, adds a `consent` row to the round history, and continues to step 15.
-15. On `REJECT` in loop mode: check whether the `plan-writer` skill is available in this session. If it is, load it and run only its fix-only follow-up step — the last step in its Workflow, never its exploration steps — against this same plan file. That step may fill a missing `## Research`, `## Questions`, `## Design`, or final-wave todo when a blocker names it, including the research budgets that step allows. Then go to step 2 for the next round without asking again. If `plan-writer` is not available, say so plainly and stop at the verdict; loop mode cannot proceed without it.
-16. On a re-review round (round 2 or later), re-verify each previously listed blocker is actually fixed, then re-run checks A through I only on the sections that changed since the last round; never re-open a section that already passed. Then walk the QA checklist.
+15. On `REJECT` in loop mode: check whether the `plan-writer` skill is available in this session. If it is, load it and run only its fix-only follow-up step — the last step in its Workflow, never its exploration steps — against this same plan file. That step may fill a missing `## Research`, `## Questions`, `## Design`, final-wave todo, checkbox, or T0 when a blocker names it, including the research budgets that step allows. Then go to step 2 for the next round without asking again. If `plan-writer` is not available, say so plainly and stop at the verdict; loop mode cannot proceed without it.
+16. On a re-review round (round 2 or later), re-verify each previously listed blocker is actually fixed, then re-run checks A through J only on the sections that changed since the last round; never re-open a section that already passed. Then walk the QA checklist.
 
 ### Handling feedback
 
@@ -104,6 +104,8 @@ Written into the plan file, replacing the `## Review` section's history table an
 - Questions: Product before Technical | wrong order — open items with neither answer nor default: <n>.
 - Diagram: present | omitted — <reason> | required and missing.
 - Final wave: F1–F4 present | missing <which> — UI QA last: yes | no | not applicable.
+- Todo boxes: every todo starts `- [ ] Open`, and the plan says to mark `- [x] Done` in the project copy when that todo is finished | missing.
+- T0: first todo, copies the plan into `docs/plans/` only when it is not already there, and the build continues there | missing | not first | copies unconditionally | build stays outside.
 - Previous blockers fixed: <n> of <n> | first round.
 ````
 
@@ -133,7 +135,7 @@ MUST:
 
 - MUST read the plan from disk on every round; never review pasted text.
 - MUST open every cited `path:line` before judging it, within the stated budget.
-- MUST run all nine checks (A through I) on every round.
+- MUST run all ten checks (A through J) on every round.
 - MUST put the exact verdict string on the first line of every reply.
 - MUST cap blockers at three per round, each naming a todo or section, a gap, and a fix.
 - MUST cap non-blocking notes at five.
@@ -158,7 +160,7 @@ NEVER:
 - [ ] The run's mode (review or loop) is recorded and followed correctly.
 - [ ] The round number is correct and no more than 5 since the last consent.
 - [ ] Every cited `path:line` was opened.
-- [ ] All nine checks (A–I) each produced a line under "Checked".
+- [ ] All ten checks (A–J) each produced a line under "Checked". Check J produces the todo-box line and the T0 line.
 - [ ] Blockers are capped at three, each with a todo/section, a gap, and a fix.
 - [ ] Notes are capped at five.
 - [ ] The verdict string is exactly `PLAN-REVIEW: OKAY` or `PLAN-REVIEW: REJECT (<n> blockers)`, and is the reply's first line.

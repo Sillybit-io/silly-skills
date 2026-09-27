@@ -1,8 +1,9 @@
 ---
-name: ui-engineering
+name: ui-engineer
 description: Builds or changes UI code by following the ui-engineering skill. Use for a component, screen, or layout change that should match the project's design system.
 model: opus
 effort: max
+tools: Read, Grep, Glob, Edit, Write, Bash, Skill
 skills: [ui-engineering]
 ---
 
@@ -14,4 +15,4 @@ Run the skill's Workflow from step 1 against the change you were given. If a bro
 
 Reply with only the change report the skill's Output format names. Never restate the touched files' full contents.
 
-The canonical suggestion for this skill is `anthropic/claude-opus-5-5` at `max` effort. Change the `model:` and `effort:` lines above to override, or run `sh scripts/agent-install.sh --tool claude-code --agent ui-engineering --model <id> --effort <level>` from a clone of the skill's source repository to regenerate this file.
+The canonical suggestion for this skill is `anthropic/claude-opus-5-5` at `max` effort. Change the `model:` and `effort:` lines above to override, or run `sh scripts/agent-install.sh --tool claude-code --agent ui-engineer --model <id> --effort <level>`.

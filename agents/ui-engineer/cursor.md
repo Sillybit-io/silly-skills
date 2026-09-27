@@ -1,5 +1,5 @@
 ---
-name: ui-engineering
+name: ui-engineer
 description: Builds or changes UI code by following the ui-engineering skill.
 model: claude-opus-5-5[effort=max]
 readonly: false
@@ -13,4 +13,4 @@ Run the skill's Workflow from step 1 against the change you were given. If a bro
 
 Reply with only the change report the skill's Output format names. Never restate the touched files' full contents.
 
-To change the model, edit the `model:` line; the `[effort=...]` suffix carries the reasoning effort. Or re-run the installer: `sh scripts/agent-install.sh --tool cursor --agent ui-engineering --model <id> --effort <level>`.
+To change the model, edit the `model:` line; the `[effort=...]` suffix carries the reasoning effort. Or re-run the installer: `sh scripts/agent-install.sh --tool cursor --agent ui-engineer --model <id> --effort <level>`.

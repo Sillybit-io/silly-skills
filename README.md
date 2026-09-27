@@ -3,9 +3,9 @@
 [![CI](https://github.com/Sillybit-io/silly-skills/actions/workflows/ci.yml/badge.svg)](https://github.com/Sillybit-io/silly-skills/actions/workflows/ci.yml)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/Sillybit-io/silly-skills/badge)](https://scorecard.dev/viewer/?uri=github.com/Sillybit-io/silly-skills)
 ![License: CC BY-ND 4.0](https://img.shields.io/badge/license-CC%20BY--ND%204.0-lightgrey)
-![Skills: 13](https://img.shields.io/badge/skills-13-blue)
+![Skills: 14](https://img.shields.io/badge/skills-14-blue)
 
-AI skills for work quality, review, speed, and standardization. Each skill is a `SKILL.md` file that runs unchanged in Claude Code, Cursor, and OpenCode, and a skill that recommends a model also ships a ready-to-copy agent wrapper for each of the three tools: it reviews a diff like a senior developer, writes the review-guidance half of a pull request, triages the comments that come back, audits how a project uses AI, keeps documentation honest, sweeps a branch for secrets before you publish it, codifies the conventions a repository actually follows, turns a vague ticket into a decision-complete brief, writes an implementation plan and reviews it for blockers, builds UI code design-system first, and writes a new document or decision record a named reader can act on — the same way every time, for everyone on the team.
+AI skills for work quality, review, speed, and standardization. Each skill is a `SKILL.md` file that runs unchanged in Claude Code, Cursor, and OpenCode, and a skill that recommends a model has a persona under `agents/` for each of the three tools: it reviews a diff like a senior developer, writes the review-guidance half of a pull request, triages the comments that come back, audits how a project uses AI, keeps documentation honest, sweeps a branch for secrets before you publish it, codifies the conventions a repository actually follows, turns a vague ticket into a decision-complete brief, writes an implementation plan and reviews it for blockers, builds UI code design-system first, and writes a new document or decision record a named reader can act on — the same way every time, for everyone on the team.
 
 ## License
 
@@ -15,7 +15,7 @@ Free to use, including commercially, with attribution. Source-available under CC
 
 Skills are installed with the [`skills`](https://www.npmjs.com/package/skills) CLI. No clone, no build step.
 
-Install everything — all thirteen skills:
+Install everything — all fourteen skills:
 
 ```bash
 npx skills add Sillybit-io/silly-skills --all
@@ -71,34 +71,32 @@ npx skills remove ai-review
 | workflow | [conventions-codifier](skills/workflow/conventions-codifier/SKILL.md) | Writes down the conventions a repository actually follows into a generated block in AGENTS.md or CONVENTIONS.md, with at least two file-and-line citations behind every rule. |
 | workflow | [issue-refiner](skills/workflow/issue-refiner/SKILL.md) | Turns a vague ticket into a decision-complete brief — problem, outcome, acceptance criteria, risks, open questions — and writes it back to Linear, Jira, GitHub, or GitLab. |
 | workflow | [secret-and-privacy-sweep](skills/workflow/secret-and-privacy-sweep/SKILL.md) | Judges whether a diff or working tree is too sensitive to publish across six categories, masking every value it reports and ending with a single verdict line. |
+| workflow | [create-agent](skills/workflow/create-agent/SKILL.md) | Writes a persona folder under `agents/` for one existing skill, with a Claude Code file, an OpenCode file, and a Cursor file that load that skill. |
 | workflow | [skill-writer](skills/workflow/skill-writer/SKILL.md) | Authors and reviews SKILL.md files for this repository: the frontmatter contract, the mandatory section order, the tone rules, a 700-character description budget, version bumps, and the attribution footer. |
 
 ## Running a skill on its suggested model
 
 Some skills carry a model hint in their frontmatter: `metadata.suggested-model` (a `provider/model` id) and `metadata.suggested-effort` (`low`, `medium`, `high`, `xhigh`, or `max`). The hint is advisory — `SKILL.md` never pins a model, so every skill still runs on whatever model your tool is using. For a one-off, just switch the model in your tool before invoking the skill.
 
-To pin the suggested model, each of those skills ships three ready-to-copy agent definitions under `agents/`, and the repository ships one installer that copies the right one and rewrites its model line:
+To pin the suggested model, the repository ships a persona folder under `agents/` for each of those skills. The folder name is the role (`plan-reviewer` loads `plan-review`). One installer copies the file for your tool and rewrites its model line. No clone is required:
 
 ```bash
-sh scripts/agent-install.sh --tool opencode --agent plan-review --global
-sh scripts/agent-install.sh --tool claude-code --all
-sh scripts/agent-install.sh --tool cursor --agent ui-engineering --model claude-opus-5-5 --effort xhigh
+curl -fsSL https://raw.githubusercontent.com/Sillybit-io/silly-skills/main/scripts/agent-install.sh | sh -s -- --tool opencode --agent plan-reviewer
+curl -fsSL https://raw.githubusercontent.com/Sillybit-io/silly-skills/main/scripts/agent-install.sh | sh -s -- --tool opencode --all
+sh scripts/agent-install.sh --tool cursor --agent ui-engineer --model claude-opus-5-5 --effort xhigh
 ```
 
-After `npx skills add` without a clone of this repository, download the installer once:
+`--agent` is the persona, or several separated by commas. `--all` installs every persona in `agents/`. From a clone it reads the local folders. From the curl command it lists that folder on GitHub and downloads each file. `--source` takes a full GitHub URL when the files are not on `main`.
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/Sillybit-io/silly-skills/main/scripts/agent-install.sh -o agent-install.sh
-sh agent-install.sh --tool opencode --agent plan-review --global
-```
+An agent file is markdown. The YAML header is configuration. The body is the system prompt, and it loads the skill instead of copying it. OpenCode reads `.opencode/agents/<persona>.md` (or `~/.config/opencode/agents/` with `--global`); `mode: primary` is a session you switch to with Tab, and `mode: subagent` is an `@mention`. Claude Code reads `.claude/agents/<persona>.md` and Cursor reads `.cursor/agents/<persona>.md`. Those two tools only have subagents, so the file returns its result to the parent. Cursor cannot list tools; `readonly: false` is the write switch.
 
-Run `sh scripts/agent-install.sh --help` for every flag, including `--dest` for a custom directory and `--force` to overwrite. Re-run with `--force` after `npx skills update` refreshes a skill, since the installer never touches an agent file it already wrote.
+Run `sh scripts/agent-install.sh --help` for every flag, including `--dest` for a custom directory and `--force` to overwrite. Re-run with `--force` after a persona changes, since the installer never touches an agent file it already wrote.
 
-| Tool | Wrapper installs to | Invoke it |
+| Tool | Persona installs to | Invoke it |
 | --- | --- | --- |
-| Claude Code | `.claude/agents/<skill>.md` (or `~/.claude/agents/` with `--global`) | the subagent name, e.g. `plan-review` |
-| OpenCode | `.opencode/agents/<skill>.md` (or `~/.config/opencode/agents/`) | `@<skill>`, e.g. `@plan-review` |
-| Cursor | `.cursor/agents/<skill>.md` (or `~/.cursor/agents/`) | the subagent name, e.g. `plan-review` |
+| Claude Code | `.claude/agents/<persona>.md` (or `~/.claude/agents/` with `--global`) | the subagent name, e.g. `plan-reviewer` |
+| OpenCode | `.opencode/agents/<persona>.md` (or `~/.config/opencode/agents/`) | Tab for `plan-writer` and `plan-reviewer`; `@tech-writer` and `@ui-engineer` |
+| Cursor | `.cursor/agents/<persona>.md` (or `~/.cursor/agents/`) | the subagent name, e.g. `plan-reviewer` |
 
 Claude Code runs Claude models only, so a wrapper for a skill that suggests a non-Anthropic model pins the nearest Claude tier and says so in its own text.
 
@@ -127,7 +125,7 @@ Claude Code runs Claude models only, so a wrapper for a skill that suggests a no
 
 `plan-writer` sharpens a vague idea with up to three questions when it needs to, explores the codebase, researches the feature on the public web, and then asks product questions before technical questions. When an answer changes the feature, it researches that point once more. It writes a plan to `docs/plans/` — with a branch name that follows the repository's own observed convention, a design diagram when the request is a flow, and a final verification wave of at least four gates — moving it through `draft` (while an owner question is open), `planned` (the full task breakdown), and `reviewed` (once `plan-review` approves it). After a plan is written, run `plan-review` — ideally on a different model family than the one that wrote the plan — for the cheapest independent second opinion available. It checks the research, the question order, the diagram, and the final wave along with the rest, and reports at most three blockers. On a rejection, `plan-review` can fix the listed blockers and re-review on its own, looping up to five rounds before it stops and asks whether to continue.
 
-Both skills compose with a tool's own read-only planning mode instead of needing it turned off: the exploration and the questions run the same way inside Claude Code's Plan Mode or Cursor's Plan mode, and the plan file's write waits for that mode's own approval step, same as any other edit would. Neither skill's agent wrapper sets a plan-only permission mode of its own, since that would deny the write with no way to approve past it.
+Both skills compose with a tool's own read-only planning mode instead of needing it turned off: the exploration and the questions run the same way inside Claude Code's Plan Mode or Cursor's Plan mode, and the plan file's write waits for that mode's own approval step, same as any other edit would. Neither skill's persona sets a plan-only permission mode of its own, since that would deny the write with no way to approve past it.
 
 ## Versioning
 

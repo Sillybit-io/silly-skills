@@ -62,13 +62,16 @@
  *                       `metadata.suggested-effort` is present but is not one of
  *                       low | medium | high | xhigh | max, or is present without
  *                       `metadata.suggested-model`. One code covers both keys.
- *   AGENT_WRAPPERS      A skill that declares `metadata.suggested-model`, or that
- *                       has an agents/ directory, is missing one of the three
- *                       wrapper files agents/claude-code.md, agents/opencode.md,
- *                       agents/cursor.md, or a wrapper is blank, has malformed
- *                       frontmatter, lacks `description` or `model`, or (for
- *                       claude-code.md and cursor.md) has a `name` that is not
- *                       the skill name.
+ *   AGENT_WRAPPERS      A skill that declares `metadata.suggested-model` is not
+ *                       named by exactly one agents/<persona>/skill sidecar, a
+ *                       persona folder is missing one of claude-code.md,
+ *                       opencode.md, or cursor.md, a wrapper is blank or has
+ *                       malformed frontmatter, claude-code.md / cursor.md
+ *                       `name` is not the persona folder name, or a skill that
+ *                       pins a model has a persona file with no `model` line.
+ *                       A persona for a skill with no hint may omit `model`.
+ *                       A leftover skills/<category>/<skill>/agents/ directory
+ *                       fails too.
  *
  * ── Warning codes ────────────────────────────────────────────────────────────
  *   BADGE_COUNT         Skipped because the repository has 0 skills or has no
@@ -284,11 +287,19 @@ function readTextFile(abs: string): string | null {
 
 /* ── frontmatter ───────────────────────────────────────────────────────────── */
 
+export type PermissionRule = {
+  action: string;
+  resource: string;
+  effect: string;
+  line: number;
+};
+
 type Frontmatter = {
   ok: boolean;
   top: Record<string, string>;
   nested: Record<string, Record<string, string>>;
   lineOf: Record<string, number>;
+  permissions: PermissionRule[];
   problems: { line: number; message: string }[];
 };
 
@@ -303,20 +314,32 @@ function unquote(value: string): string {
   return value;
 }
 
+const PERMISSION_EFFECTS = ["allow", "ask", "deny"] as const;
+
 /**
  * Parses the fixed frontmatter shape used by this repository: `---`, a block of
  * `key: value` pairs plus one level of nested mapping (`metadata:` with indented
  * sub-keys), then a closing `---`.
+ *
+ * Agent files pass `{ permissionList: true }` so an OpenCode `permissions` list
+ * is stored as an array. SKILL.md parsing leaves the flag off, and a YAML list
+ * there is still an error. The nested map cannot hold that list: every rule
+ * repeats `action`, `resource`, and `effect`.
  */
-export function parseFrontmatter(lines: string[]): Frontmatter {
+export function parseFrontmatter(
+  lines: string[],
+  options?: { permissionList?: boolean },
+): Frontmatter {
   const top: Record<string, string> = {};
   const nested: Record<string, Record<string, string>> = {};
   const lineOf: Record<string, number> = {};
+  const permissions: PermissionRule[] = [];
   const problems: { line: number; message: string }[] = [];
+  const allowPermissionList = options?.permissionList === true;
 
   if (lines.length === 0 || lines[0].trimEnd() !== "---") {
     problems.push({ line: 1, message: "file must start with '---' on line 1" });
-    return { ok: false, top, nested, lineOf, problems };
+    return { ok: false, top, nested, lineOf, permissions, problems };
   }
 
   let end = -1;
@@ -331,16 +354,84 @@ export function parseFrontmatter(lines: string[]): Frontmatter {
       line: Math.max(lines.length, 1),
       message: "frontmatter has no closing '---'",
     });
-    return { ok: false, top, nested, lineOf, problems };
+    return { ok: false, top, nested, lineOf, permissions, problems };
   }
 
   let currentMap: string | null = null;
+  let inPermissionList = false;
+  let currentRule: PermissionRule | null = null;
+
+  const finishRule = (): void => {
+    if (currentRule === null) return;
+    const rule = currentRule;
+    currentRule = null;
+    if (rule.action === "" || rule.resource === "" || rule.effect === "") {
+      problems.push({
+        line: rule.line,
+        message: "permissions rule needs action, resource, and effect",
+      });
+      return;
+    }
+    if (!(PERMISSION_EFFECTS as readonly string[]).includes(rule.effect)) {
+      problems.push({
+        line: rule.line,
+        message: `permissions effect '${rule.effect}' must be one of ${PERMISSION_EFFECTS.join(" | ")}`,
+      });
+      return;
+    }
+    if (!/^[a-z][a-z0-9_-]*$/.test(rule.action)) {
+      problems.push({
+        line: rule.line,
+        message: `permissions action '${rule.action}' must be a lowercase word`,
+      });
+      return;
+    }
+    permissions.push(rule);
+  };
+
+  const setRuleField = (rule: PermissionRule, key: string, value: string, line: number): void => {
+    if (key !== "action" && key !== "resource" && key !== "effect") {
+      problems.push({ line, message: `permissions rule has unknown field '${key}'` });
+      return;
+    }
+    if (rule[key] !== "") {
+      problems.push({ line, message: `permissions rule repeats '${key}'` });
+      return;
+    }
+    rule[key] = unquote(value);
+  };
+
   for (let i = 1; i < end; i++) {
     const raw = lines[i];
     const trimmed = raw.trim();
     if (trimmed === "" || trimmed.startsWith("#")) continue;
 
     const indent = raw.length - raw.trimStart().length;
+    const listItem = /^-\s+([A-Za-z0-9_-]+):[ \t]*(.*)$/.exec(trimmed);
+
+    if (inPermissionList && listItem) {
+      finishRule();
+      currentRule = { action: "", resource: "", effect: "", line: i + 1 };
+      setRuleField(currentRule, listItem[1], listItem[2].trim(), i + 1);
+      continue;
+    }
+
+    if (inPermissionList && indent > 0) {
+      const field = /^([A-Za-z0-9_-]+):[ \t]*(.*)$/.exec(trimmed);
+      if (!field || currentRule === null) {
+        problems.push({ line: i + 1, message: `cannot parse frontmatter line: ${trimmed}` });
+        continue;
+      }
+      setRuleField(currentRule, field[1], field[2].trim(), i + 1);
+      continue;
+    }
+
+    if (inPermissionList && indent === 0) {
+      finishRule();
+      inPermissionList = false;
+      currentMap = null;
+    }
+
     const match = /^([A-Za-z0-9_-]+):[ \t]*(.*)$/.exec(trimmed);
     if (!match) {
       problems.push({ line: i + 1, message: `cannot parse frontmatter line: ${trimmed}` });
@@ -352,8 +443,13 @@ export function parseFrontmatter(lines: string[]): Frontmatter {
 
     if (indent === 0) {
       currentMap = null;
-      if (key in top || key in nested) {
+      if (key in top || key in nested || (key === "permissions" && permissions.length > 0)) {
         problems.push({ line: i + 1, message: `duplicate frontmatter key '${key}'` });
+        continue;
+      }
+      if (key === "permissions" && value === "" && allowPermissionList) {
+        lineOf[key] = i + 1;
+        inPermissionList = true;
         continue;
       }
       if (value === "") {
@@ -384,7 +480,9 @@ export function parseFrontmatter(lines: string[]): Frontmatter {
     }
   }
 
-  return { ok: problems.length === 0, top, nested, lineOf, problems };
+  finishRule();
+
+  return { ok: problems.length === 0, top, nested, lineOf, permissions, problems };
 }
 
 /* ── content scanning ──────────────────────────────────────────────────────── */
@@ -610,86 +708,209 @@ function checkModelHint(
   }
 }
 
+const AGENT_MODES = ["primary", "subagent", "all"] as const;
+
+/** True when `token` appears as its own word. `plan-reviewer` does not count as `plan-review`. */
+function containsToken(text: string, token: string): boolean {
+  const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(^|[^A-Za-z0-9-])${escaped}([^A-Za-z0-9-]|$)`).test(text);
+}
+
+function frontmatterBody(text: string): string {
+  const lines = text.split(/\r?\n/);
+  if (lines[0]?.trimEnd() !== "---") return text;
+  for (let i = 1; i < lines.length; i++) {
+    if (lines[i].trimEnd() === "---") return lines.slice(i + 1).join("\n");
+  }
+  return text;
+}
+
 /**
- * Checks the optional agents/ wrapper set. A skill ships all three wrappers or
- * none. The check activates when the skill either declares
- * `metadata.suggested-model` or already has an agents/ directory, so a plain
- * skill with neither is left untouched.
+ * Persona folders live at agents/<persona>/, not inside a skill. A skill that
+ * declares metadata.suggested-model is named by exactly one sidecar. A leftover
+ * skills/<category>/<skill>/agents/ directory is an error.
  */
-function validateAgentWrappers(
+function validatePersonas(
   root: string,
-  category: string,
-  dirName: string,
-  fm: Frontmatter,
+  skillDirs: Set<string>,
+  modelSkills: { name: string; file: string }[],
   errors: Finding[],
 ): void {
-  const declaresModel =
-    "metadata" in fm.nested && "suggested-model" in fm.nested.metadata;
-
-  const agentsDir = join(root, "skills", category, dirName, "agents");
-  let agentsDirExists = false;
-  try {
-    agentsDirExists = statSync(agentsDir).isDirectory();
-  } catch {
-    agentsDirExists = false;
-  }
-
-  if (!declaresModel && !agentsDirExists) return;
-
-  for (const wrapper of AGENT_WRAPPERS) {
-    const rel = `skills/${category}/${dirName}/agents/${wrapper}`;
-    const text = readTextFile(join(root, rel));
-
-    if (text === null || text.trim() === "") {
+  for (const rel of listFiles(root)) {
+    const parts = rel.split("/");
+    if (parts.length === 5 && parts[0] === "skills" && parts[3] === "agents") {
       errors.push({
         code: "AGENT_WRAPPERS",
         file: rel,
         line: 1,
         message:
-          "agents/" +
-          wrapper +
-          " is missing or blank; a skill that declares metadata.suggested-model or has an agents/ directory ships all three wrapper files (claude-code.md, opencode.md, cursor.md)",
+          "agent wrappers live in agents/<persona>/ at the repository root, not under the skill directory",
       });
-      continue;
+    }
+  }
+
+  const agentsRoot = join(root, "agents");
+  let personas: string[] = [];
+  try {
+    personas = readdirSync(agentsRoot)
+      .filter((name) => {
+        try {
+          return statSync(join(agentsRoot, name)).isDirectory();
+        } catch {
+          return false;
+        }
+      })
+      .sort();
+  } catch {
+    personas = [];
+  }
+
+  const skillToPersonas = new Map<string, string[]>();
+
+  for (const persona of personas) {
+    if (!NAME_RE.test(persona) || persona.length > 64) {
+      errors.push({
+        code: "AGENT_WRAPPERS",
+        file: `agents/${persona}`,
+        line: 1,
+        message: `persona folder '${persona}' must be lowercase words separated by hyphens, 1-64 characters`,
+      });
     }
 
-    const wrapperFm = parseFrontmatter(text.split(/\r?\n/));
-    if (wrapperFm.problems.length > 0) {
-      for (const problem of wrapperFm.problems) {
+    const skillRel = `agents/${persona}/skill`;
+    const skillText = readTextFile(join(root, skillRel));
+    const skillName = skillText?.trim() ?? "";
+    if (skillText === null || skillName === "" || skillName.split(/\r?\n/).length !== 1) {
+      errors.push({
+        code: "AGENT_WRAPPERS",
+        file: skillRel,
+        line: 1,
+        message: "skill sidecar must be one line naming an existing skill directory",
+      });
+    } else if (!skillDirs.has(skillName)) {
+      errors.push({
+        code: "AGENT_WRAPPERS",
+        file: skillRel,
+        line: 1,
+        message: `skill sidecar names '${skillName}', which is not a skill directory`,
+      });
+    } else {
+      const list = skillToPersonas.get(skillName) ?? [];
+      list.push(persona);
+      skillToPersonas.set(skillName, list);
+    }
+
+    for (const wrapper of AGENT_WRAPPERS) {
+      const rel = `agents/${persona}/${wrapper}`;
+      const text = readTextFile(join(root, rel));
+      if (text === null || text.trim() === "") {
         errors.push({
           code: "AGENT_WRAPPERS",
           file: rel,
-          line: problem.line,
-          message: `agents/${wrapper}: ${problem.message}`,
+          line: 1,
+          message: `${wrapper} is missing or blank; a persona ships claude-code.md, opencode.md, and cursor.md`,
+        });
+        continue;
+      }
+
+      const wrapperFm = parseFrontmatter(text.split(/\r?\n/), {
+        permissionList: wrapper === "opencode.md",
+      });
+      if (wrapperFm.problems.length > 0) {
+        for (const problem of wrapperFm.problems) {
+          errors.push({
+            code: "AGENT_WRAPPERS",
+            file: rel,
+            line: problem.line,
+            message: `${wrapper}: ${problem.message}`,
+          });
+        }
+        continue;
+      }
+
+      if (!("description" in wrapperFm.top)) {
+        errors.push({
+          code: "AGENT_WRAPPERS",
+          file: rel,
+          line: 1,
+          message: `${wrapper} is missing required frontmatter key 'description'`,
         });
       }
-      continue;
+      const skillPinsModel = modelSkills.some((skill) => skill.name === skillName);
+      if (skillPinsModel && !("model" in wrapperFm.top)) {
+        errors.push({
+          code: "AGENT_WRAPPERS",
+          file: rel,
+          line: 1,
+          message: `${wrapper} must set 'model' because '${skillName}' sets metadata.suggested-model`,
+        });
+      }
+      if (wrapper !== "opencode.md" && wrapperFm.top.name !== persona) {
+        errors.push({
+          code: "AGENT_WRAPPERS",
+          file: rel,
+          line: wrapperFm.lineOf.name ?? 1,
+          message: `${wrapper} 'name' must equal the persona folder '${persona}', got '${wrapperFm.top.name ?? "(missing)"}'`,
+        });
+      }
+      if (wrapper === "opencode.md") {
+        const mode = wrapperFm.top.mode;
+        if (!(AGENT_MODES as readonly string[]).includes(mode ?? "")) {
+          errors.push({
+            code: "AGENT_WRAPPERS",
+            file: rel,
+            line: wrapperFm.lineOf.mode ?? 1,
+            message: `opencode.md 'mode' must be one of ${AGENT_MODES.join(" | ")}`,
+          });
+        }
+        if (wrapperFm.permissions.length === 0) {
+          errors.push({
+            code: "AGENT_WRAPPERS",
+            file: rel,
+            line: wrapperFm.lineOf.permissions ?? 1,
+            message: "opencode.md must set a permissions list",
+          });
+        }
+      }
+      if (wrapper === "claude-code.md" && !wrapperFm.top.tools?.trim()) {
+        errors.push({
+          code: "AGENT_WRAPPERS",
+          file: rel,
+          line: 1,
+          message: "claude-code.md must set a tools allowlist",
+        });
+      }
+      if (wrapper === "cursor.md" && wrapperFm.top.readonly !== "true" && wrapperFm.top.readonly !== "false") {
+        errors.push({
+          code: "AGENT_WRAPPERS",
+          file: rel,
+          line: wrapperFm.lineOf.readonly ?? 1,
+          message: "cursor.md 'readonly' must be true or false",
+        });
+      }
+      if (skillName !== "" && skillDirs.has(skillName) && !containsToken(frontmatterBody(text), skillName)) {
+        errors.push({
+          code: "AGENT_WRAPPERS",
+          file: rel,
+          line: 1,
+          message: `${wrapper} body must name the skill '${skillName}' as its own word`,
+        });
+      }
     }
+  }
 
-    if (!("description" in wrapperFm.top)) {
-      errors.push({
-        code: "AGENT_WRAPPERS",
-        file: rel,
-        line: 1,
-        message: `agents/${wrapper} is missing required frontmatter key 'description'`,
-      });
-    }
-    if (!("model" in wrapperFm.top)) {
-      errors.push({
-        code: "AGENT_WRAPPERS",
-        file: rel,
-        line: 1,
-        message: `agents/${wrapper} is missing required frontmatter key 'model'`,
-      });
-    }
-    if (wrapper !== "opencode.md" && wrapperFm.top.name !== dirName) {
-      errors.push({
-        code: "AGENT_WRAPPERS",
-        file: rel,
-        line: wrapperFm.lineOf.name ?? 1,
-        message: `agents/${wrapper} 'name' must equal the skill name '${dirName}', got '${wrapperFm.top.name ?? "(missing)"}'`,
-      });
-    }
+  for (const skill of modelSkills) {
+    const owners = skillToPersonas.get(skill.name) ?? [];
+    if (owners.length === 1) continue;
+    errors.push({
+      code: "AGENT_WRAPPERS",
+      file: skill.file,
+      line: 1,
+      message:
+        owners.length === 0
+          ? `metadata.suggested-model requires exactly one agents/<persona>/skill sidecar naming '${skill.name}'`
+          : `metadata.suggested-model on '${skill.name}' is named by ${owners.length} personas (${owners.join(", ")}); exactly one is required`,
+    });
   }
 }
 
@@ -699,6 +920,7 @@ function validateSkill(
   category: string,
   dirName: string,
   errors: Finding[],
+  modelSkills: { name: string; file: string }[],
 ): string | null {
   // examples.md: checked before the SKILL.md body so that a skill whose
   // SKILL.md is unreadable still reports its missing companion file.
@@ -912,7 +1134,9 @@ function validateSkill(
     });
   }
 
-  validateAgentWrappers(root, category, dirName, fm, errors);
+  if ("metadata" in fm.nested && "suggested-model" in fm.nested.metadata) {
+    modelSkills.push({ name: dirName, file: rel });
+  }
 
   return name;
 }
@@ -930,6 +1154,8 @@ export function validate(root: string): Result {
 
   const byName = new Map<string, { file: string; line: number }[]>();
   const skillNames: string[] = [];
+  const skillDirs = new Set<string>();
+  const modelSkills: { name: string; file: string }[] = [];
   let skillCount = 0;
 
   for (const rel of skillFiles) {
@@ -945,8 +1171,9 @@ export function validate(root: string): Result {
     }
 
     skillCount++;
+    skillDirs.add(parts[2]);
     const before = errors.length;
-    const name = validateSkill(root, rel, parts[1], parts[2], errors);
+    const name = validateSkill(root, rel, parts[1], parts[2], errors, modelSkills);
     if (name !== null) {
       skillNames.push(name);
       const nameLine =
@@ -971,6 +1198,7 @@ export function validate(root: string): Result {
     }
   }
 
+  validatePersonas(root, skillDirs, modelSkills, errors);
   scanForbiddenContent(root, files, errors, warnings);
   checkBadgeCount(root, skillCount, errors, warnings);
 

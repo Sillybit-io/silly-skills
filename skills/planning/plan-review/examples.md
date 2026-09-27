@@ -60,14 +60,16 @@ An agent with no plan-review reads the plan and returns a general critique inste
 #### Checked
 
 - References opened: 9 of 9; 1 broken.
-- Todos startable: 7 of 8 (T2 blocked).
+- Todos startable: 8 of 9 (T2 blocked).
 - Contradictions: none.
-- QA scenarios executable: 7 of 8.
+- QA scenarios executable: 8 of 9.
 - UI claim: `ui: no` verified — no web framework, `index.html`, templates directory, or mobile target found, and the plan adds none. Automated UI QA todo last: not applicable.
 - Research: present — sources opened 2 of 2; 0 broken. Opened `https://keepachangelog.com/en/1.1.0/` and `https://semver.org/`.
 - Questions: Product before Technical — open items with neither answer nor default: 0.
 - Diagram: omitted — the request is a list of files to add, not a process, a user journey, or a system interaction.
 - Final wave: F1–F4 present — UI QA last: not applicable.
+- Todo boxes: every todo starts `- [ ] Open`, and the plan says to mark `- [x] Done` in the project copy when that todo is finished.
+- T0: first todo, copies the plan into `docs/plans/` only when it is not already there, and the build continues there.
 - Previous blockers fixed: first round.
 ```
 
@@ -86,7 +88,7 @@ Fix these blockers and re-review until approved? (yes / I will fix them myself)
 
 **Round 2.** plan-review re-reads the plan from disk.
 
-**Step 16.** Verifies both round-1 blockers are fixed: T3 now cites the correct line and it does support the claim; T2's acceptance criterion is now a runnable command. Re-runs checks A–I only on T2 and T3, the sections that changed; does not re-open T1, T4, or F1–F4, which already passed. No regression found. No new execution-stopping item found.
+**Step 16.** Verifies both round-1 blockers are fixed: T3 now cites the correct line and it does support the claim; T2's acceptance criterion is now a runnable command. Re-runs checks A–J only on T2 and T3, the sections that changed; does not re-open T1, T4, or F1–F4, which already passed. No regression found. No new execution-stopping item found.
 
 **Step 11 (round 2).** Zero blockers.
 
@@ -115,14 +117,16 @@ Fix these blockers and re-review until approved? (yes / I will fix them myself)
 #### Checked
 
 - References opened: 9 of 9; 1 broken.
-- Todos startable: 7 of 8 (T2 blocked).
+- Todos startable: 8 of 9 (T2 blocked).
 - Contradictions: none.
-- QA scenarios executable: 7 of 8.
+- QA scenarios executable: 8 of 9.
 - UI claim: `ui: no` verified. Automated UI QA todo last: not applicable.
 - Research: present — sources opened 2 of 2; 0 broken. Opened `https://keepachangelog.com/en/1.1.0/` and `https://semver.org/`.
 - Questions: Product before Technical — open items with neither answer nor default: 0.
 - Diagram: omitted — the request is a list of files to add, not a process, a user journey, or a system interaction.
 - Final wave: F1–F4 present — UI QA last: not applicable.
+- Todo boxes: every todo starts `- [ ] Open`, and the plan says to mark `- [x] Done` in the project copy when that todo is finished.
+- T0: first todo, copies the plan into `docs/plans/` only when it is not already there, and the build continues there.
 - Previous blockers fixed: first round.
 
 ### Round 2
@@ -145,14 +149,16 @@ None.
 #### Checked
 
 - References opened: 2 of 2 (only the changed sections); 0 broken.
-- Todos startable: 8 of 8.
+- Todos startable: 9 of 9.
 - Contradictions: none.
-- QA scenarios executable: 8 of 8.
+- QA scenarios executable: 9 of 9.
 - UI claim: `ui: no`, unchanged, not re-verified this round.
 - Research: unchanged, not re-opened this round.
 - Questions: unchanged, not re-opened this round.
 - Diagram: omitted, unchanged, not re-opened this round.
 - Final wave: F1–F4 unchanged, not re-opened this round.
+- Todo boxes: unchanged, not re-opened this round.
+- T0: unchanged, not re-opened this round.
 - Previous blockers fixed: 2 of 2.
 ```
 

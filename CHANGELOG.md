@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- `agents/<persona>/` holds the Claude Code, OpenCode, and Cursor files for a skill. The folder name is the role: `plan-writer`, `plan-reviewer`, `tech-writer`, and `ui-engineer`. A one-line `skill` sidecar names the skill the prompt loads.
+- `create-agent` 0.1.0 writes that folder: description, mode (`agent`, `subagent`, or `all`), a system prompt that loads the skill, and the tool permissions each product can enforce.
+- `scripts/agent-install.sh` installs one persona or every directory in `agents/` from a GitHub URL, with no clone. `--all` lists the folder through the GitHub contents API.
+
+### Changed
+
+- `skill-writer` 0.4.0 points a suggested model at `create-agent` instead of telling authors to put wrapper files inside the skill directory.
+- Plan Writer and Plan Reviewer follow the skill's interactive branch. On OpenCode they are primary agents. Their edits are limited to `docs/plans/*`, because in OpenCode a `*` already matches `/` and a second asterisk would be a literal star.
+- `plan-writer` 0.2.1: an interactive session, including a persona told to ask and wait, stops at the draft-gate. It does not record a default and continue.
+- `plan-writer` 0.3.0: every todo starts as `- [ ] Open`, and the builder changes it to `- [x] Done` in the project copy when that todo is finished. T0 is first. It copies the plan into `docs/plans/` only when it is not already there, and the rest of the build continues in that copy.
+- `plan-review` 0.3.0: rejects a plan that is missing those checkboxes, the instruction to check them off while building, or T0.
+
 ## [0.5.0] - 2026-09-27
 
 - `plan-writer` 0.2.0: researches the feature on the public web, asks product questions before technical ones, adds a mermaid diagram when the request is a flow, and ends every plan with a final verification wave of at least four gates.

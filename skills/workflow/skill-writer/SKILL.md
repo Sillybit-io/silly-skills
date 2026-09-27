@@ -1,9 +1,9 @@
 ---
 name: skill-writer
-description: Authors and reviews SKILL.md files for the silly-skills repository. Defines the frontmatter contract, the six-section body order, the tone rules, the 700-character description budget, version-bump rules, the optional suggested-model hint, the agents/ wrapper convention, references/ for long detail, and the attribution footer. Use when you write a new skill, create SKILL.md, add a skill to skills/<category>/, bump a skill version, or review this skill for silly-skills standards.
+description: Authors and reviews SKILL.md files for the silly-skills repository. Defines the frontmatter contract, the six-section body order, the tone rules, the 700-character description budget, version-bump rules, the optional suggested-model hint, references/ for long detail, and the attribution footer. A suggested model becomes a persona through create-agent, under agents/. Use when writing a new skill, creating SKILL.md, adding a skill to skills/<category>/, bumping a skill version, or reviewing this skill for silly-skills standards.
 license: CC-BY-ND-4.0
 metadata:
-  version: "0.3.0"
+  version: "0.4.0"
   category: workflow
 ---
 
@@ -28,7 +28,7 @@ Do NOT use skill-writer when you:
 - Write repository documentation such as `README.md` or `CONTRIBUTING.md`.
 - Change the validator, the CI workflows, or the license files.
 - Write application code, tests, or scripts.
-- Edit any file that is not a `SKILL.md`, its `examples.md`, a file under its `references/`, or its `agents/` wrapper files.
+- Edit any file that is not a `SKILL.md`, its `examples.md`, or a file under its `references/`. A persona folder under `agents/` is `create-agent`.
 
 ## Workflow
 
@@ -37,7 +37,7 @@ Do NOT use skill-writer when you:
 3. Create the file at `skills/<category>/<skill-name>/SKILL.md`. The directory name must equal the frontmatter `name` exactly.
 4. Write the frontmatter shown in Output format. Set `metadata.category` to the parent category directory. Set `metadata.version` to `"0.1.0"` for a new skill.
 5. Write the `description` in third person, from its first word to its last. State what the skill does in the first sentence. Then list the trigger phrases a user would actually type. Keep it under 700 characters. When you edit an existing description, bring it under 700 on that edit. The description sits in the system prompt of every session whether or not the skill runs, so its cost is paid constantly, while the workflow belongs in the body and loads only when the skill is used. Do not pad it. Write `Processes Excel files and generates reports`. Never write `I can help you process Excel files`. Never write `You can use this to process Excel files`. Never open on a bare imperative such as `Process Excel files` while the rest of the sentence stays third person, because that mixes two voices inside one description.
-6. Optionally set `metadata.suggested-model` (a `provider/model` id, for example `anthropic/claude-fable-5-1`) and `metadata.suggested-effort` (`low`, `medium`, `high`, `xhigh`, or `max`) as an advisory hint for whoever configures the agent; no tool reads either key, and setting `suggested-effort` without `suggested-model` is an error. When you set the hint, create the three files `agents/claude-code.md`, `agents/opencode.md`, and `agents/cursor.md` from the templates in Output format. Never put a tool's `model:`, `effort:`, or `context:` key inside `SKILL.md` itself; that syntax is tool-exclusive and belongs only in the matching `agents/<tool>.md` wrapper.
+6. Optionally set `metadata.suggested-model` (a `provider/model` id, for example `anthropic/claude-fable-5-1`) and `metadata.suggested-effort` (`low`, `medium`, `high`, `xhigh`, or `max`) as an advisory hint for whoever configures the agent; no tool reads either key, and setting `suggested-effort` without `suggested-model` is an error. When you set the hint, run `create-agent` so the persona folder exists at `agents/<persona>/`. Never put a tool's `model:`, `effort:`, or `context:` key inside `SKILL.md` itself. Never put the persona files inside the skill directory.
 7. Write the six body sections in the fixed order. Never add a seventh top-level section, never drop one, never reorder them. Keep the `SKILL.md` body under 500 lines. When a step needs detail that other steps do not, put that detail in `references/<topic>.md` and point to it from the workflow step that reads it. Follow the references rules in Output format.
 8. Write in simple English. Use short sentences, active voice, and one instruction per sentence.
 9. State a numbered work budget for any step that reads, searches, or renders an open-ended number of things (files explored, references opened, screenshots taken, review rounds run), and say what the skill does when it hits the budget: write what it has, and list what it skipped. Never leave a step as an unbounded "explore until done" or "review until it passes" with no ceiling.
@@ -148,32 +148,11 @@ Every skill directory ships an `examples.md` beside its `SKILL.md`. The file hol
 - Show the artefact each branch produced, not a description of it. Put it in a fenced block so the reader sees its real shape.
 - A second scenario repeats the same three headings in the same order. Put `<!-- markdownlint-disable-next-line MD024 -->` on the line directly above each repeated heading. MD024 treats those repeats as duplicate siblings, and the headings themselves stay fixed.
 
-### agents/ wrappers
+### Personas
 
-A skill that sets `metadata.suggested-model` ships three sibling files, `agents/claude-code.md`, `agents/opencode.md`, and `agents/cursor.md`. Each is a ready-to-copy subagent definition for one tool, pinning the suggested model so a user can run the skill on it with one command instead of typing tool-specific frontmatter into a portable `SKILL.md`. A skill with no `suggested-model` ships none of the three; there is no partial set.
+A skill that sets `metadata.suggested-model` is named by exactly one `agents/<persona>/skill` sidecar. `create-agent` writes that folder. A skill with no suggested model ships no persona. `bun run validate` fails with `AGENT_WRAPPERS` when the sidecar is missing, when more than one persona names the skill, or when `skills/<category>/<skill>/agents/` still exists.
 
-Shape shared by all three:
-
-````markdown
----
-name: <skill-name>
-description: <what this wrapper does, one sentence, third person>
-model: <this tool's way of naming the suggested model>
-<any other frontmatter field this tool's subagent format defines, such as effort or mode>
----
-
-Load the `<skill-name>` skill and follow its Workflow from step 1. If the skill's text is not already in context, read `SKILL.md` from wherever this tool installed the skill.
-
-Reply with only the block the skill's Output format names as the reply; never restate the whole artefact.
-````
-
-Rules:
-
-- Ship all three or none. `bun run validate` fails with `AGENT_WRAPPERS` when only some exist, or when `metadata.suggested-model` is set and none exist.
-- `agents/claude-code.md` and `agents/cursor.md` set `name` to exactly the skill name; OpenCode's own agent format has no `name` field, so `agents/opencode.md` is exempt.
-- Every wrapper sets `description` and `model`.
-- Write any list-valued frontmatter field in flow style, `key: [item-one, item-two]`, never as a YAML block list (`- item`) — this repository's hand-rolled frontmatter parser only reads flow style.
-- The user overrides the model by editing the wrapper's `model:` line (and its effort field) after copying it into their tool's agent directory. `SKILL.md` itself never carries `model:`, `effort:`, or `context:` — those stay in the wrapper.
+List-valued frontmatter inside `SKILL.md` stays in flow style, `key: [item-one, item-two]`. A YAML block list (`- item`) is an error there. OpenCode's `permissions` list is the exception, and it belongs only in `agents/<persona>/opencode.md`.
 
 ### Handling feedback
 
@@ -199,7 +178,7 @@ MUST:
 - MUST build each `examples.md` scenario from the three H2 sections `Prompt`, `Without skill`, and `With skill`, in that order.
 - MUST give both branches of a scenario the identical input: the same prompt, the same diff, the same ticket text.
 - MUST stay tool-agnostic. The skill has to work in Claude Code, Cursor, and OpenCode.
-- MUST ship all three `agents/claude-code.md`, `agents/opencode.md`, and `agents/cursor.md` wrapper files whenever `metadata.suggested-model` is set; `bun run validate` fails with `AGENT_WRAPPERS` otherwise.
+- MUST point at `create-agent` whenever `metadata.suggested-model` is set, so exactly one `agents/<persona>/skill` sidecar names this skill.
 - MUST state a numbered work budget for any open-ended read, search, or render step, and name what happens at the ceiling.
 - MUST answer a hedged remark with an opinion and a yes/no question before changing an artefact, for any skill that produces one.
 - MUST verify every executable claim before you write it. A command, a CLI flag, or a URL goes in the file only after you ran it or opened it.
@@ -213,8 +192,9 @@ NEVER:
 - NEVER include an internal URL, an internal hostname, or a local development address.
 - NEVER include an absolute path from your own machine. Use repository-relative paths.
 - NEVER invent a command, a flag, a file path, or a URL. Delete what you cannot verify.
-- NEVER use tool-exclusive syntax or assume one agent's file layout, slash commands, or settings format in `SKILL.md` itself; tool-specific fields such as `model:`, `effort:`, or `context:` belong only in an `agents/<tool>.md` wrapper.
-- NEVER ship a partial `agents/` set. All three wrapper files or none.
+- NEVER use tool-exclusive syntax or assume one agent's file layout, slash commands, or settings format in `SKILL.md` itself; tool-specific fields such as `model:`, `effort:`, or `context:` belong only in `agents/<persona>/`.
+- NEVER put a YAML block list in `SKILL.md` frontmatter. Write list values in flow style.
+- NEVER create `skills/<category>/<skill>/agents/`. Personas live at `agents/<persona>/`.
 - NEVER add filler praise, marketing language, or emphasis words such as "powerful" or "seamless".
 - NEVER add, remove, or reorder the six top-level sections.
 - NEVER commit a skill without its `examples.md`. A missing or blank file fails `bun run validate` with `MISSING_EXAMPLES`.
@@ -239,7 +219,7 @@ Run this list before you commit a skill.
 - [ ] If set, `metadata.suggested-model` matches `provider/model` and `metadata.suggested-effort` is one of `low`, `medium`, `high`, `xhigh`, `max`; `suggested-effort` never appears without `suggested-model`.
 - [ ] No frontmatter key is declared twice.
 - [ ] The body has exactly six H2 sections, correctly worded and in the required order.
-- [ ] If `metadata.suggested-model` is set, `agents/claude-code.md`, `agents/opencode.md`, and `agents/cursor.md` all exist, each with `description` and `model` set, and `claude-code.md`/`cursor.md` have `name` equal to the skill name.
+- [ ] If `metadata.suggested-model` is set, exactly one `agents/<persona>/skill` sidecar names this skill, and `create-agent` wrote the three tool files.
 - [ ] Every step that reads, searches, or renders an open-ended number of things states a numbered budget and a named fallback.
 - [ ] Every skill that produces a user-facing artefact states the hedged-feedback rule in its Workflow.
 - [ ] Every command, flag, and URL in the file was verified by running or opening it.
