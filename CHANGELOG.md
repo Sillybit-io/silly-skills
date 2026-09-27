@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-09-27
+
 ### Added
 
 - `agents/<persona>/` holds the Claude Code, OpenCode, and Cursor files for a skill. The folder name is the role: `plan-writer`, `plan-reviewer`, `tech-writer`, and `ui-engineer`. A one-line `skill` sidecar names the skill the prompt loads.
