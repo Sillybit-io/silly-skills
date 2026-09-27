@@ -1,9 +1,9 @@
 ---
 name: plan-review
-description: Reviews an implementation plan and answers one question. Can a developer execute it without getting stuck? Checks that every cited path:line exists, each todo is startable, nothing contradicts, and QA scenarios name a tool and an expected result. Reports at most three blockers with fixes, writes the verdict into the plan, and can loop up to five rounds, fixing and re-reviewing, until approved. Use when you review this plan, check this plan before I execute it, or give me the plan-review verdict.
+description: Reviews an implementation plan and answers one question. Can a developer execute it without getting stuck? Checks cited paths, startability, contradictions, QA, recorded research, product-then-technical questions, a design diagram when the request needs one, and a final verification wave of at least four gates. Reports at most three blockers with fixes, writes the verdict into the plan, and can loop up to five rounds, fixing and re-reviewing, until approved. Use when you review this plan, check this plan before I execute it, or give me the plan-review verdict.
 license: CC-BY-ND-4.0
 metadata:
-  version: "0.1.0"
+  version: "0.2.0"
   category: planning
   suggested-model: openai/gpt-6-astra
   suggested-effort: max
@@ -13,7 +13,7 @@ metadata:
 
 ## Purpose
 
-plan-review is a blocker-finder, not a perfectionist. It exists to answer one question about a plan file written by `plan-writer`: can a capable developer execute it without getting stuck? It checks references, startability, contradictions, and QA executability, reports at most three blockers with a concrete fix for each, and approves when in doubt — a plan that is 80% clear is good enough. Running it on a model from a different family than the one that wrote the plan is the cheapest independent second opinion available: two models built differently tend to miss different things, where a same-family review tends to agree with itself. plan-review can also loop: on a rejection, it offers to fix the listed blockers and re-review, repeating without asking again until the plan is approved or a five-round cap is reached. Like `plan-writer`, it composes with your tool's own read-only planning mode rather than conflicting with it: its checks run the same way inside Claude Code's Plan Mode or Cursor's Plan mode, but writing `## Review` into the plan file waits for that mode's own approval step, the same as any other edit would. The `suggested-model` hint above is advisory; this skill runs on any model.
+plan-review is a blocker-finder, not a perfectionist. It exists to answer one question about a plan file written by `plan-writer`: can a capable developer execute it without getting stuck? It checks references, startability, contradictions, QA executability, recorded research, product-then-technical questions, a design diagram when the request needs one, and a final verification wave of at least four gates. It reports at most three blockers with a concrete fix for each, and approves when in doubt — a plan that is 80% clear is good enough. Running it on a model from a different family than the one that wrote the plan is the cheapest independent second opinion available: two models built differently tend to miss different things, where a same-family review tends to agree with itself. plan-review can also loop: on a rejection, it offers to fix the listed blockers and re-review, repeating without asking again until the plan is approved or a five-round cap is reached. Like `plan-writer`, it composes with your tool's own read-only planning mode rather than conflicting with it: its checks run the same way inside Claude Code's Plan Mode or Cursor's Plan mode, but writing `## Review` into the plan file waits for that mode's own approval step, the same as any other edit would. The `suggested-model` hint above is advisory; this skill runs on any model.
 
 ## When to use / when NOT to use
 
@@ -42,14 +42,15 @@ plan-review runs in one of two modes. **Review mode** (the default) does one rou
 5. Check B — startability. For each todo, ask: could a developer start this now with what the plan gives? Flag a missing input, an undefined term, a dependency on an "Owner decisions pending" item that was never answered, or a dependency on a todo that does not exist.
 6. Check C — contradictions. Flag two todos that disagree, a "Must have" a "Must NOT have" forbids, a dependency cycle, or a success criterion no todo produces.
 7. Check D — QA executability. Flag any acceptance criterion or QA scenario that names no tool or command, gives no concrete data, or reads like "test manually" or "verify it works". A prose deliverable with a grep-for-a-sentence acceptance criterion is also a flag here.
-8. Check E — UI QA. Verify the plan's `ui:` claim with the same signals plan-writer uses: a web framework in the manifest, an `index.html`, a templates or views directory, a mobile app target. When the project has a UI, the plan's last todo must be the automated UI QA task with a tool, a route, viewport widths, steps, and a screenshot path; its absence or vagueness is a flag.
-9. Challenge the plan's assumptions once: name the edge cases and failure modes it never mentions. Each becomes a blocker only if it would stop execution; otherwise it goes under "Notes (non-blocking)", capped at five.
-10. Decide the verdict. Keep at most three blockers — the three most likely to actually stop execution — each naming the todo or section, the gap, and a concrete fix. When more than three flags exist, report the top three and add one line: "and N more of the same kind." From round 2 onward the blocker set is frozen: a later round may only report an unfixed listed blocker, a regression the fixes introduced, or a genuinely new item that would stop execution — never a new item of the kind already checked and passed. Zero blockers means `PLAN-REVIEW: OKAY`.
-11. Write `## Review` in the plan file in the shape given in Output format: append this round to the history table, then write its `### Round n` body. Set `review_round` to this round's number. Set `status: reviewed` on `OKAY`; otherwise leave it `planned`.
-12. On `OKAY`, in either mode: reply with the verdict block and stop. This is the only way the run ends successfully.
-13. On `REJECT` in review mode: reply with the verdict block, ending it with "Fix these blockers and re-review until approved? (yes / I will fix them myself)". A yes switches to loop mode, adds a `consent` row to the round history, and continues to step 14.
-14. On `REJECT` in loop mode: check whether the `plan-writer` skill is available in this session. If it is, load it and run only its fix-only follow-up step — the last step in its Workflow, never its exploration steps — against this same plan file, then go to step 2 for the next round without asking again. If `plan-writer` is not available, say so plainly and stop at the verdict; loop mode cannot proceed without it.
-15. On a re-review round (round 2 or later), re-verify each previously listed blocker is actually fixed, then re-run checks A through E only on the sections that changed since the last round; never re-open a section that already passed. Then walk the QA checklist.
+8. Check E — UI QA. Verify the plan's `ui:` claim with the same signals plan-writer uses: a web framework in the manifest, an `index.html`, a templates or views directory, a mobile app target, or a plan that itself adds a web or mobile surface. When the project has a UI, or the plan adds one, the plan's last todo must be the automated UI QA task with a tool, a route, viewport widths, steps, and a screenshot path; its absence or vagueness is a flag.
+9. Checks F through I. Read [references/writer-contract.md](references/writer-contract.md) and run research, questions, diagram, and the final wave. Budget for research sources: 5 URLs opened. Past that, say so under "Checked" and do not open more.
+10. Challenge the plan's assumptions once: name the edge cases and failure modes it never mentions. Each becomes a blocker only if it would stop execution; otherwise it goes under "Notes (non-blocking)", capped at five.
+11. Decide the verdict. Keep at most three blockers — the three most likely to actually stop execution — each naming the todo or section, the gap, and a concrete fix. When more than three flags exist, report in the order in `references/writer-contract.md` and add one line: "and N more of the same kind." From round 2 onward the blocker set is frozen: a later round may only report an unfixed listed blocker, a regression the fixes introduced, or a genuinely new item that would stop execution — never a new item of the kind already checked and passed. Zero blockers means `PLAN-REVIEW: OKAY`.
+12. Write `## Review` in the plan file in the shape given in Output format: append this round to the history table, then write its `### Round n` body. Set `review_round` to this round's number. Set `status: reviewed` on `OKAY`; otherwise leave it `planned`.
+13. On `OKAY`, in either mode: reply with the verdict block and stop. This is the only way the run ends successfully.
+14. On `REJECT` in review mode: reply with the verdict block, ending it with "Fix these blockers and re-review until approved? (yes / I will fix them myself)". A yes switches to loop mode, adds a `consent` row to the round history, and continues to step 15.
+15. On `REJECT` in loop mode: check whether the `plan-writer` skill is available in this session. If it is, load it and run only its fix-only follow-up step — the last step in its Workflow, never its exploration steps — against this same plan file. That step may fill a missing `## Research`, `## Questions`, `## Design`, or final-wave todo when a blocker names it, including the research budgets that step allows. Then go to step 2 for the next round without asking again. If `plan-writer` is not available, say so plainly and stop at the verdict; loop mode cannot proceed without it.
+16. On a re-review round (round 2 or later), re-verify each previously listed blocker is actually fixed, then re-run checks A through I only on the sections that changed since the last round; never re-open a section that already passed. Then walk the QA checklist.
 
 ### Handling feedback
 
@@ -99,6 +100,10 @@ Written into the plan file, replacing the `## Review` section's history table an
 - Contradictions: none | <where>.
 - QA scenarios executable: <n> of <n>.
 - UI claim: `ui: yes | no` verified | contradicted — <evidence>. Automated UI QA todo last: yes | no | not applicable.
+- Research: present | missing — sources opened <n> of <n>; <k> broken.
+- Questions: Product before Technical | wrong order — open items with neither answer nor default: <n>.
+- Diagram: present | omitted — <reason> | required and missing.
+- Final wave: F1–F4 present | missing <which> — UI QA last: yes | no | not applicable.
 - Previous blockers fixed: <n> of <n> | first round.
 ````
 
@@ -128,7 +133,7 @@ MUST:
 
 - MUST read the plan from disk on every round; never review pasted text.
 - MUST open every cited `path:line` before judging it, within the stated budget.
-- MUST run all five checks (A through E) on every round.
+- MUST run all nine checks (A through I) on every round.
 - MUST put the exact verdict string on the first line of every reply.
 - MUST cap blockers at three per round, each naming a todo or section, a gap, and a fix.
 - MUST cap non-blocking notes at five.
@@ -153,7 +158,7 @@ NEVER:
 - [ ] The run's mode (review or loop) is recorded and followed correctly.
 - [ ] The round number is correct and no more than 5 since the last consent.
 - [ ] Every cited `path:line` was opened.
-- [ ] All five checks (A–E) each produced a line under "Checked".
+- [ ] All nine checks (A–I) each produced a line under "Checked".
 - [ ] Blockers are capped at three, each with a todo/section, a gap, and a fix.
 - [ ] Notes are capped at five.
 - [ ] The verdict string is exactly `PLAN-REVIEW: OKAY` or `PLAN-REVIEW: REJECT (<n> blockers)`, and is the reply's first line.

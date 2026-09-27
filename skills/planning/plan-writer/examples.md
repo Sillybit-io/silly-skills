@@ -36,7 +36,11 @@ This baseline never opens `skill-writer/SKILL.md` to check the six-section contr
 
 **Step 5 — explore.** Reads, in order: `README.md` (the roadmap line at `:83`, the Skills table, the badge line), `skills/workflow/skill-writer/SKILL.md` (the category list at `:35`, the six-section contract), `scripts/validate.ts` (`CATEGORIES` at `:83-89`, `checkBadgeCount` at `:463`), `CHANGELOG.md` (the `## [Unreleased]` heading at `:7`), and `skills/workflow/issue-refiner/SKILL.md` for the shape of a "preference order" table, since release-notes will need one for how it sources pull requests. 12 files read, under budget.
 
-**Step 6 — IS/GAP ledger.**
+**Step 6 — ticket vagueness.** Not applicable; this came as a direct request, not a tracked ticket.
+
+**Step 7 — research.** Queries come from the request: a human-focused changelog generated from merged pull requests, plus a SemVer recommendation. Two pages opened, under the budget of 5 searches and 5 pages. [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) groups entries as Added, Changed, and Fixed and tells the writer to record changes for people, not as a commit dump. [Semantic Versioning](https://semver.org/) maps a breaking change to major, a backward-compatible feature to minor, and a fix to patch. What this plan will follow: print a Keep a Changelog block and a SemVer recommendation, and do not invent a second grouping scheme. Queries not run: none.
+
+**Step 8 — IS/GAP ledger, risks, and the slop check.**
 
 | Gap | IS today (evidence) | GAP |
 | --- | --- | --- |
@@ -45,18 +49,18 @@ This baseline never opens `skill-writer/SKILL.md` to check the six-section contr
 | G3 | `scripts/validate.ts:463` (`checkBadgeCount`) fails the build unless the README badge equals the discovered skill count | Adding a skill without updating the badge and the Roadmap line breaks `bun run validate` |
 | G4 | `CHANGELOG.md:7` (`## [Unreleased]`) has no entry for this skill | A new skill needs a `### Added` line in the same change, per `CONTRIBUTING.md` |
 
-**Step 7 — vagueness test.** Not applicable; this came as a direct request, not a tracked ticket.
-
-**Step 8 — hidden requirements and risks.**
+Hidden requirements and risks, still in step 8:
 
 | Risk | What breaks | Mitigation | Carried by |
 | --- | --- | --- | --- |
-| Description over 500 characters | Costs tokens in every session's system prompt, against the house rule this repository now follows | Keep the description under 500 characters and verify with a length check | T1 |
+| Description over 700 characters | Costs tokens in every session's system prompt, against the house rule this repository now follows | Keep the description under 700 characters and verify with a length check | T1 |
 | Badge count drifts from the real skill count | `bun run validate` fails with `BADGE_COUNT` | Bump the badge in the same commit that adds the skill | T3 |
 
-**Step 9 — question vetting and slop check.** Filter 1 (evidence): none of the open questions are answered by the code. Filter 2 (default): the category defaults to `workflow` — it produces a repository artifact from git history the way `conventions-codifier` does, not a review of a diff the way the `review` skills do. One question survives both filters, because it is cross-cutting: **"Should release-notes write its entry directly into `CHANGELOG.md`, or only print it for the user to paste?"** Writing directly touches a file `scripts/prepare-release.ts` also parses, so a wrong default could corrupt a release. Default if unanswered: print only. Slop check cuts one item a first draft might add: a new `bun run release-notes` package script — the request never asked for a script, only a skill.
+The category defaults to `workflow` during the slop check — it produces a repository artifact from git history the way `conventions-codifier` does, not a review of a diff the way the `review` skills do. The slop check cuts one item a first draft might add: a new `bun run release-notes` package script — the request never asked for a script, only a skill.
 
-**Step 10 — draft file and gate.** Because one owner question is open, plan-writer writes the draft and stops.
+**Step 9 — product questions, then technical.** Product is already settled by the request: the person cutting the release, success is a changelog block plus a bump recommendation, and a package script is out of scope. One technical question is still open: **"Should release-notes write its entry directly into `CHANGELOG.md`, or only print it for the user to paste?"** Writing directly touches a file `scripts/prepare-release.ts` also parses, so a wrong default could corrupt a release. Default if unanswered: print only.
+
+**Step 10 — draft file and gate.** Because one technical question is open, plan-writer writes the draft — TL;DR, Scope, Research, and Questions — and stops.
 
 ```markdown
 Plan drafted: `docs/plans/2026-09-26-add-release-notes-skill.md` — tier standard.
@@ -70,7 +74,9 @@ Owner decisions needed before this plan can be filled in:
 1. Write into `CHANGELOG.md` directly, or print the entry only? — only the owner can accept the risk of an automated edit to a file the release tooling parses. Default if unanswered: print only.
 ```
 
-**After the answer ("print only, for now").** plan-writer resumes from step 10 and fills in the rest. `ui: no` — this is a Bun CLI repository with no web or mobile surface, so the final verification wave has no UI QA todo.
+The open question in the reply is the technical one. The product decisions are already settled, so the draft records them under `### Product` and the reply does not ask them again.
+
+**After the answer ("print only, for now").** plan-writer resumes at step 11. The answer confirms the recorded default and introduces no new technology or constraint, so the second research pass does not run. `ui: no` — this is a Bun CLI repository with no web or mobile surface, and this plan does not add one, so the final verification wave has no UI QA todo. The request is a list of files to add, not a process or a user journey, so `## Design` records the omission.
 
 ```markdown
 ---
@@ -121,7 +127,7 @@ Running the skill against a range of merged pull requests produces a ready-to-pa
 
 | Risk | What breaks | Mitigation | Carried by |
 | --- | --- | --- | --- |
-| Description over 500 characters | Costs tokens in every session's system prompt | Keep the description under 500 characters and check its length | T1 |
+| Description over 700 characters | Costs tokens in every session's system prompt | Keep the description under 700 characters and check its length | T1 |
 | Badge count drifts from the real skill count | `bun run validate` fails with `BADGE_COUNT` | Bump the badge in the same commit that adds the skill | T3 |
 
 ### Must have
@@ -134,6 +140,31 @@ Running the skill against a range of merged pull requests produces a ready-to-pa
 
 - A new `bun run release-notes` package script — not requested
 - Any write to `CHANGELOG.md` from the skill itself — the owner chose print-only
+
+## Research
+
+- Sources: [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/), [Semantic Versioning 2.0.0](https://semver.org/)
+- How others did it: Keep a Changelog groups a release into Added, Changed, and Fixed, written for people. SemVer picks major, minor, or patch from whether the change breaks callers, adds a compatible feature, or only fixes.
+- What matters: one grouping scheme, and a bump rule that follows the change rather than the pull request count.
+- Pros and cons: printing the entry keeps the release tooling's parse of `CHANGELOG.md` intact; writing the file directly is faster and can corrupt that parse.
+- What this plan will follow: print a Keep a Changelog block and a SemVer recommendation.
+- Queries not run: none
+
+## Questions
+
+### Product
+
+- Who it is for — answer: the person cutting the release. The request already names a human-focused changelog.
+- What success looks like — answer: a ready-to-paste changelog block and a recommended bump.
+- Out of scope — answer: a package script. The request asked for a skill, not a script.
+
+### Technical
+
+- Write the entry into `CHANGELOG.md`, or print it only? — answer: print only. Writing the file touches a file `scripts/prepare-release.ts` also parses.
+
+## Design
+
+Diagram: omitted — the request is a list of files to add, not a process, a user journey, or a system interaction.
 
 ## Verification strategy
 
@@ -149,13 +180,13 @@ Running the skill against a range of merged pull requests produces a ready-to-pa
 - Wave 1: T1, T2 (independent)
 - Wave 2: T3 (needs T1, to know the final skill name and description)
 - Wave 3: T4 (needs T3, to reference the final line numbers)
-- Final wave: T5
+- Final wave: F1, F2, F3, F4
 
 ## Todos
 
 ### T1 — Write the release-notes SKILL.md
 
-- Do: write `skills/workflow/release-notes/SKILL.md` following `skill-writer`'s six-section contract; source pull requests with the preference order `gh pr list --state merged` first, `glab mr list --merged` second, `git log <last-tag>..HEAD --oneline` as a fallback; keep the description under 500 characters
+- Do: write `skills/workflow/release-notes/SKILL.md` following `skill-writer`'s six-section contract; source pull requests with the preference order `gh pr list --state merged` first, `glab mr list --merged` second, `git log <last-tag>..HEAD --oneline` as a fallback; keep the description under 700 characters
 - Must not: write into `CHANGELOG.md`; the skill only prints the entry
 - Closes gap: G1, G2
 - Depends on: none
@@ -199,13 +230,31 @@ Running the skill against a range of merged pull requests produces a ready-to-pa
 
 ## Final verification wave
 
-### T5 — Run the full check
+### F1 — Plan compliance
 
-- Do: run `bun run validate` and `bun test`
-- Acceptance: both exit 0
+- Do: confirm the skill file, `examples.md`, the README row, and the changelog line exist, and that no `bun run release-notes` script was added
+- Acceptance: `bun run validate` reports the new skill and no `BADGE_COUNT` error, and `package.json` has no `release-notes` script
 - Commit: no
 
-`ui: no` — this repository is a Bun CLI and a markdown catalogue with no web or mobile surface, so no automated UI QA todo is added.
+### F2 — Code quality
+
+- Do: run `bun run validate` and `bun test`. This repository defines no separate build command. Then scan the new skill for an empty code block left as a placeholder and for a description over 700 characters.
+- Acceptance: both commands exit 0, and the description is under 700 characters
+- Commit: no
+
+### F3 — Scenario QA
+
+- Do: execute the happy and failure QA scenario on T1, T2, T3, and T4
+- Acceptance: the changelog block and bump recommendation print, an empty pull-request range prints nothing, and a missing `examples.md` reproduces `MISSING_EXAMPLES` before it is restored
+- Commit: no
+
+### F4 — Scope fidelity
+
+- Do: compare the diff with T1 through T4
+- Acceptance: the diff touches only `skills/workflow/release-notes/`, `README.md`, and `CHANGELOG.md`
+- Commit: no
+
+`ui: no` — this repository is a Bun CLI and a markdown catalogue with no web or mobile surface, and this plan adds none, so no automated UI QA todo is added.
 
 ## Success criteria
 
@@ -221,7 +270,7 @@ Running the skill against a range of merged pull requests produces a ready-to-pa
 ```
 
 ```markdown
-Plan written: `docs/plans/2026-09-26-add-release-notes-skill.md` — tier standard, review optional, 5 todos in 4 waves.
+Plan written: `docs/plans/2026-09-26-add-release-notes-skill.md` — tier standard, review optional, 8 todos in 4 waves.
 - Effort: M — four files, one design decision, no migration
 - Risk: low — additive change, existing skills and validator checks are unaffected
 - Decisions made: category is `workflow`; pull-request source order follows `issue-refiner`'s preference-table pattern
@@ -229,6 +278,16 @@ Plan written: `docs/plans/2026-09-26-add-release-notes-skill.md` — tier standa
 - Cut from scope: a `bun run release-notes` package script — not requested
 - Branch: `feat/add-release-notes-skill`
 Next: (a) run plan-review on this path on a different model family — recommended; (b) start building from the plan. Which?
+```
+
+```text
+Not part of the plan file above. This is the shape when the request is a flow.
+
+flowchart TD
+  merged[Merged pull requests]
+  skill[release-notes skill]
+  printed[Printed changelog and bump]
+  merged --> skill --> printed
 ```
 
 ### When idea refinement actually fires
