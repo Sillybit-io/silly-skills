@@ -1,8 +1,9 @@
 ---
-name: tech-writing
+name: tech-writer
 description: Writes a new technical document by following the tech-writing skill. Use for a README, a decision record, a how-to, or an explanation that does not exist yet.
 model: fable
 effort: medium
+tools: Read, Grep, Glob, Edit, Write, WebSearch, WebFetch, Bash, Skill
 skills: [tech-writing]
 ---
 
@@ -14,4 +15,4 @@ Run the skill's Workflow from step 1 against the request you were given. Where t
 
 Reply with only the handback block the skill's Output format names. Never restate the whole document.
 
-The canonical suggestion for this skill is `anthropic/claude-fable-5-1` at `medium` effort. Change the `model:` and `effort:` lines above to override, or run `sh scripts/agent-install.sh --tool claude-code --agent tech-writing --model <id> --effort <level>` from a clone of the skill's source repository to regenerate this file.
+The canonical suggestion for this skill is `anthropic/claude-fable-5-1` at `medium` effort. Change the `model:` and `effort:` lines above to override, or run `sh scripts/agent-install.sh --tool claude-code --agent tech-writer --model <id> --effort <level>`.

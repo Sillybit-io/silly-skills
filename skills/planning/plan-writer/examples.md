@@ -177,6 +177,7 @@ Diagram: omitted — the request is a list of files to add, not a process, a use
 
 ## Execution strategy
 
+- T0: copy this plan into the project if it is not already there
 - Wave 1: T1, T2 (independent)
 - Wave 2: T3 (needs T1, to know the final skill name and description)
 - Wave 3: T4 (needs T3, to reference the final line numbers)
@@ -184,8 +185,23 @@ Diagram: omitted — the request is a list of files to add, not a process, a use
 
 ## Todos
 
+Every todo starts with `- [ ] Open`. When you build this plan, change that line to `- [x] Done` in the project copy as soon as the todo is finished, before you start the next one. If T0 copied the file, keep editing that copy.
+
+### T0 — Copy the plan into the project
+
+- [ ] Open
+- Do: if this file is not already inside the project, copy it to `docs/plans/` under its current name and do the rest of the build there. If it is already there, do not copy it.
+- Must not: change any other part of the plan while copying, or make a second copy when it is already in the project
+- Closes gap: none
+- Depends on: none
+- References: this file
+- Acceptance: the file exists at `docs/plans/2026-09-26-add-release-notes-skill.md` inside the project
+- QA scenario: happy — the file is already under `docs/plans/` and this box is checked with no second copy; failure — the file is outside the project, one copy appears under `docs/plans/`, and the outside file is left as it was
+- Commit: no
+
 ### T1 — Write the release-notes SKILL.md
 
+- [ ] Open
 - Do: write `skills/workflow/release-notes/SKILL.md` following `skill-writer`'s six-section contract; source pull requests with the preference order `gh pr list --state merged` first, `glab mr list --merged` second, `git log <last-tag>..HEAD --oneline` as a fallback; keep the description under 700 characters
 - Must not: write into `CHANGELOG.md`; the skill only prints the entry
 - Closes gap: G1, G2
@@ -197,6 +213,7 @@ Diagram: omitted — the request is a list of files to add, not a process, a use
 
 ### T2 — Write examples.md
 
+- [ ] Open
 - Do: write `skills/workflow/release-notes/examples.md` with a real scenario built from this repository's own merged pull requests
 - Must not: invent pull request titles that were not actually merged
 - Closes gap: G1
@@ -208,6 +225,7 @@ Diagram: omitted — the request is a list of files to add, not a process, a use
 
 ### T3 — Update the README
 
+- [ ] Open
 - Do: bump the skill-count badge by one, add a `workflow | release-notes` row to the Skills table, remove the Roadmap bullet at `README.md:83`
 - Must not: touch any other Roadmap entry
 - Closes gap: G3
@@ -219,6 +237,7 @@ Diagram: omitted — the request is a list of files to add, not a process, a use
 
 ### T4 — Add the CHANGELOG entry
 
+- [ ] Open
 - Do: add one `### Added` line under `## [Unreleased]` naming the new skill in the same one-line style as the existing 0.1.0 entries
 - Must not: create a new release section; this stays under `[Unreleased]`
 - Closes gap: G4
@@ -230,26 +249,32 @@ Diagram: omitted — the request is a list of files to add, not a process, a use
 
 ## Final verification wave
 
+The same checkbox rule applies here. Change `- [ ] Open` to `- [x] Done` in the project copy when that gate is finished, before the next one starts.
+
 ### F1 — Plan compliance
 
+- [ ] Open
 - Do: confirm the skill file, `examples.md`, the README row, and the changelog line exist, and that no `bun run release-notes` script was added
 - Acceptance: `bun run validate` reports the new skill and no `BADGE_COUNT` error, and `package.json` has no `release-notes` script
 - Commit: no
 
 ### F2 — Code quality
 
+- [ ] Open
 - Do: run `bun run validate` and `bun test`. This repository defines no separate build command. Then scan the new skill for an empty code block left as a placeholder and for a description over 700 characters.
 - Acceptance: both commands exit 0, and the description is under 700 characters
 - Commit: no
 
 ### F3 — Scenario QA
 
+- [ ] Open
 - Do: execute the happy and failure QA scenario on T1, T2, T3, and T4
 - Acceptance: the changelog block and bump recommendation print, an empty pull-request range prints nothing, and a missing `examples.md` reproduces `MISSING_EXAMPLES` before it is restored
 - Commit: no
 
 ### F4 — Scope fidelity
 
+- [ ] Open
 - Do: compare the diff with T1 through T4
 - Acceptance: the diff touches only `skills/workflow/release-notes/`, `README.md`, and `CHANGELOG.md`
 - Commit: no
@@ -270,7 +295,7 @@ Diagram: omitted — the request is a list of files to add, not a process, a use
 ```
 
 ```markdown
-Plan written: `docs/plans/2026-09-26-add-release-notes-skill.md` — tier standard, review optional, 8 todos in 4 waves.
+Plan written: `docs/plans/2026-09-26-add-release-notes-skill.md` — tier standard, review optional, 9 todos in 4 waves, T0 first.
 - Effort: M — four files, one design decision, no migration
 - Risk: low — additive change, existing skills and validator checks are unaffected
 - Decisions made: category is `workflow`; pull-request source order follows `issue-refiner`'s preference-table pattern

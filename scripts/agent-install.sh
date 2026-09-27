@@ -1,33 +1,38 @@
 #!/bin/sh
 # silly-skills agent-installer.
 #
-# Copies a skill's per-tool "agents/" wrapper file into the agent directory a
-# tool actually reads, optionally rewriting the model and effort it pins.
-# POSIX sh only: no bashisms, so it runs the same under bash, dash, and zsh,
-# and works unmodified in this repository's Ubuntu CI (where /bin/sh is dash).
+# Copies agents/<persona>/<tool>.md into the flat directory a tool actually
+# reads, optionally rewriting the model and effort it pins. From a clone it
+# reads the local agents/ directory. Otherwise, or when --source is set, it
+# downloads that file from GitHub. --all installs every persona in the folder.
+# POSIX sh only: no bashisms, so it runs the same under bash, dash, and zsh.
 #
 # Usage:
-#   agent-install.sh --tool claude-code|opencode|cursor (--agent <skill> | --all)
+#   agent-install.sh --tool claude-code|opencode|cursor (--agent <persona> | --all)
 #                     [--global] [--dest <dir>] [--model <id>] [--effort <level>]
-#                     [--skills-dir <dir>] [--force] [--help]
+#                     [--agents-dir <dir>] [--source <github-url>] [--dry-run]
+#                     [--force] [--help]
 #
-# Exit code is 0 on success, 1 on any error (unknown tool, unknown skill,
-# missing wrapper, or an existing file without --force).
+# Exit code is 0 on success, 1 on any error (unknown tool, unknown persona,
+# missing wrapper, a rejected --source host, or an existing file without --force).
 
 set -eu
 
 usage() {
   cat <<'USAGE'
-Usage: agent-install.sh --tool claude-code|opencode|cursor (--agent <skill> | --all)
+Usage: agent-install.sh --tool claude-code|opencode|cursor (--agent <persona> | --all)
                          [--global] [--dest <dir>] [--model <id>] [--effort <level>]
-                         [--skills-dir <dir>] [--force] [--help]
+                         [--agents-dir <dir>] [--source <github-url>] [--dry-run]
+                         [--force] [--help]
 
-Copies skills/<category>/<skill>/agents/<tool>.md into the agent directory your
-tool reads, optionally rewriting the model and effort it pins.
+Copies agents/<persona>/<tool>.md into the agent directory your tool reads.
+--agent accepts one persona or a comma-separated list. --all installs every
+persona directory that contains that tool's file.
 
   --tool <name>       claude-code, opencode, or cursor. Required.
-  --agent <skill>     The skill name to install. Required unless --all.
-  --all               Install every skill that ships an agents/<tool>.md.
+  --agent <persona>   Persona folder name, or several separated by commas.
+                      Required unless --all.
+  --all               Install every persona in agents/ that has this tool's file.
   --global            Install to the user's global agent directory instead of
                       the current project.
   --dest <dir>        Install to this directory instead of the tool default.
@@ -35,8 +40,12 @@ tool reads, optionally rewriting the model and effort it pins.
   --model <id>        Rewrite the wrapper's model line to this value.
   --effort <level>    Rewrite the wrapper's effort line (or, for cursor, the
                       [effort=...] suffix) to this value.
-  --skills-dir <dir>  Look for skills under this directory instead of the
-                      normal search path.
+  --agents-dir <dir>  Read personas from this directory instead of agents/
+                      beside a clone. Local only; ignores --source.
+  --source <url>      Download from this GitHub URL even inside a clone.
+                      https://github.com/<owner>/<repo>[/tree/<ref>]
+                      or https://raw.githubusercontent.com/<owner>/<repo>/<ref>
+  --dry-run           Print the local path or raw URL. Do not download or write.
   --force             Overwrite an existing destination file.
   --help              Show this message.
 USAGE
@@ -49,7 +58,9 @@ global=0
 dest=""
 model=""
 effort=""
-skills_dir=""
+agents_dir=""
+source=""
+dry_run=0
 force=0
 
 while [ $# -gt 0 ]; do
@@ -61,7 +72,9 @@ while [ $# -gt 0 ]; do
     --dest) dest="$2"; shift 2 ;;
     --model) model="$2"; shift 2 ;;
     --effort) effort="$2"; shift 2 ;;
-    --skills-dir) skills_dir="$2"; shift 2 ;;
+    --agents-dir) agents_dir="$2"; shift 2 ;;
+    --source) source="$2"; shift 2 ;;
+    --dry-run) dry_run=1; shift ;;
     --force) force=1; shift ;;
     --help) usage; exit 0 ;;
     *)
@@ -86,8 +99,12 @@ case "$tool" in
     ;;
 esac
 
+if [ -n "$agent" ] && [ "$install_all" -eq 1 ]; then
+  echo "error: pass --agent or --all, not both" >&2
+  exit 1
+fi
 if [ -z "$agent" ] && [ "$install_all" -eq 0 ]; then
-  echo "error: --agent <skill> or --all is required" >&2
+  echo "error: --agent <persona> or --all is required" >&2
   exit 1
 fi
 
@@ -96,7 +113,99 @@ script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 work_dir=$(mktemp -d "${TMPDIR:-/tmp}/agent-install.XXXXXX")
 trap 'rm -rf "$work_dir"' EXIT
 
-# Destination directory for the copied wrapper.
+remote=0
+owner="Sillybit-io"
+repo="silly-skills"
+ref="main"
+agents_root=""
+
+# Sets owner, repo, and ref from a GitHub URL. Rejects every other host.
+parse_source() {
+  url="$1"
+  url=${url%/}
+  case "$url" in
+    https://github.com/*) rest=${url#https://github.com/} ;;
+    https://raw.githubusercontent.com/*) rest=${url#https://raw.githubusercontent.com/} ;;
+    *)
+      echo "error: --source must be a github.com or raw.githubusercontent.com URL" >&2
+      return 1
+      ;;
+  esac
+  owner=${rest%%/*}
+  rest=${rest#*/}
+  repo=${rest%%/*}
+  rest=${rest#*/}
+  repo=${repo%.git}
+  # owner/repo.git has no slash left, so rest is still "repo.git".
+  if [ "$rest" = "${repo}.git" ]; then
+    rest=$repo
+  fi
+  case "$url" in
+    https://github.com/*)
+      if [ -z "$rest" ] || [ "$rest" = "$repo" ]; then
+        ref="main"
+      else
+        case "$rest" in
+          tree/*) ref=${rest#tree/} ;;
+          *)
+            echo "error: --source path must be /tree/<ref> or the repository root" >&2
+            return 1
+            ;;
+        esac
+      fi
+      # owner/repo with nothing after repo leaves rest equal to repo when the
+      # URL is exactly two segments. The branch above treats that as main.
+      if [ "$rest" = "$repo" ]; then
+        ref="main"
+      fi
+      ;;
+    https://raw.githubusercontent.com/*)
+      if [ -z "$rest" ] || [ "$rest" = "$repo" ]; then
+        echo "error: a raw --source must include a ref after the repository" >&2
+        return 1
+      fi
+      ref=$rest
+      ;;
+  esac
+  if [ -z "$owner" ] || [ -z "$repo" ] || [ -z "$ref" ]; then
+    echo "error: could not read owner, repo, and ref from --source" >&2
+    return 1
+  fi
+}
+
+# Choose local agents/ or a GitHub source. --agents-dir wins. --source forces
+# the network even inside a clone. A piped script has no agents/ beside it.
+resolve_origin() {
+  if [ -n "$agents_dir" ]; then
+    remote=0
+    agents_root=$agents_dir
+    return
+  fi
+  if [ -n "$source" ]; then
+    parse_source "$source" || return 1
+    remote=1
+    return
+  fi
+  if [ -f "$script_dir/validate.ts" ] && [ -d "$script_dir/../agents" ]; then
+    remote=0
+    agents_root=$(CDPATH= cd -- "$script_dir/../agents" && pwd)
+    return
+  fi
+  remote=1
+}
+
+raw_url() {
+  persona="$1"
+  printf 'https://raw.githubusercontent.com/%s/%s/%s/agents/%s/%s\n' \
+    "$owner" "$repo" "$ref" "$persona" "$wrapper_file"
+}
+
+api_url() {
+  encoded=$(printf '%s' "$ref" | sed 's|/|%2F|g')
+  printf 'https://api.github.com/repos/%s/%s/contents/agents?ref=%s\n' \
+    "$owner" "$repo" "$encoded"
+}
+
 resolve_dest() {
   if [ -n "$dest" ]; then
     printf '%s\n' "$dest"
@@ -117,65 +226,6 @@ resolve_dest() {
   esac
 }
 
-# Writes every directory this script searches for skills/<name>/agents/<tool>.md
-# in, one per line, to $work_dir/search-dirs: an explicit --skills-dir wins
-# outright; otherwise a clone of this repository (detected by validate.ts
-# sitting next to this script), then each tool's project-level skills
-# directory, then each tool's global skills directory.
-write_search_dirs() {
-  out="$work_dir/search-dirs"
-  : >"$out"
-  if [ -n "$skills_dir" ]; then
-    printf '%s\n' "$skills_dir" >>"$out"
-    return
-  fi
-  if [ -f "$script_dir/validate.ts" ] && [ -d "$script_dir/../skills" ]; then
-    for d in "$script_dir"/../skills/*; do
-      [ -d "$d" ] && printf '%s\n' "$d" >>"$out"
-    done
-  fi
-  printf '%s\n' \
-    "./.claude/skills" \
-    "./.agents/skills" \
-    "./.opencode/skills" \
-    "./.cursor/skills" \
-    "$HOME/.claude/skills" \
-    "$HOME/.agents/skills" \
-    "$HOME/.config/opencode/skills" \
-    "$HOME/.cursor/skills" \
-    >>"$out"
-}
-
-# Prints the path to skills/<name>/agents/<tool>.md for the first search
-# location that has it, or nothing.
-find_wrapper() {
-  name="$1"
-  while IFS= read -r base; do
-    [ -d "$base" ] || continue
-    candidate="$base/$name/agents/$wrapper_file"
-    if [ -f "$candidate" ]; then
-      printf '%s\n' "$candidate"
-      return 0
-    fi
-  done <"$work_dir/search-dirs"
-}
-
-# Writes every skill name that ships agents/<tool>.md to $work_dir/all-names,
-# one per line, deduplicated so a project install shadows a global one.
-write_all_names() {
-  out="$work_dir/all-names"
-  : >"$out"
-  while IFS= read -r base; do
-    [ -d "$base" ] || continue
-    for skill_dir in "$base"/*; do
-      [ -d "$skill_dir" ] || continue
-      [ -f "$skill_dir/agents/$wrapper_file" ] || continue
-      skill_name=$(basename "$skill_dir")
-      grep -qx "$skill_name" "$out" 2>/dev/null || echo "$skill_name" >>"$out"
-    done
-  done <"$work_dir/search-dirs"
-}
-
 # Rewrites the model/effort lines of $1 and writes the result to $2.
 write_wrapper() {
   src="$1"
@@ -190,9 +240,6 @@ write_wrapper() {
   cp "$src" "$rewritten"
 
   if [ "$tool" = "cursor" ]; then
-    # Cursor pins effort as a [effort=...] suffix on the model line, so a
-    # model and/or effort override is applied together in one awk pass:
-    # keep whichever of model/effort was not given, replace whichever was.
     if [ -n "$model" ] || [ -n "$effort" ]; then
       awk -v newmodel="$model" -v neweffort="$effort" '
         /^model: / {
@@ -242,30 +289,109 @@ write_wrapper() {
   echo "wrote $out ($model_line)"
 }
 
-install_one() {
-  name="$1"
-  wrapper=$(find_wrapper "$name")
-  if [ -z "$wrapper" ]; then
-    echo "error: no agents/$wrapper_file found for skill '$name'" >&2
+# Prints one persona name per line into $work_dir/names.
+write_names() {
+  out="$work_dir/names"
+  : >"$out"
+  if [ "$install_all" -eq 1 ]; then
+    if [ "$remote" -eq 1 ]; then
+      if [ "$dry_run" -eq 1 ]; then
+        api_url
+        return 0
+      fi
+      listing="$work_dir/listing.json"
+      if ! curl -fsSL -H "Accept: application/vnd.github+json" "$(api_url)" -o "$listing"; then
+        echo "error: could not list agents/ (pass --agent <persona>)" >&2
+        return 1
+      fi
+      # GitHub lists "name" before "type" on each object. Print name only for directories.
+      awk '
+        /"name"/ {
+          line = $0
+          sub(/.*"name"[[:space:]]*:[[:space:]]*"/, "", line)
+          sub(/".*/, "", line)
+          name = line
+        }
+        /"type"[[:space:]]*:[[:space:]]*"dir"/ {
+          if (name != "") print name
+          name = ""
+        }
+      ' "$listing" >"$out"
+      if [ ! -s "$out" ]; then
+        echo "error: no persona directories in agents/ (pass --agent <persona>)" >&2
+        return 1
+      fi
+      return 0
+    fi
+    found=0
+    for dir in "$agents_root"/*; do
+      [ -d "$dir" ] || continue
+      [ -f "$dir/$wrapper_file" ] || continue
+      basename "$dir" >>"$out"
+      found=1
+    done
+    if [ "$found" -eq 0 ]; then
+      echo "error: no persona directory contains $wrapper_file" >&2
+      return 1
+    fi
+    return 0
+  fi
+  printf '%s\n' "$agent" | tr ',' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | sed '/^$/d' >"$out"
+  if [ ! -s "$out" ]; then
+    echo "error: --agent did not name a persona" >&2
     return 1
   fi
-  out_dest=$(resolve_dest)
-  write_wrapper "$wrapper" "$out_dest/$name.md"
 }
 
-write_search_dirs
+install_one() {
+  name="$1"
+  case "$name" in
+    *[!a-z0-9-]*|"")
+      echo "error: persona name '$name' must be lowercase words separated by hyphens" >&2
+      return 1
+      ;;
+  esac
 
-if [ "$install_all" -eq 1 ]; then
-  write_all_names
-  if [ ! -s "$work_dir/all-names" ]; then
-    echo "error: no skills with an agents/$wrapper_file were found" >&2
-    exit 1
+  if [ "$remote" -eq 1 ]; then
+    url=$(raw_url "$name")
+    if [ "$dry_run" -eq 1 ]; then
+      printf '%s\n' "$url"
+      return 0
+    fi
+    downloaded="$work_dir/downloaded.md"
+    if ! curl -fsSL "$url" -o "$downloaded"; then
+      echo "error: could not download $url" >&2
+      return 1
+    fi
+    src=$downloaded
+  else
+    src="$agents_root/$name/$wrapper_file"
+    if [ ! -f "$src" ]; then
+      echo "error: no $wrapper_file found for persona '$name'" >&2
+      return 1
+    fi
+    if [ "$dry_run" -eq 1 ]; then
+      printf '%s\n' "$src"
+      return 0
+    fi
   fi
-  status=0
-  while IFS= read -r name; do
-    install_one "$name" || status=1
-  done <"$work_dir/all-names"
-  exit $status
-else
-  install_one "$agent"
+
+  out_dest=$(resolve_dest)
+  write_wrapper "$src" "$out_dest/$name.md"
+}
+
+resolve_origin
+
+# --all --dry-run on a remote source prints the listing URL and stops.
+if [ "$install_all" -eq 1 ] && [ "$remote" -eq 1 ] && [ "$dry_run" -eq 1 ]; then
+  api_url
+  exit 0
 fi
+
+write_names
+
+status=0
+while IFS= read -r name; do
+  install_one "$name" || status=1
+done <"$work_dir/names"
+exit $status

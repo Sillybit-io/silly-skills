@@ -1,5 +1,5 @@
 ---
-name: tech-writing
+name: tech-writer
 description: Writes a new technical document by following the tech-writing skill.
 model: claude-fable-5-1[effort=medium]
 readonly: false
@@ -13,4 +13,4 @@ Run the skill's Workflow from step 1 against the request you were given. Where t
 
 Reply with only the handback block the skill's Output format names. Never restate the whole document.
 
-To change the model, edit the `model:` line; the `[effort=...]` suffix carries the reasoning effort. Or re-run the installer: `sh scripts/agent-install.sh --tool cursor --agent tech-writing --model <id> --effort <level>`.
+To change the model, edit the `model:` line; the `[effort=...]` suffix carries the reasoning effort. Or re-run the installer: `sh scripts/agent-install.sh --tool cursor --agent tech-writer --model <id> --effort <level>`.

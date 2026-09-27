@@ -64,12 +64,12 @@ const WRAPPER_BODY: Record<Tool, string> = {
   ].join("\n"),
 };
 
-/** Writes skillsDir/<skillName>/agents/<tool>.md for the given tools. */
-function writeWrapper(skillsDir: string, skillName: string, tools: Tool[]): void {
-  const agentsDir = join(skillsDir, skillName, "agents");
-  mkdirSync(agentsDir, { recursive: true });
+/** Writes agentsDir/<persona>/<tool>.md for the given tools. */
+function writeWrapper(agentsDir: string, persona: string, tools: Tool[]): void {
+  const personaDir = join(agentsDir, persona);
+  mkdirSync(personaDir, { recursive: true });
   for (const tool of tools) {
-    writeFileSync(join(agentsDir, `${tool}.md`), WRAPPER_BODY[tool], "utf8");
+    writeFileSync(join(personaDir, `${tool}.md`), WRAPPER_BODY[tool], "utf8");
   }
 }
 
@@ -93,7 +93,7 @@ describe("agent-install.sh", () => {
       "claude-code",
       "--agent",
       "plan-review",
-      "--skills-dir",
+      "--agents-dir",
       skillsDir,
       "--dest",
       dest,
@@ -115,7 +115,7 @@ describe("agent-install.sh", () => {
       "opencode",
       "--agent",
       "plan-review",
-      "--skills-dir",
+      "--agents-dir",
       skillsDir,
       "--dest",
       dest,
@@ -137,7 +137,7 @@ describe("agent-install.sh", () => {
       "cursor",
       "--agent",
       "plan-review",
-      "--skills-dir",
+      "--agents-dir",
       skillsDir,
       "--dest",
       dest,
@@ -155,7 +155,7 @@ describe("agent-install.sh", () => {
     writeWrapper(skillsDir, "tech-writing", ["opencode"]);
     writeWrapper(skillsDir, "ui-engineering", ["claude-code"]); // no opencode wrapper
 
-    const result = run(["--tool", "opencode", "--all", "--skills-dir", skillsDir, "--dest", dest]);
+    const result = run(["--tool", "opencode", "--all", "--agents-dir", skillsDir, "--dest", dest]);
 
     expect(result.code).toBe(0);
     expect(readFileSync(join(dest, "plan-review.md"), "utf8")).toContain("model: openai/gpt-6-astra");
@@ -173,7 +173,7 @@ describe("agent-install.sh", () => {
       "claude-code",
       "--agent",
       "plan-review",
-      "--skills-dir",
+      "--agents-dir",
       skillsDir,
       "--dest",
       dest,
@@ -197,7 +197,7 @@ describe("agent-install.sh", () => {
       "claude-code",
       "--agent",
       "plan-review",
-      "--skills-dir",
+      "--agents-dir",
       skillsDir,
       "--dest",
       dest,
@@ -219,7 +219,7 @@ describe("agent-install.sh", () => {
       "opencode",
       "--agent",
       "plan-review",
-      "--skills-dir",
+      "--agents-dir",
       skillsDir,
       "--dest",
       dest,
@@ -243,7 +243,7 @@ describe("agent-install.sh", () => {
       "cursor",
       "--agent",
       "plan-review",
-      "--skills-dir",
+      "--agents-dir",
       skillsDir,
       "--dest",
       dest,
@@ -269,7 +269,7 @@ describe("agent-install.sh", () => {
       "cursor",
       "--agent",
       "plan-review",
-      "--skills-dir",
+      "--agents-dir",
       skillsDir,
       "--dest",
       dest,
@@ -292,7 +292,7 @@ describe("agent-install.sh", () => {
       "opencode",
       "--agent",
       "plan-review",
-      "--skills-dir",
+      "--agents-dir",
       skillsDir,
       "--dest",
       dest,
@@ -314,7 +314,7 @@ describe("agent-install.sh", () => {
       "opencode",
       "--agent",
       "plan-review",
-      "--skills-dir",
+      "--agents-dir",
       skillsDir,
       "--dest",
       dest,
@@ -338,7 +338,7 @@ describe("agent-install.sh", () => {
       "bogus",
       "--agent",
       "plan-review",
-      "--skills-dir",
+      "--agents-dir",
       skillsDir,
       "--dest",
       dest,
@@ -358,14 +358,14 @@ describe("agent-install.sh", () => {
       "opencode",
       "--agent",
       "does-not-exist",
-      "--skills-dir",
+      "--agents-dir",
       skillsDir,
       "--dest",
       dest,
     ]);
 
     expect(result.code).toBe(1);
-    expect(result.stderr).toContain("no agents/opencode.md found");
+    expect(result.stderr).toContain("no opencode.md found for persona");
   });
 
   test("--tool with neither --agent nor --all exits 1", () => {
@@ -375,13 +375,84 @@ describe("agent-install.sh", () => {
     expect(result.stderr).toContain("--agent");
   });
 
-  test("run from the repo root without --skills-dir finds a real installed skill", () => {
+  test("run from the repo root without --agents-dir finds a real persona", () => {
     const dest = newDir();
-    // This assumes skills/planning/plan-review/agents/opencode.md exists in
-    // this repository; it is added alongside this test.
-    const result = run(["--tool", "opencode", "--agent", "plan-review", "--dest", dest]);
+    const result = run(["--tool", "opencode", "--agent", "plan-reviewer", "--dest", dest]);
 
     expect(result.code).toBe(0);
-    expect(readFileSync(join(dest, "plan-review.md"), "utf8")).toContain("model:");
+    expect(readFileSync(join(dest, "plan-reviewer.md"), "utf8")).toContain("model:");
+  });
+
+  test("--dry-run --source prints the raw GitHub URL and does not write", () => {
+    const dest = newDir();
+    const result = run([
+      "--tool",
+      "opencode",
+      "--agent",
+      "plan-writer",
+      "--source",
+      "https://github.com/Sillybit-io/silly-skills/tree/main",
+      "--dest",
+      dest,
+      "--dry-run",
+    ]);
+
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain(
+      "https://raw.githubusercontent.com/Sillybit-io/silly-skills/main/agents/plan-writer/opencode.md",
+    );
+    expect(() => readFileSync(join(dest, "plan-writer.md"), "utf8")).toThrow();
+  });
+
+  test("--all --dry-run --source prints the GitHub contents API URL and does not write", () => {
+    const dest = newDir();
+    const result = run([
+      "--tool",
+      "opencode",
+      "--all",
+      "--source",
+      "https://github.com/Sillybit-io/silly-skills/tree/feat/branch",
+      "--dest",
+      dest,
+      "--dry-run",
+    ]);
+
+    expect(result.code).toBe(0);
+    expect(result.stdout.trim()).toBe(
+      "https://api.github.com/repos/Sillybit-io/silly-skills/contents/agents?ref=feat%2Fbranch",
+    );
+    expect(() => readFileSync(join(dest, "plan-writer.md"), "utf8")).toThrow();
+  });
+
+  test("a repository URL ending in .git is the repository root at main", () => {
+    const result = run([
+      "--tool",
+      "opencode",
+      "--agent",
+      "plan-writer",
+      "--source",
+      "https://github.com/Sillybit-io/silly-skills.git",
+      "--dry-run",
+    ]);
+
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain(
+      "https://raw.githubusercontent.com/Sillybit-io/silly-skills/main/agents/plan-writer/opencode.md",
+    );
+  });
+
+  test("a non-GitHub --source is rejected", () => {
+    const result = run([
+      "--tool",
+      "opencode",
+      "--agent",
+      "plan-writer",
+      "--source",
+      "https://example.com/owner/repo",
+      "--dry-run",
+    ]);
+
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain("github.com");
   });
 });

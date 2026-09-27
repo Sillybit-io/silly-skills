@@ -1,8 +1,8 @@
 # Writer contract
 
-Read this file when running checks F through I. It restates what `plan-writer` is required to leave in the plan file. A miss is a blocker, same rank as checks A through E.
+Read this file when running checks F through J. It restates what `plan-writer` is required to leave in the plan file. A miss is a blocker, same rank as checks A through E.
 
-When more than three flags exist, report in this order: a missing final-wave gate, an unanswered question a todo depends on, missing research, a missing required diagram. Then add one line: "and N more of the same kind."
+When more than three flags exist, report in this order: a missing T0 or a missing todo checkbox, a missing final-wave gate, an unanswered question a todo depends on, missing research, a missing required diagram. Then add one line: "and N more of the same kind."
 
 ## Check F — Research
 
@@ -43,3 +43,10 @@ The wave contains todos titled `F1`, `F2`, `F3`, and `F4`, in that order:
 Extra todos titled `F5` onward may sit after `F4`. Fewer than four gates, a missing gate, or a gate out of order is a blocker.
 
 When `ui: yes` — including a plan that adds a web or mobile surface — the automated UI QA todo is present and last. It names the tool, the route or screen, the viewport widths, the steps, the expected result, and a screenshot path under `reports/ui-qa/`. When `ui: no`, that todo is absent and the wave says why in one line.
+
+## Check J — Todo boxes and T0
+
+Two misses, each a blocker:
+
+- Every todo under `## Todos` and every gate under `## Final verification wave` starts with `- [ ] Open` on a freshly planned file. The `## Todos` section tells the builder to change that line to `- [x] Done` in the project copy as soon as that todo is finished, before the next one starts. A missing box, or a missing instruction, is a blocker. Do not reject a box that is already `- [x]` on a re-review after the build has started.
+- `T0` is the first todo. Its job is to copy this plan into the project's `docs/plans/` when the file is not already there, and then to do the rest of the build in that copy. If the file is already there, it stays. Checking its own box is the one edit T0 may make besides that copy. A missing T0, a T0 that is not first, a T0 that copies unconditionally, a T0 that leaves the build in the outside file, or a T0 that forbids the checkbox edit, is a blocker. T0 does not need to close a gap. Its reference may be `this file`.
