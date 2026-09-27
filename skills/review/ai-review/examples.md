@@ -35,7 +35,7 @@ Everything above is accurate, and none of it required reading the code. The four
 
 ## With skill
 
-Following ai-review against the same commit: step 1 derived the report id `commit-77335a5` and found no existing `reports/ai-review-commit-77335a5.md`, so this is the first run for this target; the stated intent then gathered with `git show -s --format=%B 77335a5`, the single-commit form step 3 gives, and treated as claims to verify; conventions gathered next under step 4 — no `AGENTS.md` and no `CONVENTIONS.md` at the repository root or in `scripts/`, so the patterns came from the changed files themselves; the full diff read with `git show 77335a5` in step 5; the queue written in step 6 as two `(path, status)` rows, both `modified`, and at two files no batching was needed; all seven axes asked of each file in step 7; and every candidate finding checked at its line in `scripts/validate.ts` before it was written down, per step 8. `readTextFile` and the `validate` entry point are not in the diff; they were opened because two candidate findings depended on what they do. Once the body below was written, step 12 wrote it into `reports/ai-review-commit-77335a5.md`.
+Following ai-review against the same commit: step 1 derived the report id `commit-77335a5` and found no existing `reports/ai-review-commit-77335a5.md`, so this is the first run for this target; step 2 counted 2 changed files, under the 300 limit, so the review continued; the stated intent then gathered with `git show -s --format=%B 77335a5`, the single-commit form step 4 gives, and treated as claims to verify; conventions gathered next under step 5 — no `AGENTS.md` and no `CONVENTIONS.md` at the repository root or in `scripts/`, so the patterns came from the changed files themselves; the diff read with `git show 77335a5` in step 6; the queue written in step 7 as two `(path, status)` rows, both `modified`, and at two files no batching was needed; all seven axes asked of each file in step 8; and every candidate finding checked at its line in `scripts/validate.ts` before it was written down, per step 9. `readTextFile` and the `validate` entry point are not in the diff; they were opened because two candidate findings depended on what they do. Once the body below was written, step 13 wrote it into `reports/ai-review-commit-77335a5.md`.
 
 ````markdown
 ## AI code review
@@ -89,4 +89,29 @@ Following ai-review against the same commit: step 1 derived the report id `commi
 - Look beyond these findings: the parts of `scripts/validate.test.ts` outside the four new cases got the least attention. The `writeSkill` fixture helper and the `Overrides` type were opened only to trace finding 2, and the pre-existing test cases that call the same helper were not walked one by one to see how the new `examples.md` default changes what they exercise.
 ````
 
-One candidate finding did not survive step 8 and so is absent above. Line 502 rebuilds the companion path from `category` and `dirName` rather than deriving it from `rel`, which would point at the wrong directory for a misplaced `SKILL.md`. Opening the caller settled it: the `LAYOUT` guard at `scripts/validate.ts:713-720` runs `continue` before `validateSkill` is reached unless `rel` splits into exactly four segments, so the reconstruction cannot diverge from the real directory. The suspicion was reasonable from the diff alone and wrong against the code, which is the case the verification step exists for.
+One candidate finding did not survive step 9 and so is absent above. Line 502 rebuilds the companion path from `category` and `dirName` rather than deriving it from `rel`, which would point at the wrong directory for a misplaced `SKILL.md`. Opening the caller settled it: the `LAYOUT` guard at `scripts/validate.ts:713-720` runs `continue` before `validateSkill` is reached unless `rel` splits into exactly four segments, so the reconstruction cannot diverge from the real directory. The suspicion was reasonable from the diff alone and wrong against the code, which is the case the verification step exists for.
+
+<!-- markdownlint-disable-next-line MD024 -->
+## Prompt
+
+> Review pull request 88. It changes 320 files. None of them match the repository `.gitignore`.
+
+<!-- markdownlint-disable-next-line MD024 -->
+## Without skill
+
+The agent starts reading. It asks for the diff, then works through the file list from the top: a workflow change, a generated client, a migration, a test helper. After a long pass over the first directories it writes a short review of the files it reached and says the rest look consistent with them. The unread files are not named. Nothing in the reply says the review stopped.
+
+<!-- markdownlint-disable-next-line MD024 -->
+## With skill
+
+The count is 320, which is over 300, so the run stops before the diff. The reply is the stop note, posted when the target is a pull request, and written to `reports/ai-review-pr-88.md`.
+
+````markdown
+## AI code review
+
+> AI-generated note. The review stopped before reading the diff because this change is over the file limit. Nothing here is a finding.
+
+Sorry — this change is too big to review. It touches 320 files after gitignore matches are removed, and ai-review stops automatically above 300 files. No files were reviewed.
+
+Split the change into smaller pieces, or ask again on a smaller slice.
+````

@@ -1,9 +1,9 @@
 ---
 name: skill-writer
-description: Authors and reviews SKILL.md files for the silly-skills repository. Defines the frontmatter contract, the six-section body order, the tone rules, version-bump rules, the optional suggested-model hint and agents/ wrapper convention, and the attribution footer every skill must end with. Use when you write a new skill, create SKILL.md, add a skill to skills/<category>/, bump a skill version, or review this skill for silly-skills standards.
+description: Authors and reviews SKILL.md files for the silly-skills repository. Defines the frontmatter contract, the six-section body order, the tone rules, the 700-character description budget, version-bump rules, the optional suggested-model hint, the agents/ wrapper convention, references/ for long detail, and the attribution footer. Use when you write a new skill, create SKILL.md, add a skill to skills/<category>/, bump a skill version, or review this skill for silly-skills standards.
 license: CC-BY-ND-4.0
 metadata:
-  version: "0.2.0"
+  version: "0.3.0"
   category: workflow
 ---
 
@@ -11,7 +11,7 @@ metadata:
 
 ## Purpose
 
-skill-writer defines the house style for every skill in this repository. It gives you the frontmatter contract, the fixed six-section body order, the tone rules, the version-bump rules, and the attribution footer. Use it when you author a new skill and when you review an existing one. Every other skill here conforms to the format described in this file, so a change to this file is a change to the whole catalogue.
+skill-writer defines the house style for every skill in this repository. It gives you the frontmatter contract, the fixed six-section body order, the tone rules, the version-bump rules, and the attribution footer. The description budget and the `references/` directory follow the Agent Skills specification, cited under references below. Use it when you author a new skill and when you review an existing one. Every other skill here conforms to the format described in this file, so a change to this file is a change to the whole catalogue.
 
 ## When to use / when NOT to use
 
@@ -28,7 +28,7 @@ Do NOT use skill-writer when you:
 - Write repository documentation such as `README.md` or `CONTRIBUTING.md`.
 - Change the validator, the CI workflows, or the license files.
 - Write application code, tests, or scripts.
-- Edit any file that is not a `SKILL.md`, its `examples.md`, or its `agents/` wrapper files.
+- Edit any file that is not a `SKILL.md`, its `examples.md`, a file under its `references/`, or its `agents/` wrapper files.
 
 ## Workflow
 
@@ -36,9 +36,9 @@ Do NOT use skill-writer when you:
 2. Pick the skill name. It must be lowercase-hyphenated, must match `^[a-z0-9]+(-[a-z0-9]+)*$`, and must be 1-64 characters.
 3. Create the file at `skills/<category>/<skill-name>/SKILL.md`. The directory name must equal the frontmatter `name` exactly.
 4. Write the frontmatter shown in Output format. Set `metadata.category` to the parent category directory. Set `metadata.version` to `"0.1.0"` for a new skill.
-5. Write the `description` in third person, from its first word to its last. State what the skill does in the first sentence. Then list the trigger phrases a user would actually type. Keep a new description under 500 characters, and shorten an existing one the next time you edit that skill; the description sits in the system prompt of every session whether or not the skill runs, so its cost is paid constantly, while the workflow belongs in the body and loads only when the skill is used. Write `Processes Excel files and generates reports`. Never write `I can help you process Excel files`. Never write `You can use this to process Excel files`. Never open on a bare imperative such as `Process Excel files` while the rest of the sentence stays third person, because that mixes two voices inside one description.
+5. Write the `description` in third person, from its first word to its last. State what the skill does in the first sentence. Then list the trigger phrases a user would actually type. Keep it under 700 characters. When you edit an existing description, bring it under 700 on that edit. The description sits in the system prompt of every session whether or not the skill runs, so its cost is paid constantly, while the workflow belongs in the body and loads only when the skill is used. Do not pad it. Write `Processes Excel files and generates reports`. Never write `I can help you process Excel files`. Never write `You can use this to process Excel files`. Never open on a bare imperative such as `Process Excel files` while the rest of the sentence stays third person, because that mixes two voices inside one description.
 6. Optionally set `metadata.suggested-model` (a `provider/model` id, for example `anthropic/claude-fable-5-1`) and `metadata.suggested-effort` (`low`, `medium`, `high`, `xhigh`, or `max`) as an advisory hint for whoever configures the agent; no tool reads either key, and setting `suggested-effort` without `suggested-model` is an error. When you set the hint, create the three files `agents/claude-code.md`, `agents/opencode.md`, and `agents/cursor.md` from the templates in Output format. Never put a tool's `model:`, `effort:`, or `context:` key inside `SKILL.md` itself; that syntax is tool-exclusive and belongs only in the matching `agents/<tool>.md` wrapper.
-7. Write the six body sections in the fixed order. Never add a seventh top-level section, never drop one, never reorder them.
+7. Write the six body sections in the fixed order. Never add a seventh top-level section, never drop one, never reorder them. Keep the `SKILL.md` body under 500 lines. When a step needs detail that other steps do not, put that detail in `references/<topic>.md` and point to it from the workflow step that reads it. Follow the references rules in Output format.
 8. Write in simple English. Use short sentences, active voice, and one instruction per sentence.
 9. State a numbered work budget for any step that reads, searches, or renders an open-ended number of things (files explored, references opened, screenshots taken, review rounds run), and say what the skill does when it hits the budget: write what it has, and list what it skipped. Never leave a step as an unbounded "explore until done" or "review until it passes" with no ceiling.
 10. If the skill produces an artefact a user can comment on, add the `### Handling feedback` rule described in Output format so a hedged remark never silently changes the artefact.
@@ -100,7 +100,7 @@ The footer contains a bare URL, so `markdownlint` rule MD034 fires on it. The fo
 Frontmatter field rules:
 
 - `name` — required. Lowercase-hyphenated, matches `^[a-z0-9]+(-[a-z0-9]+)*$`, 1-64 characters, and exactly equal to the skill directory name.
-- `description` — required. 1-1024 characters, under 500 for a new skill. Must explain what the skill does and must include the trigger phrases that should load it.
+- `description` — required. Under 700 characters in this repository. The validator still accepts 1-1024, which is the specification ceiling. A description you edit is brought under 700 on that edit. Must explain what the skill does and must include the trigger phrases that should load it. It is loaded in every session, so do not pad it.
 - `license` — required. Exactly `CC-BY-ND-4.0`. No other value is accepted.
 - `metadata.version` — required. A valid SemVer string. Quote it so it stays a string.
 - `metadata.category` — required. Exactly the parent category directory name.
@@ -112,6 +112,16 @@ Section rules:
 - The six H2 headings are fixed in wording and in order: `Purpose`, `When to use / when NOT to use`, `Workflow`, `Output format`, `Guardrails`, `QA checklist`.
 - Use H3 headings inside a section when you need more structure. Never promote them to H2.
 - The footer is the last non-empty line of the file. Nothing may follow it.
+
+### references/
+
+The [Agent Skills specification](https://agentskills.io/specification) is the source of these limits. It loads `name` and `description` for every skill, loads the `SKILL.md` body when the skill runs, and loads a file under `references/` only when a step reads it. Three numbers stay distinct:
+
+- The specification caps `description` at 1024 characters. This repository uses 700 so a description stays clear of that ceiling.
+- The specification's 500-character cap is the optional `compatibility` field. Skills here do not use that field.
+- The specification says to keep the `SKILL.md` body under 500 lines.
+
+Put detail that only some steps need in `references/<topic>.md`. Link it from `SKILL.md` with a relative path, one level deep. The workflow step names when to read the file. Do not link from one reference file to another.
 
 ### examples.md
 
@@ -136,7 +146,7 @@ Every skill directory ships an `examples.md` beside its `SKILL.md`. The file hol
 - The three H2 headings are fixed in wording and in order: `Prompt`, `Without skill`, `With skill`. The file opens on `## Prompt`; it needs no H1 and no preamble.
 - Both branches take the identical input. Change the input between branches and the comparison proves nothing.
 - Show the artefact each branch produced, not a description of it. Put it in a fenced block so the reader sees its real shape.
-- A second scenario repeats the same three headings in the same order.
+- A second scenario repeats the same three headings in the same order. Put `<!-- markdownlint-disable-next-line MD024 -->` on the line directly above each repeated heading. MD024 treats those repeats as duplicate siblings, and the headings themselves stay fixed.
 
 ### agents/ wrappers
 
@@ -180,7 +190,8 @@ MUST:
 - MUST use the five required frontmatter keys above, plus `metadata.suggested-model` and `metadata.suggested-effort` only when the skill sets a model hint.
 - MUST set `license` to `CC-BY-ND-4.0` and nothing else.
 - MUST keep the frontmatter `name` identical to the skill directory name.
-- MUST write the `description` in third person throughout, opening on a third-person present-tense verb such as "Reviews" or "Generates" so the first verb agrees with the rest of the sentence, and keep a new description under 500 characters.
+- MUST write the `description` in third person throughout, opening on a third-person present-tense verb such as "Reviews" or "Generates" so the first verb agrees with the rest of the sentence, and keep every description you write or edit under 700 characters.
+- MUST keep the `SKILL.md` body under 500 lines. Put detail that only some steps need in `references/<topic>.md`, linked one level deep from `SKILL.md`.
 - MUST place the file at `skills/<category>/<skill-name>/SKILL.md`, exactly three levels under `skills/`.
 - MUST include the six sections in the exact order given in Output format.
 - MUST end the file with the attribution footer as the last non-empty line, matched character for character.
@@ -219,7 +230,8 @@ Run this list before you commit a skill.
 - [ ] The file is at `skills/<category>/<skill-name>/SKILL.md` and the category is `review`, `ai-health`, `docs`, `engineering`, `planning`, or `workflow`.
 - [ ] Line 1 is `---` and the frontmatter has a closing `---`.
 - [ ] `name` is lowercase-hyphenated, is 1-64 characters, and equals the directory name.
-- [ ] `description` is 1-1024 characters (under 500 for a new skill), says what the skill does, and lists trigger phrases.
+- [ ] `description` is under 700 characters, says what the skill does, and lists trigger phrases. The validator still accepts up to 1024.
+- [ ] The `SKILL.md` body is under 500 lines. Any `references/` file is linked one level deep from `SKILL.md`, and no reference links onward to another file.
 - [ ] `description` is written in third person throughout, including its opening verb, with no first-person or second-person wording.
 - [ ] `license` is exactly `CC-BY-ND-4.0`.
 - [ ] `metadata.version` is a quoted, valid SemVer string.
