@@ -24,16 +24,18 @@ An agent with no plan-review reads the plan and returns a general critique inste
 
 **Step 7, check D.** T2's "make sure examples.md reads well" names no tool, no command, and no concrete expected result — flagged.
 
-**Step 8, check E.** `ui: no` is stated and matches the evidence: the manifest defines no web framework and there is no `index.html`, templates directory, or mobile target. The final wave correctly has no UI QA todo. Verified, not a blocker.
+**Step 8, check E.** `ui: no` is stated and matches the evidence: the manifest defines no web framework and there is no `index.html`, templates directory, or mobile target, and the plan does not add one. The final wave correctly has no UI QA todo. Verified, not a blocker.
 
-**Step 9.** No further edge case would stop execution; nothing added to Notes this round.
+**Step 9, checks F through I.** Research cites Keep a Changelog and Semantic Versioning. Both URLs were opened: [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/) describes Added, Changed, and Fixed, and [Semantic Versioning](https://semver.org/) describes major, minor, and patch. The pages support "what this plan will follow." `## Questions` has Product before Technical, and every item has an answer. `## Design` is `Diagram: omitted — the request is a list of files to add, not a process, a user journey, or a system interaction.` The request is a file list, so the omission is correct. F1 through F4 are present in order, and F3 names no browser tool. Not blockers.
 
-**Step 10.** Two blockers survive, both real:
+**Step 10.** No further edge case would stop execution; nothing added to Notes this round.
+
+**Step 11.** Two blockers survive, both real:
 
 1. T3's reference does not exist at the cited line.
 2. T2's acceptance criterion is not executable.
 
-**Step 11.** Writes `## Review` into the plan file.
+**Step 12.** Writes `## Review` into the plan file.
 
 ```markdown
 ## Review
@@ -58,10 +60,14 @@ An agent with no plan-review reads the plan and returns a general critique inste
 #### Checked
 
 - References opened: 9 of 9; 1 broken.
-- Todos startable: 4 of 5 (T2 blocked).
+- Todos startable: 7 of 8 (T2 blocked).
 - Contradictions: none.
-- QA scenarios executable: 4 of 5.
-- UI claim: `ui: no` verified — no web framework, `index.html`, templates directory, or mobile target found. Automated UI QA todo last: not applicable.
+- QA scenarios executable: 7 of 8.
+- UI claim: `ui: no` verified — no web framework, `index.html`, templates directory, or mobile target found, and the plan adds none. Automated UI QA todo last: not applicable.
+- Research: present — sources opened 2 of 2; 0 broken. Opened `https://keepachangelog.com/en/1.1.0/` and `https://semver.org/`.
+- Questions: Product before Technical — open items with neither answer nor default: 0.
+- Diagram: omitted — the request is a list of files to add, not a process, a user journey, or a system interaction.
+- Final wave: F1–F4 present — UI QA last: not applicable.
 - Previous blockers fixed: first round.
 ```
 
@@ -74,15 +80,15 @@ PLAN-REVIEW: REJECT (2 blockers) — round 1 of 5 — `docs/plans/2026-09-26-add
 Fix these blockers and re-review until approved? (yes / I will fix them myself)
 ```
 
-**Step 13.** Because the original prompt already asked for "fix it until it passes," this counts as an up-front loop instruction: loop mode is confirmed and a `consent` row is added to the round history without waiting for a further answer.
+**Step 14.** Because the original prompt already asked for "fix it until it passes," this counts as an up-front loop instruction: loop mode is confirmed and a `consent` row is added to the round history without waiting for a further answer.
 
-**Step 14.** `plan-writer` is available in this session. It is loaded and run only through its fix-only follow-up step: it re-reads the plan from disk, fixes exactly the two listed blockers (corrects the T3 reference, restores T2's acceptance criterion), leaves every other section untouched, and appends a `#### Fixed` list to round 1 before plan-review's next pass reads it.
+**Step 15.** `plan-writer` is available in this session. It is loaded and run only through its fix-only follow-up step: it re-reads the plan from disk, fixes exactly the two listed blockers (corrects the T3 reference, restores T2's acceptance criterion), leaves every other section untouched, and appends a `#### Fixed` list to round 1 before plan-review's next pass reads it.
 
 **Round 2.** plan-review re-reads the plan from disk.
 
-**Step 15.** Verifies both round-1 blockers are fixed: T3 now cites the correct line and it does support the claim; T2's acceptance criterion is now a runnable command. Re-runs checks A–E only on T2 and T3, the sections that changed; does not re-open T1, T4, or T5, which already passed. No regression found. No new execution-stopping item found.
+**Step 16.** Verifies both round-1 blockers are fixed: T3 now cites the correct line and it does support the claim; T2's acceptance criterion is now a runnable command. Re-runs checks A–I only on T2 and T3, the sections that changed; does not re-open T1, T4, or F1–F4, which already passed. No regression found. No new execution-stopping item found.
 
-**Step 10 (round 2).** Zero blockers.
+**Step 11 (round 2).** Zero blockers.
 
 ```markdown
 ## Review
@@ -109,10 +115,14 @@ Fix these blockers and re-review until approved? (yes / I will fix them myself)
 #### Checked
 
 - References opened: 9 of 9; 1 broken.
-- Todos startable: 4 of 5 (T2 blocked).
+- Todos startable: 7 of 8 (T2 blocked).
 - Contradictions: none.
-- QA scenarios executable: 4 of 5.
+- QA scenarios executable: 7 of 8.
 - UI claim: `ui: no` verified. Automated UI QA todo last: not applicable.
+- Research: present — sources opened 2 of 2; 0 broken. Opened `https://keepachangelog.com/en/1.1.0/` and `https://semver.org/`.
+- Questions: Product before Technical — open items with neither answer nor default: 0.
+- Diagram: omitted — the request is a list of files to add, not a process, a user journey, or a system interaction.
+- Final wave: F1–F4 present — UI QA last: not applicable.
 - Previous blockers fixed: first round.
 
 ### Round 2
@@ -135,10 +145,14 @@ None.
 #### Checked
 
 - References opened: 2 of 2 (only the changed sections); 0 broken.
-- Todos startable: 5 of 5.
+- Todos startable: 8 of 8.
 - Contradictions: none.
-- QA scenarios executable: 5 of 5.
+- QA scenarios executable: 8 of 8.
 - UI claim: `ui: no`, unchanged, not re-verified this round.
+- Research: unchanged, not re-opened this round.
+- Questions: unchanged, not re-opened this round.
+- Diagram: omitted, unchanged, not re-opened this round.
+- Final wave: F1–F4 unchanged, not re-opened this round.
 - Previous blockers fixed: 2 of 2.
 ```
 
