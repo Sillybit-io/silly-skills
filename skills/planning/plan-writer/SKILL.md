@@ -1,9 +1,9 @@
 ---
 name: plan-writer
-description: Writes an implementation plan after a gap analysis. Classifies the request, researches the feature on the public web, analyzes the codebase, and asks product questions before technical ones. Sharpens a vague idea with up to three questions, then writes docs/plans/<date>-<slug>.md with that research, a design diagram when the request is a flow, and a final verification wave of at least four gates. Todos start unchecked and the builder checks each off when it is done. T0 copies the plan into the project if it is not already there. Use when writing a plan, planning a feature, planning a refactor, making an implementation plan, breaking work into tasks, or drafting a plan for review.
+description: Writes an implementation plan after a gap analysis. Classifies the request, researches the feature on the public web, analyzes the codebase, and asks product questions before technical ones. Sharpens a vague idea with up to three questions, then writes docs/plans/<date>-<slug>.md with that research, a design diagram when the request is a flow, and a final verification wave of at least four gates. The builder tests each todo before the next. The final wave is excluded. T0 copies the plan into the project if it is not already there. Use when writing a plan, planning a feature, planning a refactor, making an implementation plan, breaking work into tasks, or drafting a plan for review.
 license: CC-BY-ND-4.0
 metadata:
-  version: "0.3.0"
+  version: "0.4.0"
   category: planning
   suggested-model: anthropic/claude-fable-5-1
   suggested-effort: max
@@ -47,13 +47,13 @@ Do NOT use plan-writer when you:
 11. Second research pass. Read the second-pass section of [references/external-research.md](references/external-research.md). Skip the pass when no answer introduced a new point. Budget: 3 pages on the new point. Update the ledger and the Risks table when the pass changes them. When that section's one exception applies, write the question and its default into `## Questions` and stop. No third pass.
 12. Write `## Design`. Read [references/diagram.md](references/diagram.md). Add the mermaid block when the request needs one. Otherwise write `Diagram: omitted — <reason>`.
 13. Write the verification strategy: for every gap, the exact command or check that proves it closed, and the output it should produce.
-14. Write the todos, each with the fields in Output format. T0 is always first: copy this plan into the project's `docs/plans/` if it is not already there. Every todo, including T0 and the final-wave gates, starts with `- [ ] Open`. The plan tells the builder to change that line to `- [x] Done` in the project copy as soon as that todo is finished, before the next one starts. If T0 copied the file, the rest of the build stays in that copy. Every acceptance criterion is something an agent can run and check: a command with its expected output, or a UI selector with its expected state, using concrete data rather than placeholders. Never write "user tests manually", "verify it works", or "check visually" as acceptance. For a prose deliverable — a document, a skill, a config file — acceptance is structural: a section exists, a validator passes, a command printed in the doc actually runs. Never a grep for a specific sentence; that pins today's wording instead of the behavior.
-15. Group the implementation todos into waves by dependency: todos that share no file and have no dependency between them go in the same wave. T0 is not in a wave. It runs alone, before wave 1.
+14. Write the todos, each with the fields in Output format. T0 is always first: copy this plan into the project's `docs/plans/` if it is not already there. Every todo, including T0 and the final-wave gates, starts with `- [ ] Open`. For every todo under `## Todos` only, the plan tells the builder to run that todo's Acceptance and its QA scenario, pass them, make the commit when the todo says `Commit: yes`, and only then change that line to `- [x] Done` in the project copy, before the next one starts. A failure path marked n/a is not run. That test-before-next rule does not apply to the final-wave gates. Those gates still change `- [ ] Open` to `- [x] Done` when the gate is finished. If T0 copied the file, the rest of the build stays in that copy. Every acceptance criterion is something an agent can run and check: a command with its expected output, or a UI selector with its expected state, using concrete data rather than placeholders. Never write "user tests manually", "verify it works", or "check visually" as acceptance. For a prose deliverable — a document, a skill, a config file — acceptance is structural: a section exists, a validator passes, a command printed in the doc actually runs. Never a grep for a specific sentence; that pins today's wording instead of the behavior.
+15. Group the implementation todos into waves by dependency: todos that share no file and have no dependency between them go in the same wave. T0 is not in a wave. It runs alone, before wave 1. Above the wave list, tell the builder to finish T0, then each wave in list order, then the final wave, without stopping to ask for a continue. Todos inside one wave stay as independent as that line says. F1–F4 stay one parallel wave. If a todo's checks fail, the builder fixes that todo and runs the checks again until they pass, then continues. Do not put that instruction inside the test-before-next paragraph. After that paragraph, add its own paragraph: when the wave is done, start the next wave, including the final wave, and do not ask for a continue. If a todo's checks fail, fix that todo and run the checks again until they pass, then continue.
 16. Add the final verification wave. Read [references/final-wave.md](references/final-wave.md). Title the gates `F1`, `F2`, `F3`, and `F4`, in that order. When `ui: yes`, the last todo is the automated UI QA task.
 17. Apply the transcript test to every todo: it may hold a signature, a path, or a command, and nothing longer. Replace any block of implementation code with the decision it encodes and the reference it came from. A plan that runs several times longer than the request it answers is a transcript, not a plan.
 18. Update the file in place: fill every section, set `status: planned`, keep `review_round: 0`, and leave `## Review` empty for the reviewer.
 19. Reply with the path and the TL;DR, then close with: "Next: (a) run plan-review on `<path>` on a different model family — required, tier is architecture / recommended otherwise; (b) start building from the plan. Which?" In a non-interactive run, state the recommendation instead of asking, and stop.
-20. Follow-up after a rejection (this is the fix-only step `plan-review` runs on its own during its loop mode — see that skill): re-read the plan from disk, read the blockers listed under the latest `### Round n` in `## Review`, and fix only those plus whatever the fixes break. When a blocker names a missing `## Research`, `## Questions`, `## Design`, final-wave todo, checkbox, or T0, fill that section. Filling Research uses the budgets in [references/external-research.md](references/external-research.md). Set `review_round` to that round's number, append one line per blocker under a `#### Fixed` list for that round describing the change, keep `status: planned`, and reply with the path and a one-line summary of what changed. Never re-explore the codebase from scratch here, and never rewrite a section the blockers do not touch.
+20. Follow-up after a rejection (this is the fix-only step `plan-review` runs on its own during its loop mode — see that skill): re-read the plan from disk, read the blockers listed under the latest `### Round n` in `## Review`, and fix only those plus whatever the fixes break. When a blocker names a missing `## Research`, `## Questions`, `## Design`, final-wave todo, checkbox, per-todo test instruction, continue-through-waves instruction, or T0, fill that section. Filling Research uses the budgets in [references/external-research.md](references/external-research.md). Set `review_round` to that round's number, append one line per blocker under a `#### Fixed` list for that round describing the change, keep `status: planned`, and reply with the path and a one-line summary of what changed. Never re-explore the codebase from scratch here, and never rewrite a section the blockers do not touch.
 
 ### Handling feedback
 
@@ -150,6 +150,8 @@ review_round: 0
 
 ## Execution strategy
 
+Finish T0, then each wave in the order this list gives, then the final wave. Todos inside one wave stay as independent as that wave's line says. F1–F4 stay one parallel wave. Do not stop at the end of a wave. Do not ask for a continue. If a todo's checks fail, fix that todo and run the checks again until they pass, then continue. Stop only when every todo and every gate is `- [x] Done`.
+
 - T0: copy this plan into the project if it is not already there
 - Wave 1: T1, T2 (independent)
 - Wave 2: T3 (needs T1)
@@ -157,7 +159,9 @@ review_round: 0
 
 ## Todos
 
-Every todo starts with `- [ ] Open`. When you build this plan, change that line to `- [x] Done` in the project copy as soon as the todo is finished, before you start the next one. If T0 copied the file, keep editing that copy.
+Every todo starts with `- [ ] Open`. When you build this plan, run that todo's Acceptance and its QA scenario — the happy path, and the failure path unless it is n/a. Only after those checks pass, make this todo's commit when it says `Commit: yes`, then change that line to `- [x] Done` in the project copy. Do not start the next todo until that is done. If T0 copied the file, keep editing that copy. Do not run this test on a final-wave gate.
+
+When the wave is done, start the next wave, including the final wave. Do not ask for a continue. If a todo's checks fail, fix that todo and run the checks again until they pass, then continue.
 
 ### T0 — Copy the plan into the project
 
@@ -168,7 +172,7 @@ Every todo starts with `- [ ] Open`. When you build this plan, change that line 
 - Depends on: none
 - References: this file
 - Acceptance: the file exists at `docs/plans/<name>.md` inside the project
-- QA scenario: happy — the file is already under `docs/plans/` and this box is checked with no second copy; failure — the file is outside the project, one copy appears under `docs/plans/`, and the outside file is left as it was
+- QA scenario: happy — the file is already under `docs/plans/` and there is no second copy; failure — the file is outside the project, one copy appears under `docs/plans/`, and the outside file is left as it was
 - Commit: no
 
 ### T1 — <verb phrase>
@@ -185,7 +189,7 @@ Every todo starts with `- [ ] Open`. When you build this plan, change that line 
 
 ## Final verification wave
 
-The same checkbox rule applies here. Change `- [ ] Open` to `- [x] Done` in the project copy when that gate is finished, before the next one starts.
+Change `- [ ] Open` to `- [x] Done` in the project copy when that gate is finished, before the next one starts. The test-before-next rule under `## Todos` does not apply to this wave.
 
 ### F1 — Plan compliance
 
@@ -267,6 +271,8 @@ MUST:
 - MUST derive the branch name from a convention the repository states or the repository's own recent branches before falling back to the `type/slug` default, and record it as `branch:` in the frontmatter.
 - MUST keep a "Must NOT have" list, and it is never empty when the slop check found something to cut.
 - MUST make every acceptance criterion something an agent can run and check, with concrete data.
+- MUST write the test-before-next rule in the `## Todos` intro only: pass that todo's Acceptance and QA scenario, commit when it says `Commit: yes`, mark `- [x] Done`, and only then start the next todo. The final verification wave does not use that rule.
+- MUST write, above the execution-strategy wave list, that the builder finishes T0, then each wave in list order, then the final wave, without stopping to ask for a continue. Todos inside a wave stay as independent as that line says. If a todo's checks fail, the builder fixes that todo and runs the checks again until they pass, then continues.
 - MUST end the plan with `F1`, `F2`, `F3`, and `F4` in that order, and end the file with the automated UI QA todo whenever `ui: yes`.
 - MUST write `## Design` with either a mermaid block or `Diagram: omitted — <reason>`.
 - MUST write to `docs/plans/<date>-<slug>.md` and set `status: draft` before `status: planned`.
@@ -299,12 +305,14 @@ NEVER:
 - [ ] Every IS row and every implementation-todo reference has `path:line`, and each was actually opened. T0 may cite this file.
 - [ ] Every gap is closed by at least one implementation todo, and every implementation todo closes at least one gap. T0, F1–F4, and the UI QA todo do not need a gap.
 - [ ] T0 is the first todo. It copies this plan into the project's `docs/plans/` only when the file is not already there.
-- [ ] Every todo under `## Todos` and every final-wave gate starts with `- [ ] Open`, and the Todos section tells the builder to change that line to `- [x] Done` in the project copy when the todo is finished. If T0 copied the file, the rest of the build stays in that copy.
+- [ ] Every todo under `## Todos` and every final-wave gate starts with `- [ ] Open`. If T0 copied the file, the rest of the build stays in that copy.
+- [ ] The `## Todos` intro tells the builder to pass that todo's Acceptance and QA scenario, commit when it says `Commit: yes`, mark `- [x] Done`, and only then start the next todo. The final verification wave does not use that rule. It only marks its own box when the gate is finished.
 - [ ] "Must NOT have" is present, and lists anything the slop check removed.
 - [ ] `## Design` is a mermaid block or `Diagram: omitted — <reason>`.
 - [ ] Every acceptance criterion names a command or selector and a concrete expected result.
 - [ ] No todo holds more than a signature, a path, or a command.
 - [ ] The execution strategy's waves respect every "Depends on" field.
+- [ ] Above the wave list, the plan tells the builder to finish each wave and start the next, including the final wave, without asking for a continue. If a todo's checks fail, the builder fixes that todo and runs the checks again until they pass, then continues. The Todos intro repeats that after the test paragraph.
 - [ ] The final verification wave has `F1` through `F4` in order, and its last todo is the automated UI QA task whenever `ui: yes`, with tool, route, widths, steps, and a screenshot path.
 - [ ] The frontmatter has all ten keys, with `status` matching where the run stopped.
 - [ ] `## Review` is present and empty on a freshly planned file.

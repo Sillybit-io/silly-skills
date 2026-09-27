@@ -68,7 +68,8 @@ An agent with no plan-review reads the plan and returns a general critique inste
 - Questions: Product before Technical — open items with neither answer nor default: 0.
 - Diagram: omitted — the request is a list of files to add, not a process, a user journey, or a system interaction.
 - Final wave: F1–F4 present — UI QA last: not applicable.
-- Todo boxes: every todo starts `- [ ] Open`, and the plan says to mark `- [x] Done` in the project copy when that todo is finished.
+- Todo boxes: every todo starts `- [ ] Open`. The `## Todos` intro says to pass that todo's Acceptance and QA scenario, commit when it says `Commit: yes`, mark `- [x] Done`, and only then start the next todo. The final wave does not inherit that rule.
+- Waves: the plan says to continue through every wave until every todo and gate is done, and to fix a failed check and continue.
 - T0: first todo, copies the plan into `docs/plans/` only when it is not already there, and the build continues there.
 - Previous blockers fixed: first round.
 ```
@@ -125,7 +126,8 @@ Fix these blockers and re-review until approved? (yes / I will fix them myself)
 - Questions: Product before Technical — open items with neither answer nor default: 0.
 - Diagram: omitted — the request is a list of files to add, not a process, a user journey, or a system interaction.
 - Final wave: F1–F4 present — UI QA last: not applicable.
-- Todo boxes: every todo starts `- [ ] Open`, and the plan says to mark `- [x] Done` in the project copy when that todo is finished.
+- Todo boxes: every todo starts `- [ ] Open`. The `## Todos` intro says to pass that todo's Acceptance and QA scenario, commit when it says `Commit: yes`, mark `- [x] Done`, and only then start the next todo. The final wave does not inherit that rule.
+- Waves: the plan says to continue through every wave until every todo and gate is done, and to fix a failed check and continue.
 - T0: first todo, copies the plan into `docs/plans/` only when it is not already there, and the build continues there.
 - Previous blockers fixed: first round.
 
@@ -158,6 +160,7 @@ None.
 - Diagram: omitted, unchanged, not re-opened this round.
 - Final wave: F1–F4 unchanged, not re-opened this round.
 - Todo boxes: unchanged, not re-opened this round.
+- Waves: unchanged, not re-opened this round.
 - T0: unchanged, not re-opened this round.
 - Previous blockers fixed: 2 of 2.
 ```

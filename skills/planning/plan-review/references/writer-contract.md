@@ -2,7 +2,7 @@
 
 Read this file when running checks F through J. It restates what `plan-writer` is required to leave in the plan file. A miss is a blocker, same rank as checks A through E.
 
-When more than three flags exist, report in this order: a missing T0 or a missing todo checkbox, a missing final-wave gate, an unanswered question a todo depends on, missing research, a missing required diagram. Then add one line: "and N more of the same kind."
+When more than three flags exist, report in this order: a missing T0, a missing todo checkbox, a missing test-before-next instruction, or a missing continue-through-waves instruction. Then a missing final-wave gate, an unanswered question a todo depends on, missing research, a missing required diagram. Then add one line: "and N more of the same kind."
 
 ## Check F — Research
 
@@ -46,7 +46,9 @@ When `ui: yes` — including a plan that adds a web or mobile surface — the au
 
 ## Check J — Todo boxes and T0
 
-Two misses, each a blocker:
+Four misses, each a blocker:
 
-- Every todo under `## Todos` and every gate under `## Final verification wave` starts with `- [ ] Open` on a freshly planned file. The `## Todos` section tells the builder to change that line to `- [x] Done` in the project copy as soon as that todo is finished, before the next one starts. A missing box, or a missing instruction, is a blocker. Do not reject a box that is already `- [x]` on a re-review after the build has started.
+- Every todo under `## Todos` and every gate under `## Final verification wave` starts with `- [ ] Open` on a freshly planned file. The `## Todos` section tells the builder to change that line to `- [x] Done` in the project copy before the next todo starts. A missing box, or a missing instruction, is a blocker. Do not reject a box that is already `- [x]` on a re-review after the build has started. One intro paragraph that says to pass the checks, mark Done, and only then start the next todo satisfies this miss and the test miss together.
+- `## Todos` tells the builder to run that todo's Acceptance and QA scenario, pass them, commit when the todo says `Commit: yes`, mark `- [x] Done`, and only then start the next todo. A missing instruction is a blocker. Look for it in the section intro, not on each todo body. A failure path marked n/a is not run; the intro does not have to say that for this check to pass. The final wave must not inherit that rule. A blocker is an intro that says the test-before-next rule applies to F1–F4 or the UI QA todo, including "the same rule applies here" once that rule includes testing. F2 running the project's test, lint, and build commands, and F3 executing QA scenarios, are the gates themselves. Do not flag those.
+- `## Execution strategy` tells the builder to finish T0, then each wave in list order, then the final wave, without stopping to ask for a continue. Todos inside one wave stay as independent as that line says. F1–F4 stay one parallel wave. If a todo's checks fail, the builder fixes that todo and runs the checks again until they pass, then continues. A missing sentence is a blocker. So is an instruction to stop after a wave and wait, or to stop and wait when a check fails. A failed check that is fixed and then continued is not this miss. Gates that stay parallel are not this miss.
 - `T0` is the first todo. Its job is to copy this plan into the project's `docs/plans/` when the file is not already there, and then to do the rest of the build in that copy. If the file is already there, it stays. Checking its own box is the one edit T0 may make besides that copy. A missing T0, a T0 that is not first, a T0 that copies unconditionally, a T0 that leaves the build in the outside file, or a T0 that forbids the checkbox edit, is a blocker. T0 does not need to close a gap. Its reference may be `this file`.
