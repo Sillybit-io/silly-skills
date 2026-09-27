@@ -177,6 +177,8 @@ Diagram: omitted — the request is a list of files to add, not a process, a use
 
 ## Execution strategy
 
+Finish T0, then each wave in the order this list gives, then the final wave. Todos inside one wave stay as independent as that wave's line says. F1–F4 stay one parallel wave. Do not stop at the end of a wave. Do not ask for a continue. If a todo's checks fail, fix that todo and run the checks again until they pass, then continue. Stop only when every todo and every gate is `- [x] Done`.
+
 - T0: copy this plan into the project if it is not already there
 - Wave 1: T1, T2 (independent)
 - Wave 2: T3 (needs T1, to know the final skill name and description)
@@ -185,7 +187,9 @@ Diagram: omitted — the request is a list of files to add, not a process, a use
 
 ## Todos
 
-Every todo starts with `- [ ] Open`. When you build this plan, change that line to `- [x] Done` in the project copy as soon as the todo is finished, before you start the next one. If T0 copied the file, keep editing that copy.
+Every todo starts with `- [ ] Open`. When you build this plan, run that todo's Acceptance and its QA scenario — the happy path, and the failure path unless it is n/a. Only after those checks pass, make this todo's commit when it says `Commit: yes`, then change that line to `- [x] Done` in the project copy. Do not start the next todo until that is done. If T0 copied the file, keep editing that copy. Do not run this test on a final-wave gate.
+
+When the wave is done, start the next wave, including the final wave. Do not ask for a continue. If a todo's checks fail, fix that todo and run the checks again until they pass, then continue.
 
 ### T0 — Copy the plan into the project
 
@@ -196,7 +200,7 @@ Every todo starts with `- [ ] Open`. When you build this plan, change that line 
 - Depends on: none
 - References: this file
 - Acceptance: the file exists at `docs/plans/2026-09-26-add-release-notes-skill.md` inside the project
-- QA scenario: happy — the file is already under `docs/plans/` and this box is checked with no second copy; failure — the file is outside the project, one copy appears under `docs/plans/`, and the outside file is left as it was
+- QA scenario: happy — the file is already under `docs/plans/` and there is no second copy; failure — the file is outside the project, one copy appears under `docs/plans/`, and the outside file is left as it was
 - Commit: no
 
 ### T1 — Write the release-notes SKILL.md
@@ -249,7 +253,7 @@ Every todo starts with `- [ ] Open`. When you build this plan, change that line 
 
 ## Final verification wave
 
-The same checkbox rule applies here. Change `- [ ] Open` to `- [x] Done` in the project copy when that gate is finished, before the next one starts.
+Change `- [ ] Open` to `- [x] Done` in the project copy when that gate is finished, before the next one starts. The test-before-next rule under `## Todos` does not apply to this wave.
 
 ### F1 — Plan compliance
 
