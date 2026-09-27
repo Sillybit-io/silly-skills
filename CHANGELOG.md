@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- `ai-review` 0.3.0: stops before reading the diff when more than 300 files remain after repository `.gitignore` matches are removed. The stop note is said in chat, posted on a pull request or merge request when one is the target, and written to the per-target report. The count commands, the ignore filter, and the stop note live in `references/file-limit.md`.
+- `skill-writer` 0.3.0: cites the Agent Skills specification, raises the house description budget from 500 characters to 700, and tells authors to keep a `SKILL.md` body under 500 lines by putting step-specific detail in `references/`.
+
 ## [0.3.0] - 2026-09-26
 
 ### Added
