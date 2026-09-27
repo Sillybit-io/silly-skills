@@ -146,7 +146,7 @@ Every skill directory ships an `examples.md` beside its `SKILL.md`. The file hol
 - The three H2 headings are fixed in wording and in order: `Prompt`, `Without skill`, `With skill`. The file opens on `## Prompt`; it needs no H1 and no preamble.
 - Both branches take the identical input. Change the input between branches and the comparison proves nothing.
 - Show the artefact each branch produced, not a description of it. Put it in a fenced block so the reader sees its real shape.
-- A second scenario repeats the same three headings in the same order.
+- A second scenario repeats the same three headings in the same order. Put `<!-- markdownlint-disable-next-line MD024 -->` on the line directly above each repeated heading. MD024 treats those repeats as duplicate siblings, and the headings themselves stay fixed.
 
 ### agents/ wrappers
 

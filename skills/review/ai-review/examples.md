@@ -91,14 +91,17 @@ Following ai-review against the same commit: step 1 derived the report id `commi
 
 One candidate finding did not survive step 9 and so is absent above. Line 502 rebuilds the companion path from `category` and `dirName` rather than deriving it from `rel`, which would point at the wrong directory for a misplaced `SKILL.md`. Opening the caller settled it: the `LAYOUT` guard at `scripts/validate.ts:713-720` runs `continue` before `validateSkill` is reached unless `rel` splits into exactly four segments, so the reconstruction cannot diverge from the real directory. The suspicion was reasonable from the diff alone and wrong against the code, which is the case the verification step exists for.
 
+<!-- markdownlint-disable-next-line MD024 -->
 ## Prompt
 
 > Review pull request 88. It changes 320 files. None of them match the repository `.gitignore`.
 
+<!-- markdownlint-disable-next-line MD024 -->
 ## Without skill
 
 The agent starts reading. It asks for the diff, then works through the file list from the top: a workflow change, a generated client, a migration, a test helper. After a long pass over the first directories it writes a short review of the files it reached and says the rest look consistent with them. The unread files are not named. Nothing in the reply says the review stopped.
 
+<!-- markdownlint-disable-next-line MD024 -->
 ## With skill
 
 The count is 320, which is over 300, so the run stops before the diff. The reply is the stop note, posted when the target is a pull request, and written to `reports/ai-review-pr-88.md`.
