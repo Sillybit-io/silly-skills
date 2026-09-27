@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-09-27
+
 ### Changed
 
 - `plan-writer` 0.4.0: the builder passes each todo's acceptance and QA scenario, and commits when the todo says so, before marking it done and starting the next. The final verification wave is not part of that rule. After a wave is finished, the builder starts the next wave, including the final wave, without asking for a continue. A failed check is fixed and the checks are run again until they pass.
