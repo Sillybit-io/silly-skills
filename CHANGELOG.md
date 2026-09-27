@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-09-27
+
 - `plan-writer` 0.2.0: researches the feature on the public web, asks product questions before technical ones, adds a mermaid diagram when the request is a flow, and ends every plan with a final verification wave of at least four gates.
 - `plan-review` 0.2.0: rejects a plan that is missing that research, that question order, a required diagram, or one of the four final-wave gates.
 
