@@ -1,196 +1,110 @@
 ## Prompt
 
-> Review `docs/plans/2026-09-26-add-release-notes-skill.md` and fix it until it passes.
+> You approved this earlier. Are you sure? Recheck docs/plans/plan.md against the fixture and record one new review round. Do not fix the plan.
 
-This is the planned file from `plan-writer`'s own `examples.md`, with two defects introduced by a hand-edit between writing and review: T3's References line now cites `scripts/validate.ts:452` for the badge check instead of the real line, and T2's acceptance criterion has been loosened to "make sure examples.md reads well."
+Both runs received identical copies of an isolated rollback fixture. Its plan was
+`status: reviewed`, with one earlier OKAY and no recorded source traces. T1
+promised a working installation after rollback but restricted restoration to the
+legacy engine and bank. Its tests checked directory existence and bank contents.
+
+The relevant source copied the legacy installation to `new-home`, rewrote a
+hook, a shell helper, and a tool registration to that destination, and restored
+only the legacy directory on rollback. The registration write also replaced an
+unrelated configuration value. The proposed failure handler ran after
+installation, leaving failures inside installation uncovered.
+
+These are excerpts from actual evaluation outputs, not hypothetical weaker and
+stronger answers. The no-skill run loaded no plan-review instructions. The
+with-skill run loaded version 1.0.0 and its two workflow reference files. Neither
+run changed the plan's implementation instructions.
 
 ## Without skill
 
-An agent with no plan-review reads the plan and returns a general critique instead of a verdict: it praises the structure, suggests reordering T3 ahead of T2 for no stated reason, proposes adding back the `bun run release-notes` script the plan explicitly cut, and mentions the wrong line number in passing among eight bullet points without flagging it as something that blocks execution. It never notices that T2's acceptance criterion is not something a second agent could check. No verdict line is produced, and the plan file is never touched.
+The no-skill reviewer found the main defect and reproduced it by calling the
+fixture's real functions in a disposable directory. Its reply was:
+
+```text
+PLAN-REVIEW: REJECT (round 2; one blocker). The rollback plan restores `legacy` and the bank, but leaves `hook.sh`, `helpers.sh`, and the registered `tool.json` memory command pointing at the deleted `new-home`. The T1 assertions would miss this violation of the Must Have. The plan was not fixed.
+
+Reviewed plan: `../outputs/plan.md`; evidence: `../outputs/evidence.md`.
+```
+
+Its evidence recorded that the hook printed `{}`, the helper and registration
+still referenced `new-home`, and the bank and legacy engine had been restored.
+This baseline was a valid rejection; the comparison does not claim that a
+competent reviewer needs the skill to find the defect.
 
 ## With skill
 
-**Round 1.** The prompt asks for the fix-and-re-review loop up front, so this run starts in loop mode.
+The skill-guided reviewer re-read the plan, recorded source digests, built the
+whole-plan ledger, and traced successful installation, post-install rollback,
+and failure during installation. It used isolated calls to the existing
+functions to check the entry points and configuration values. It distinguished
+those probes from the future tests named in T1.
 
-**Step 1–2.** Input is the plan path. `status: planned`, so the review can proceed. No prior `## Review` section exists, so this is round 1.
+Its reply was:
 
-**Step 3.** Not applicable yet; the cap only matters from round 6 onward.
+```text
+PLAN-REVIEW: REJECT (3 blockers)
 
-**Step 4, check A.** Opens every cited path. `scripts/validate.ts:452` does not contain `checkBadgeCount` — the real function starts several lines later. Because T3 depends on that citation to justify updating the badge, this is a candidate blocker.
+Round 2; 2/5 since first review — `fixture/docs/plans/plan.md`. The prior approval lacked source evidence and is revoked.
 
-**Step 5, check B.** Every todo names a clear starting point except T2, whose acceptance criterion gives no command or check a second agent could run.
+1. Rollback restores the legacy engine and bank but leaves `hook.sh`, `helpers.sh`, and `tool.json` pointing to deleted `new-home`; an isolated invocation reproduced broken hook/tool behavior. Plan restoration/rewiring and test the actual entry points after rollback.
+2. Installation overwrites unrelated `tool.json` values, and rollback does not restore them. A seed with `enabled: false` and a `label` became `enabled: true`. Plan a value-preserving update/restore and assert exact preservation.
+3. A failure *inside* `install_new` can leave a partially installed destination before the plan's “after install_new” rollback path. An isolated failing-`cat` probe exited 17 with `new-home` still present. Cover failures during installation and test that boundary.
 
-**Step 6, check C.** No contradictions between "Must have" and "Must NOT have"; no dependency cycle.
-
-**Step 7, check D.** T2's "make sure examples.md reads well" names no tool, no command, and no concrete expected result — flagged.
-
-**Step 8, check E.** `ui: no` is stated and matches the evidence: the manifest defines no web framework and there is no `index.html`, templates directory, or mobile target, and the plan does not add one. The final wave correctly has no UI QA todo. Verified, not a blocker.
-
-**Step 9, checks F through I.** Research cites Keep a Changelog and Semantic Versioning. Both URLs were opened: [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/) describes Added, Changed, and Fixed, and [Semantic Versioning](https://semver.org/) describes major, minor, and patch. The pages support "what this plan will follow." `## Questions` has Product before Technical, and every item has an answer. `## Design` is `Diagram: omitted — the request is a list of files to add, not a process, a user journey, or a system interaction.` The request is a file list, so the omission is correct. F1 through F4 are present in order, and F3 names no browser tool. Not blockers.
-
-**Step 10.** No further edge case would stop execution; nothing added to Notes this round.
-
-**Step 11.** Two blockers survive, both real:
-
-1. T3's reference does not exist at the cited line.
-2. T2's acceptance criterion is not executable.
-
-**Step 12.** Writes `## Review` into the plan file.
-
-```markdown
-## Review
-
-| Round | Date | Verdict | Blockers |
-| --- | --- | --- | --- |
-| 1 | 2026-09-26 | REJECT | 2 |
-
-### Round 1
-
-**Verdict:** PLAN-REVIEW: REJECT (2 blockers)
-
-#### Blockers
-
-1. **T3 — reference does not exist.** `scripts/validate.ts:452` is not where `checkBadgeCount` is declared. Fix: cite the line where the function is actually defined.
-2. **T2 — acceptance criterion is not executable.** "Make sure examples.md reads well" names no command and no expected result. Fix: restore "`bun run validate` reports no `MISSING_EXAMPLES` error for `skills/workflow/release-notes/`".
-
-#### Notes (non-blocking)
-
-- None this round.
-
-#### Checked
-
-- References opened: 9 of 9; 1 broken.
-- Todos startable: 8 of 9 (T2 blocked).
-- Contradictions: none.
-- QA scenarios executable: 8 of 9.
-- UI claim: `ui: no` verified — no web framework, `index.html`, templates directory, or mobile target found, and the plan adds none. Automated UI QA todo last: not applicable.
-- Research: present — sources opened 2 of 2; 0 broken. Opened `https://keepachangelog.com/en/1.1.0/` and `https://semver.org/`.
-- Questions: Product before Technical — open items with neither answer nor default: 0.
-- Diagram: omitted — the request is a list of files to add, not a process, a user journey, or a system interaction.
-- Final wave: F1–F4 present — UI QA last: not applicable.
-- Todo boxes: every todo starts `- [ ] Open`. The `## Todos` intro says to pass that todo's Acceptance and QA scenario, commit when it says `Commit: yes`, mark `- [x] Done`, and only then start the next todo. The final wave does not inherit that rule.
-- Waves: the plan says to continue through every wave until every todo and gate is done, and to fix a failed check and continue.
-- T0: first todo, copies the plan into `docs/plans/` only when it is not already there, and the build continues there.
-- Previous blockers fixed: first round.
-```
-
-Chat reply, ending with the fix-now offer since this is round 1 in review-mode terms, immediately answered by the up-front loop request:
-
-```markdown
-PLAN-REVIEW: REJECT (2 blockers) — round 1 of 5 — `docs/plans/2026-09-26-add-release-notes-skill.md`
-1. T3 — reference does not exist. Fix: cite the line where `checkBadgeCount` is actually defined.
-2. T2 — acceptance criterion is not executable. Fix: restore a `bun run validate` check for `MISSING_EXAMPLES`.
 Fix these blockers and re-review until approved? (yes / I will fix them myself)
+
+Outputs: `../outputs/reply.md`, `../outputs/plan.md`, `../outputs/evidence.md` (relative to fixture).
 ```
 
-**Step 14.** Because the original prompt already asked for "fix it until it passes," this counts as an up-front loop instruction: loop mode is confirmed and a `consent` row is added to the round history without waiting for a further answer.
-
-**Step 15.** `plan-writer` is available in this session. It is loaded and run only through its fix-only follow-up step: it re-reads the plan from disk, fixes exactly the two listed blockers (corrects the T3 reference, restores T2's acceptance criterion), leaves every other section untouched, and appends a `#### Fixed` list to round 1 before plan-review's next pass reads it.
-
-**Round 2.** plan-review re-reads the plan from disk.
-
-**Step 16.** Verifies both round-1 blockers are fixed: T3 now cites the correct line and it does support the claim; T2's acceptance criterion is now a runnable command. Re-runs checks A–J only on T2 and T3, the sections that changed; does not re-open T1, T4, or F1–F4, which already passed. No regression found. No new execution-stopping item found.
-
-**Step 11 (round 2).** Zero blockers.
+The saved review preserved round 1 and appended round 2. This excerpt shows the
+history, verdict, and scope; the complete record also stored the plan and
+evidence-file SHA-256 values:
 
 ```markdown
-## Review
-
 | Round | Date | Verdict | Blockers |
 | --- | --- | --- | --- |
-| 1 | 2026-09-26 | REJECT | 2 |
-| consent | 2026-09-26 | — | user approved loop mode |
-| 2 | 2026-09-26 | OKAY | 0 |
-
-### Round 1
-
-**Verdict:** PLAN-REVIEW: REJECT (2 blockers)
-
-#### Blockers
-
-1. **T3 — reference does not exist.** `scripts/validate.ts:452` is not where `checkBadgeCount` is declared. Fix: cite the line where the function is actually defined.
-2. **T2 — acceptance criterion is not executable.** "Make sure examples.md reads well" names no command and no expected result. Fix: restore "`bun run validate` reports no `MISSING_EXAMPLES` error for `skills/workflow/release-notes/`".
-
-#### Notes (non-blocking)
-
-- None this round.
-
-#### Checked
-
-- References opened: 9 of 9; 1 broken.
-- Todos startable: 8 of 9 (T2 blocked).
-- Contradictions: none.
-- QA scenarios executable: 8 of 9.
-- UI claim: `ui: no` verified. Automated UI QA todo last: not applicable.
-- Research: present — sources opened 2 of 2; 0 broken. Opened `https://keepachangelog.com/en/1.1.0/` and `https://semver.org/`.
-- Questions: Product before Technical — open items with neither answer nor default: 0.
-- Diagram: omitted — the request is a list of files to add, not a process, a user journey, or a system interaction.
-- Final wave: F1–F4 present — UI QA last: not applicable.
-- Todo boxes: every todo starts `- [ ] Open`. The `## Todos` intro says to pass that todo's Acceptance and QA scenario, commit when it says `Commit: yes`, mark `- [x] Done`, and only then start the next todo. The final wave does not inherit that rule.
-- Waves: the plan says to continue through every wave until every todo and gate is done, and to fix a failed check and continue.
-- T0: first todo, copies the plan into `docs/plans/` only when it is not already there, and the build continues there.
-- Previous blockers fixed: first round.
+| 1 | 2026-09-27 | OKAY | 0 |
+| 2 | 2026-09-28 | REJECT | 3 |
 
 ### Round 2
 
-**Verdict:** PLAN-REVIEW: OKAY
+**Verdict:** PLAN-REVIEW: REJECT (3 blockers)
+**Mode:** review; confidence challenge, round 2/5 since first round; no loop consent.
+**Scope:** whole plan; 8/14 required obligations verified; 0/3 critical flows verified. Contradicted obligations are counted, not silently treated as unverified.
+```
 
-#### Blockers
+The full ledger had fourteen rows. Four of its evidence rows were:
 
-None.
+```markdown
+| ID / obligation / owning todos | Required? | Evidence kind and location | Observed result | Planned QA | Status |
+| --- | --- | --- | --- | --- | --- |
+| C01 Legacy executable and bank on explicit rollback / T1 | yes | Source `upgrade.sh:6,18-21`; executed post-install probe | `legacy/bin/memory` executable, seeded bank unchanged, `new-home` absent | T1 failure/explicit rollback tests | verified |
+| C02 Hook usable after rollback / T1, F1, F3 | yes | Source `upgrade.sh:9-14,18-21`; executed post-install probe | Hook prints `{}` instead of invoking legacy executable | T1 only asserts directories/bank | contradicted |
+| C05 Unrelated settings preserved / T1, F1, F3 | yes | Source `upgrade.sh:16,18-21`; executed unrelated-value probe | Preexisting `false` and `label` replaced with `true` on success and rollback | T1 says preserve unrelated key, without asserting exact value | contradicted |
+| C06 Failure during install has recovery / T1, F3 | yes | Source `upgrade.sh:7-16`; executed mid-install failing-`cat` probe | Exit 17 before rollback; destination remains | T1 only injects failure after `install_new` | contradicted |
+```
 
-#### Fixed
+The complete record included all three critical-flow traces and Checks A–J.
+Its closing evidence and gate entries included:
 
-- Blocker 1 from round 1: T3 now cites the line where `checkBadgeCount` is actually declared, and the line supports the claim.
-- Blocker 2 from round 1: T2's acceptance criterion is now "`bun run validate` reports no `MISSING_EXAMPLES` error for `skills/workflow/release-notes/`", which a second agent can run.
+```markdown
+#### Unverified
+
+- None left as a required evidence gap; demonstrated blockers determine REJECT. No source windows skipped (2 distinct external-to-plan windows, within 40); no URLs needed (0/5).
+- Planned implementation tests not run: `tests/check_rollback.py` does not exist yet; its future runs are planned QA, not evidence of correctness.
+- Owner waivers: None.
 
 #### Notes (non-blocking)
 
-- None.
-
-#### Checked
-
-- References opened: 2 of 2 (only the changed sections); 0 broken.
-- Todos startable: 9 of 9.
-- Contradictions: none.
-- QA scenarios executable: 9 of 9.
-- UI claim: `ui: no`, unchanged, not re-verified this round.
-- Research: unchanged, not re-opened this round.
-- Questions: unchanged, not re-opened this round.
-- Diagram: omitted, unchanged, not re-opened this round.
-- Final wave: F1–F4 unchanged, not re-opened this round.
-- Todo boxes: unchanged, not re-opened this round.
-- Waves: unchanged, not re-opened this round.
-- T0: unchanged, not re-opened this round.
-- Previous blockers fixed: 2 of 2.
+- The README's syntax check passed, but cannot assess recovery semantics.
 ```
 
-Chat reply for round 2:
-
-```markdown
-PLAN-REVIEW: OKAY — round 2 of 5 — `docs/plans/2026-09-26-add-release-notes-skill.md` — 0 non-blocking notes recorded in the file.
+```text
+Approval gate: FAIL — 8/14 required obligations verified and 0/3 critical flows verified; three demonstrated execution blockers remain. All checks A–J accounted for; no approval precondition inferred from prior OKAY.
 ```
 
-The plan's frontmatter now reads `status: reviewed`, `review_round: 2`, and the loop stops here — the only way a loop-mode run ends successfully.
-
-### If the loop had not converged
-
-Had T3's underlying problem been unfixable — say, the file it needed to reference did not exist anywhere in the repository and could not be created within scope — round 5 would still end in `PLAN-REVIEW: REJECT`, and the round-history table would show five `REJECT` rows under the same `consent` row rather than a sixth attempt:
-
-```markdown
-| Round | Date | Verdict | Blockers |
-| --- | --- | --- | --- |
-| 1 | 2026-09-26 | REJECT | 2 |
-| consent | 2026-09-26 | — | user approved loop mode |
-| 2 | 2026-09-26 | REJECT | 1 |
-| 3 | 2026-09-26 | REJECT | 1 |
-| 4 | 2026-09-26 | REJECT | 1 |
-| 5 | 2026-09-26 | REJECT | 1 |
-```
-
-```markdown
-PLAN-REVIEW: REJECT (1 blockers) — 5 rounds used, still rejected — `docs/plans/2026-09-26-add-release-notes-skill.md`
-Continue for up to 5 more rounds, stop here to fix it by hand, or accept the plan as is?
-```
-
-The loop never runs a sixth round on its own; it stops and hands the decision back.
+The plan ended with `status: planned` and `review_round: 2`. The previous approval
+remained in the history, explicitly superseded by the new evidence. No fix loop
+started because the prompt requested only one review round.
