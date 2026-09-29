@@ -3,3 +3,23 @@ node_modules/
 .DS_Store
 *.log
 reports/
+
+# Local skill installations. Canonical sources stay tracked under skills/<category>/ and agents/.
+/.agents/
+/agent/
+/skills-lock.json
+/.claude/skills/
+/skills/ai-audit
+/skills/ai-review
+/skills/conventions-codifier
+/skills/create-agent
+/skills/doc-cleanup
+/skills/issue-refiner
+/skills/plan-review
+/skills/plan-writer
+/skills/pr-description
+/skills/review-response
+/skills/secret-and-privacy-sweep
+/skills/skill-writer
+/skills/tech-writing
+/skills/ui-engineering
