@@ -1,4 +1,0 @@
-#!/bin/sh
-# Memory engine stub. Reports which installation answered the request.
-home=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-printf '{"engine": "%s", "request": "%s"}\n' "$(basename "$home")" "$*"

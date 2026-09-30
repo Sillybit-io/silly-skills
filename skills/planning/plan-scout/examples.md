@@ -2,7 +2,7 @@
 
 > Use the plan-scout subagent to find every producer and consumer of app/core/rate_limit.py in this project. Then reply with its report exactly as it returned it.
 
-Both branches ran on 2026-09-29 in Claude Code 2.1.283 with `claude -p`, each in a fresh copy of the `hidden-consumer` fixture from `scripts/fixtures/planning/`. The main session ran on `claude-fable-5-1`. In the with-skill branch it launched the installed `plan-scout` persona, which ran on `claude-sonnet-5`. The without-skill branch asked the same session the same question without the persona: "Find every producer and consumer of app/core/rate_limit.py in this project. Do not change any file. Reply with what you found." The evaluator-only key lists 23 relevant files; neither run could see it. Absolute paths in the reports are shortened to `<fixture copy>`. Neither run changed a project file.
+Both branches ran on 2026-09-29 in Claude Code 2.1.283 with `claude -p`, each in a fresh copy of a small Python service whose rate limiter has 23 relevant producers and consumers: direct and transitive callers, a plugin loaded by string, config, key-format readers, an ops script, docs, and tests. The main session ran on `claude-fable-5-1`. In the with-skill branch it launched the installed `plan-scout` persona, which ran on `claude-sonnet-5`. The without-skill branch asked the same session the same question without the persona: "Find every producer and consumer of app/core/rate_limit.py in this project. Do not change any file. Reply with what you found." An evaluator-only key listing all 23 relevant files was kept out of what either run could see. Absolute paths in the reports are shortened to `<fixture copy>`. Neither run changed a project file.
 
 ## Without skill
 

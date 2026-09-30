@@ -137,7 +137,7 @@ The todo that closes the count gap:
 
 > Change app/core/rate_limit.py to a sliding-window limit instead of fixed windows. Keep check_rate_limit's signature.
 
-The `hidden-consumer` fixture in `scripts/fixtures/planning/`: a small Python service whose limiter has 23 relevant producers and consumers, including a plugin loaded by string, key-format readers, an ops script, and docs. Both runs were fresh OpenCode child sessions on 2026-09-29 on `openai/gpt-6-sol` at variant `high`, with identical copies of the project, told to work non-interactively. Scoring used the evaluator-only key `ground-truth/hidden-consumer.json`, which neither run could see.
+A small Python service whose limiter has 23 relevant producers and consumers, including a plugin loaded by string, key-format readers, an ops script, and docs. Both runs were fresh OpenCode child sessions on 2026-09-29 on `openai/gpt-6-sol` at variant `high`, with identical copies of the project, told to work non-interactively. Scoring used an evaluator-only key that neither run could see.
 
 <!-- markdownlint-disable-next-line MD024 -->
 ## Without skill

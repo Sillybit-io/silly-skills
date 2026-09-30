@@ -150,8 +150,6 @@ Versions live at two levels. The repository follows SemVer as a whole: each rele
 
 Every pull request runs three checks. gitleaks scans for committed credentials; this repository's own validator fails the build on `FORBIDDEN_CONTENT`, which rejects secret-shaped strings, real email addresses, and absolute local filesystem paths anywhere in the tree; and OpenSSF Scorecard reports the repository's supply-chain posture. No secrets, personal data, or internal references belong in this repository — to report something that slipped through, follow [SECURITY.md](SECURITY.md).
 
-`scripts/fixtures/` holds made-up, synthetic projects and plans used only to test the planning skills (`plan-writer`, `plan-review`, `plan-scout`, `plan-builder`, `plan-loop`, `plan-result-review`) — invented Python services, a fake package-upgrade script, seeded bugs, and scoring keys the skills are graded against. None of it is a real project, real credentials, or real user data; see [`scripts/fixtures/planning/README.md`](scripts/fixtures/planning/README.md) and [`scripts/fixtures/rollback/README.md`](scripts/fixtures/rollback/README.md) for what each one is and how it is run.
-
 ## Roadmap
 
 - `test-gap-finder` — maps the behaviors a diff leaves untested, then splits them into a test plan an AI can write and one a human must design.

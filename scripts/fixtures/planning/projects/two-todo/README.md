@@ -1,3 +1,0 @@
-# Greeter
-
-Prints a greeting. Run the tests with `python3 -m unittest -q`.
