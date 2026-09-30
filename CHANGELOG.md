@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-09-30
+
 ### Added
 
 - `plan-scout` 0.1.0: a read-only subagent that finds every producer and consumer of a named entry point, file, symbol, or format, following imports, string registrations, path strings, data formats, configuration, docs, ops scripts, and tests. Returns quoted excerpts, the searches it ran, boundary reasons, and what it could not read. Never edits, runs a command, delegates, or offers an opinion on the plan. `plan-writer` and `plan-review` may each delegate one bounded discovery question to it.
