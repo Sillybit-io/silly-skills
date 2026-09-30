@@ -13,7 +13,7 @@
  *   ERROR[<CODE>] <file>:<line> <message>
  * Warnings use the same shape with the WARNING prefix and never change the exit
  * code. The run always ends with the summary line:
- *   <N> skills validated, <M> errors
+ *   <N> skills validated, <M> errors, <P> agent personas
  * Exit code is 0 when there are no errors, 1 otherwise.
  *
  * ── Error codes ──────────────────────────────────────────────────────────────
@@ -56,6 +56,10 @@
  *   BADGE_COUNT         README.md's canonical skill-count badge is missing,
  *                       appears more than once, or reports a number other than
  *                       the discovered skill count.
+ *   AGENT_BADGE_COUNT   README.md's canonical agent-count badge is missing,
+ *                       appears more than once, or reports a number other than
+ *                       the discovered agent-persona count (directories under
+ *                       agents/).
  *   DUPLICATE_NAME      Two or more skills declare the same frontmatter `name`.
  *   SUGGESTED_MODEL     `metadata.suggested-model` is present but does not match
  *                       provider/model (`^[a-z0-9-]+/[a-z0-9.-]+$`), or
@@ -76,6 +80,9 @@
  * ── Warning codes ────────────────────────────────────────────────────────────
  *   BADGE_COUNT         Skipped because the repository has 0 skills or has no
  *                       README.md yet. The hard check activates once skills exist.
+ *   AGENT_BADGE_COUNT   Skipped because the repository has 0 agent personas or
+ *                       has no README.md yet. The hard check activates once
+ *                       agent personas exist.
  *   INTERNAL_REFERENCE  An internal-host or localhost reference outside a fenced
  *                       code block. Reported, never fatal.
  */
@@ -107,6 +114,7 @@ const NAME_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 export const RESERVED_NAME_WORDS = ["anthropic", "claude"] as const;
 const SEMVER_RE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
 const BADGE_SOURCE = "https://img\\.shields\\.io/badge/skills-(\\d+)-blue";
+const AGENT_BADGE_SOURCE = "https://img\\.shields\\.io/badge/agents-(\\d+)-blue";
 
 export const SUGGESTED_EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
 const SUGGESTED_MODEL_RE = /^[a-z0-9-]+\/[a-z0-9.-]+$/;
@@ -147,6 +155,7 @@ export type Finding = {
 export type Result = {
   skillCount: number;
   skillNames: string[];
+  agentCount: number;
   errors: Finding[];
   warnings: Finding[];
 };
@@ -625,6 +634,73 @@ function checkBadgeCount(
   }
 }
 
+function checkAgentBadgeCount(
+  root: string,
+  agentCount: number,
+  errors: Finding[],
+  warnings: Finding[],
+): void {
+  const readme = readTextFile(join(root, "README.md"));
+
+  if (readme === null) {
+    warnings.push({
+      code: "AGENT_BADGE_COUNT",
+      file: "README.md",
+      line: 0,
+      message: "skipped: no README.md found at the repository root",
+    });
+    return;
+  }
+
+  if (agentCount === 0) {
+    warnings.push({
+      code: "AGENT_BADGE_COUNT",
+      file: "README.md",
+      line: 0,
+      message:
+        "skipped: 0 agent personas discovered, so the README agent-count badge is not asserted yet",
+    });
+    return;
+  }
+
+  const lines = readme.split(/\r?\n/);
+  const hits: { line: number; count: number }[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    for (const hit of lines[i].matchAll(new RegExp(AGENT_BADGE_SOURCE, "g"))) {
+      hits.push({ line: i + 1, count: Number(hit[1]) });
+    }
+  }
+
+  if (hits.length === 0) {
+    errors.push({
+      code: "AGENT_BADGE_COUNT",
+      file: "README.md",
+      line: 1,
+      message: `missing the canonical agent-count badge https://img.shields.io/badge/agents-${agentCount}-blue`,
+    });
+    return;
+  }
+  if (hits.length > 1) {
+    for (const hit of hits) {
+      errors.push({
+        code: "AGENT_BADGE_COUNT",
+        file: "README.md",
+        line: hit.line,
+        message: `the agent-count badge must appear exactly once, found ${hits.length} occurrences`,
+      });
+    }
+    return;
+  }
+  if (hits[0].count !== agentCount) {
+    errors.push({
+      code: "AGENT_BADGE_COUNT",
+      file: "README.md",
+      line: hits[0].line,
+      message: `badge reports ${hits[0].count} agent personas but ${agentCount} were discovered`,
+    });
+  }
+}
+
 /* ── skill validation ──────────────────────────────────────────────────────── */
 
 function topLevelHeadingsOutsideFences(text: string): string[] {
@@ -735,7 +811,7 @@ function validatePersonas(
   skillDirs: Set<string>,
   modelSkills: { name: string; file: string }[],
   errors: Finding[],
-): void {
+): number {
   for (const rel of listFiles(root)) {
     const parts = rel.split("/");
     if (parts.length === 5 && parts[0] === "skills" && parts[3] === "agents") {
@@ -912,6 +988,8 @@ function validatePersonas(
           : `metadata.suggested-model on '${skill.name}' is named by ${owners.length} personas (${owners.join(", ")}); exactly one is required`,
     });
   }
+
+  return personas.length;
 }
 
 function validateSkill(
@@ -1198,16 +1276,17 @@ export function validate(root: string): Result {
     }
   }
 
-  validatePersonas(root, skillDirs, modelSkills, errors);
+  const agentCount = validatePersonas(root, skillDirs, modelSkills, errors);
   scanForbiddenContent(root, files, errors, warnings);
   checkBadgeCount(root, skillCount, errors, warnings);
+  checkAgentBadgeCount(root, agentCount, errors, warnings);
 
   const order = (a: Finding, b: Finding): number =>
     a.file.localeCompare(b.file) || a.line - b.line || a.code.localeCompare(b.code);
   errors.sort(order);
   warnings.sort(order);
 
-  return { skillCount, skillNames: skillNames.sort(), errors, warnings };
+  return { skillCount, skillNames: skillNames.sort(), agentCount, errors, warnings };
 }
 
 function format(prefix: string, finding: Finding): string {
@@ -1221,7 +1300,9 @@ if (import.meta.main) {
   for (const warning of result.warnings) console.log(format("WARNING", warning));
   for (const error of result.errors) console.log(format("ERROR", error));
 
-  console.log(`${result.skillCount} skills validated, ${result.errors.length} errors`);
+  console.log(
+    `${result.skillCount} skills validated, ${result.errors.length} errors, ${result.agentCount} agent personas`,
+  );
   if (result.warnings.length > 0) {
     console.log(`${result.warnings.length} warnings (warnings do not fail the run)`);
   }

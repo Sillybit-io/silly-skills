@@ -27,6 +27,10 @@ Diagram: omitted — <reason>
 
 The reason names why the request is not a flow or a design. An extra diagram on a file-edit plan is allowed. A missing `## Design` section is not.
 
+## Diagrams and flow traces
+
+A diagram shows the design at a glance. It does not replace the traces under `### Critical flows` and in the Evidence index, which name each entry point, ordered effect, recovery path, and counterexample. A file-edit plan can omit the diagram and still have a critical flow; a cross-component process needs both.
+
 ## Syntax
 
 These rules are for the writer so the diagram renders. Review does not grade them.

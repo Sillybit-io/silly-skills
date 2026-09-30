@@ -9,6 +9,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { parseFrontmatter } from "./validate.ts";
 
 const script = join(import.meta.dir, "agent-install.sh");
 const roots: string[] = [];
@@ -209,7 +210,7 @@ describe("agent-install.sh", () => {
     expect(readFileSync(join(dest, "plan-review.md"), "utf8")).toContain("effort: high");
   });
 
-  test("--effort rewrites reasoningEffort for opencode", () => {
+  test("--effort on a legacy opencode wrapper becomes the model variant", () => {
     const skillsDir = newDir();
     const dest = newDir();
     writeWrapper(skillsDir, "plan-review", ["opencode"]);
@@ -229,8 +230,8 @@ describe("agent-install.sh", () => {
 
     expect(result.code).toBe(0);
     const written = readFileSync(join(dest, "plan-review.md"), "utf8");
-    expect(written).toContain("reasoningEffort: low");
-    expect(written).not.toContain("reasoningEffort: max");
+    expect(written).toContain("model: openai/gpt-6-astra#low");
+    expect(written).not.toContain("reasoningEffort");
   });
 
   test("--model and --effort together rewrite the cursor bracket suffix", () => {
@@ -454,5 +455,125 @@ describe("agent-install.sh", () => {
 
     expect(result.code).toBe(1);
     expect(result.stderr).toContain("github.com");
+  });
+});
+
+describe("agent-install.sh model variants and overrides", () => {
+  const V2 = [
+    "---",
+    "description: Reviews a plan.",
+    "mode: all",
+    "model: openai/gpt-6-astra#high",
+    "permissions:",
+    "  - action: read",
+    "    resource: \"*\"",
+    "    effect: allow",
+    "---",
+    "",
+    "Body. model: in prose stays. reasoningEffort: in prose stays.",
+    "",
+  ].join("\n");
+  const LEGACY = WRAPPER_BODY.opencode;
+  const NO_EFFORT = V2.replace("model: openai/gpt-6-astra#high", "model: anthropic/claude-haiku-4-5");
+
+  function install(body: string, extra: string[], tool: Tool = "opencode") {
+    const agentsDir = newDir();
+    const dest = newDir();
+    mkdirSync(join(agentsDir, "p"), { recursive: true });
+    writeFileSync(join(agentsDir, "p", `${tool}.md`), body, "utf8");
+    const result = run(["--tool", tool, "--agent", "p", "--agents-dir", agentsDir, "--dest", dest, ...extra]);
+    const path = join(dest, "p.md");
+    let text = "";
+    try {
+      text = readFileSync(path, "utf8");
+    } catch {
+      // not written
+    }
+    return { result, text, dest, agentsDir, path };
+  }
+
+  function parsed(text: string) {
+    const fm = parseFrontmatter(text.split("\n"), { permissionList: true });
+    expect(fm.problems).toEqual([]);
+    return fm;
+  }
+
+  function withoutModelLines(text: string): string {
+    return text
+      .split("\n")
+      .filter((l) => !/^(model|reasoningEffort): /.test(l))
+      .join("\n");
+  }
+
+  const cases: [string, string, string[], string][] = [
+    ["model-only keeps the wrapper's variant", V2, ["--model", "anthropic/claude-sonnet-5"], "anthropic/claude-sonnet-5#high"],
+    ["effort-only replaces the variant", V2, ["--effort", "low"], "openai/gpt-6-astra#low"],
+    ["a variant inside --model replaces the wrapper's variant", V2, ["--model", "openai/gpt-6-sol#max"], "openai/gpt-6-sol#max"],
+    ["explicit --effort beats a variant inside --model", V2, ["--model", "openai/gpt-6-sol#max", "--effort", "medium"], "openai/gpt-6-sol#medium"],
+    ["a legacy reasoningEffort line becomes the variant", LEGACY, ["--model", "openai/gpt-6-sol"], "openai/gpt-6-sol#max"],
+    ["--effort on a legacy wrapper beats its reasoningEffort", LEGACY, ["--effort", "low"], "openai/gpt-6-astra#low"],
+    ["a wrapper with no effort hint gets no variant", NO_EFFORT, ["--model", "anthropic/claude-haiku-4-5"], "anthropic/claude-haiku-4-5"],
+  ];
+
+  for (const [name, body, args, expected] of cases) {
+    test(`opencode: ${name}`, () => {
+      const { result, text } = install(body, args);
+      expect(result.code).toBe(0);
+      expect(result.stderr).toBe("");
+      const fm = parsed(text);
+      expect(fm.top.model).toBe(expected);
+      expect("reasoningEffort" in fm.top).toBe(false);
+      expect(text.match(/^model: /gm)?.length).toBe(1);
+      expect(withoutModelLines(text)).toBe(withoutModelLines(body));
+      expect(fm.permissions.length).toBe(body.includes("permissions:") ? 1 : 0);
+    });
+  }
+
+  test("opencode: --effort on a wrapper without a model line fails and writes nothing", () => {
+    const { result, text } = install(V2.replace("model: openai/gpt-6-astra#high\n", ""), ["--effort", "low"]);
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain("no model line");
+    expect(text).toBe("");
+  });
+
+  test("no override copies every tool's wrapper byte for byte", () => {
+    for (const [tool, body] of [["opencode", V2], ["opencode", LEGACY], ["claude-code", WRAPPER_BODY["claude-code"]], ["cursor", WRAPPER_BODY.cursor]] as [Tool, string][]) {
+      const { result, text } = install(body, [], tool);
+      expect(result.code).toBe(0);
+      expect(text).toBe(body);
+    }
+  });
+
+  test("claude-code: model and effort values with #, &, and backslashes are written literally", () => {
+    const { result, text } = install(WRAPPER_BODY["claude-code"], ["--model", "opus#x&y\\z", "--effort", "a&b"], "claude-code");
+    expect(result.code).toBe(0);
+    expect(result.stderr).toBe("");
+    expect(parsed(text).top.model).toBe("opus#x&y\\z");
+    expect(parsed(text).top.effort).toBe("a&b");
+    expect(text).toContain("Body.");
+  });
+
+  test("claude-code: --effort is inserted after the model line when the wrapper has none", () => {
+    const body = WRAPPER_BODY["claude-code"].replace("effort: max\n", "");
+    const { result, text } = install(body, ["--effort", "high"], "claude-code");
+    expect(result.code).toBe(0);
+    expect(text).toContain("model: opus\neffort: high\n");
+  });
+
+  test("cursor: a model: line in the body is not rewritten", () => {
+    const body = `${WRAPPER_BODY.cursor}model: not frontmatter\n`;
+    const { result, text } = install(body, ["--model", "claude-sonnet-5"], "cursor");
+    expect(result.code).toBe(0);
+    expect(text).toContain("model: claude-sonnet-5[effort=max]");
+    expect(text).toContain("model: not frontmatter");
+  });
+
+  test("a rerun without --force refuses and leaves the installed bytes unchanged", () => {
+    const first = install(V2, ["--effort", "low"]);
+    const before = readFileSync(first.path);
+    const again = run(["--tool", "opencode", "--agent", "p", "--agents-dir", first.agentsDir, "--dest", first.dest, "--effort", "max"]);
+    expect(again.code).toBe(1);
+    expect(again.stderr).toContain("already exists");
+    expect(readFileSync(first.path)).toEqual(before);
   });
 });

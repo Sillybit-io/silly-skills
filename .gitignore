@@ -3,3 +3,41 @@ node_modules/
 .DS_Store
 *.log
 reports/
+
+# Local-only install copies and convenience symlinks created by an agent
+# installer (or manually) for this developer's own machine. None of this is
+# the real skill catalogue.
+#
+# The real, canonical, git-tracked skill source always lives at
+# skills/<category>/<name>/ (for example skills/planning/plan-review/), and
+# the real, canonical, git-tracked host wrappers always live at
+# agents/<persona>/ (for example agents/plan-builder/). Neither of those
+# paths is listed below, and this file must never gain a rule that matches
+# them.
+#
+# /.agents/ and /.claude/skills/ are directories some tools install skills
+# into; /agent/ is an older, singular-named install target from before this
+# layout; /skills/<name> below (flat, no <category>/ in the path) are
+# per-skill convenience symlinks some installs create at the top level so a
+# skill can be reached without knowing its category. All of it is
+# reconstructible by re-running an installer, none of it has ever been
+# committed to this repository, and hiding it here only keeps `git status`
+# from showing local noise.
+/.agents/
+/agent/
+/skills-lock.json
+/.claude/skills/
+/skills/ai-audit
+/skills/ai-review
+/skills/conventions-codifier
+/skills/create-agent
+/skills/doc-cleanup
+/skills/issue-refiner
+/skills/plan-review
+/skills/plan-writer
+/skills/pr-description
+/skills/review-response
+/skills/secret-and-privacy-sweep
+/skills/skill-writer
+/skills/tech-writing
+/skills/ui-engineering

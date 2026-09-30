@@ -2,7 +2,7 @@
 
 Read this file when running checks F through J. It restates what `plan-writer` is required to leave in the plan file. A miss is a blocker, same rank as checks A through E.
 
-When more than three flags exist, report in this order: a missing T0, a missing todo checkbox, a missing test-before-next instruction, or a missing continue-through-waves instruction. Then a missing final-wave gate, an unanswered question a todo depends on, missing research, a missing required diagram. Then add one line: "and N more of the same kind."
+Describe every execution blocker in detail; there is no reporting cap, and a display limit never makes a failed requirement pass. For equally consequential writer-contract misses, prioritize T0, test-before-next, continuation, final gates, unresolved decisions, research, and diagrams.
 
 ## Check F — Research
 
@@ -11,7 +11,7 @@ When more than three flags exist, report in this order: a missing T0, a missing 
 - names sources, how others did it, what matters, pros and cons, and what the plan will follow, or
 - contains the line `No useful public source found.`
 
-Each source is an `http` or `https` URL. Open at most five. A 404, or a connection failure, is a blocker only when "what this plan will follow" depends on that URL. A 401, a 403, a timeout, or a page the reviewer cannot read is a note, not a blocker. Do not reject a source because the page seems off-topic unless the fetched text contradicts the claim the plan cites. If the network is unavailable, say so under Checked and do not invent a blocker. A "no useful public source" line has nothing to fetch.
+Each source is an `http` or `https` URL. Verify the claim against the fetched content and the target version when the plan relies on a version-specific contract. An inaccessible source is not proof of a defect: record the access failure and any substitute evidence. If a necessary contract remains unverified, the approval gate produces INCOMPLETE unless a demonstrated blocker already requires REJECT. Optional unreadable sources belong in Notes. A fetched contradiction is evidence for a blocker. A "no useful public source" line satisfies the research-section format but does not waive a necessary external-contract check.
 
 ## Check G — Questions
 
