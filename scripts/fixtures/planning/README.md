@@ -1,5 +1,7 @@
 # Planning evaluation fixtures
 
+Everything under this directory is made up: an invented Python service, an invented two-file greeter, invented plans, and invented scoring keys. None of it is a real project, real credentials, or real user data — it exists only so the planning skills (`plan-writer`, `plan-review`, `plan-scout`, `plan-builder`, `plan-loop`, `plan-result-review`) have something concrete to read, edit, and be graded against.
+
 Inputs and the protocol for the planning skills' behavioral evaluations (E1–E8). The deterministic checks in `scripts/planning-fixtures.test.ts` prove that every seed fails or passes as advertised. They never call a model. Model runs happen outside `bun test` and CI.
 
 ## Layout

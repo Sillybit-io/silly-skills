@@ -4,6 +4,7 @@
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/Sillybit-io/silly-skills/badge)](https://scorecard.dev/viewer/?uri=github.com/Sillybit-io/silly-skills)
 ![License: CC BY-ND 4.0](https://img.shields.io/badge/license-CC%20BY--ND%204.0-lightgrey)
 ![Skills: 18](https://img.shields.io/badge/skills-18-blue)
+![Agents: 8](https://img.shields.io/badge/agents-8-blue)
 
 AI skills for work quality, review, speed, and standardization. Each skill is a `SKILL.md` file that runs unchanged in Claude Code, Cursor, and OpenCode, and a skill that recommends a model has a persona under `agents/` for each of the three tools: it reviews a diff like a senior developer, writes the review-guidance half of a pull request, triages the comments that come back, audits how a project uses AI, keeps documentation honest, sweeps a branch for secrets before you publish it, codifies the conventions a repository actually follows, turns a vague ticket into a decision-complete brief, writes an implementation plan and reviews it for blockers, builds that plan with a resumable receipt trail and checks the result against it, builds UI code design-system first, and writes a new document or decision record a named reader can act on — the same way every time, for everyone on the team.
 
@@ -148,6 +149,8 @@ Versions live at two levels. The repository follows SemVer as a whole: each rele
 ## Security and privacy
 
 Every pull request runs three checks. gitleaks scans for committed credentials; this repository's own validator fails the build on `FORBIDDEN_CONTENT`, which rejects secret-shaped strings, real email addresses, and absolute local filesystem paths anywhere in the tree; and OpenSSF Scorecard reports the repository's supply-chain posture. No secrets, personal data, or internal references belong in this repository — to report something that slipped through, follow [SECURITY.md](SECURITY.md).
+
+`scripts/fixtures/` holds made-up, synthetic projects and plans used only to test the planning skills (`plan-writer`, `plan-review`, `plan-scout`, `plan-builder`, `plan-loop`, `plan-result-review`) — invented Python services, a fake package-upgrade script, seeded bugs, and scoring keys the skills are graded against. None of it is a real project, real credentials, or real user data; see [`scripts/fixtures/planning/README.md`](scripts/fixtures/planning/README.md) and [`scripts/fixtures/rollback/README.md`](scripts/fixtures/rollback/README.md) for what each one is and how it is run.
 
 ## Roadmap
 

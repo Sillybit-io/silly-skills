@@ -77,7 +77,14 @@ describe("planning packages", () => {
       cpSync(found.dir, join(root, "skills", found.category, skill), { recursive: true });
       const personas = personasFor(skill);
       for (const persona of personas) cpSync(join(repo, "agents", persona), join(root, "agents", persona), { recursive: true });
-      writeFileSync(join(root, "README.md"), "# Catalogue\n\n![Skills: 1](https://img.shields.io/badge/skills-1-blue)\n");
+      const agentBadge =
+        personas.length > 0
+          ? `![Agents: ${personas.length}](https://img.shields.io/badge/agents-${personas.length}-blue)\n`
+          : "";
+      writeFileSync(
+        join(root, "README.md"),
+        `# Catalogue\n\n![Skills: 1](https://img.shields.io/badge/skills-1-blue)\n${agentBadge}`,
+      );
 
       const result = validate(root);
       expect(result.errors).toEqual([]);

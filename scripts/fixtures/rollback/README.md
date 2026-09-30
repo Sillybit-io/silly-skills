@@ -1,6 +1,6 @@
 # Rollback fixture
 
-A memory-engine installation and the upgrade script that moves it from `legacy/` to `new-home/`. The planning evaluations review plans against this code, and `scripts/planning-fixtures.test.ts` runs its real functions to prove each seeded defect exists.
+A made-up "memory-engine" installation and the upgrade script that moves it from `legacy/` to `new-home/`, invented for this repository's tests. It is not a real project or a real product; there is no real memory engine. The planning evaluations review plans against this code, and `scripts/planning-fixtures.test.ts` runs its real functions to prove each seeded defect exists.
 
 ## Layout
 

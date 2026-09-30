@@ -536,6 +536,122 @@ describe("validate", () => {
     expect(finding?.message).toContain("missing the canonical skill-count badge");
   });
 
+  test("AGENT_BADGE_COUNT is skipped as a warning while no agent personas exist", () => {
+    const root = newRoot();
+    writeSkill(root, "review", "ai-review");
+    writeFileSync(
+      join(root, "README.md"),
+      "![skills](https://img.shields.io/badge/skills-1-blue)\n",
+      "utf8",
+    );
+
+    const result = validate(root);
+
+    expect(result.errors).toEqual([]);
+    expect(codes(result.warnings)).toContain("AGENT_BADGE_COUNT");
+  });
+
+  test("an agent badge whose count matches the discovered personas passes with 0 errors", () => {
+    const root = newRoot();
+    writeSkill(root, "planning", "plan-review", {
+      suggestedModel: "openai/gpt-6-astra",
+      suggestedEffort: "max",
+    });
+    writeAgentWrappers(root, "planning", "plan-review", "all-valid");
+    writeFileSync(
+      join(root, "README.md"),
+      [
+        "![skills](https://img.shields.io/badge/skills-1-blue)",
+        "![agents](https://img.shields.io/badge/agents-1-blue)",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = validate(root);
+
+    expect(result.errors).toEqual([]);
+    expect(codes(result.warnings)).not.toContain("AGENT_BADGE_COUNT");
+  });
+
+  test("the agent-count badge appearing more than once fails with AGENT_BADGE_COUNT", () => {
+    const root = newRoot();
+    writeSkill(root, "planning", "plan-review", {
+      suggestedModel: "openai/gpt-6-astra",
+      suggestedEffort: "max",
+    });
+    writeAgentWrappers(root, "planning", "plan-review", "all-valid");
+    writeFileSync(
+      join(root, "README.md"),
+      [
+        "# silly-skills",
+        "",
+        "![skills](https://img.shields.io/badge/skills-1-blue)",
+        "![agents](https://img.shields.io/badge/agents-1-blue)",
+        "",
+        "Some prose.",
+        "",
+        "![agents](https://img.shields.io/badge/agents-1-blue)",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = validate(root);
+
+    const badgeErrors = result.errors.filter((error) => error.code === "AGENT_BADGE_COUNT");
+    expect(badgeErrors).toHaveLength(2);
+    expect(badgeErrors.map((finding) => finding.line)).toEqual([4, 8]);
+    for (const finding of badgeErrors) {
+      expect(finding.file).toBe("README.md");
+      expect(finding.message).toContain("exactly once");
+    }
+  });
+
+  test("an agent badge count that disagrees with the discovered personas fails with AGENT_BADGE_COUNT", () => {
+    const root = newRoot();
+    writeSkill(root, "planning", "plan-review", {
+      suggestedModel: "openai/gpt-6-astra",
+      suggestedEffort: "max",
+    });
+    writeAgentWrappers(root, "planning", "plan-review", "all-valid");
+    writeFileSync(
+      join(root, "README.md"),
+      [
+        "![skills](https://img.shields.io/badge/skills-1-blue)",
+        "![agents](https://img.shields.io/badge/agents-9-blue)",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = validate(root);
+
+    const finding = result.errors.find((error) => error.code === "AGENT_BADGE_COUNT");
+    expect(finding).toBeDefined();
+    expect(finding?.message).toContain(
+      "badge reports 9 agent personas but 1 were discovered",
+    );
+  });
+
+  test("a missing agent-count badge fails with AGENT_BADGE_COUNT once agent personas exist", () => {
+    const root = newRoot();
+    writeSkill(root, "planning", "plan-review", {
+      suggestedModel: "openai/gpt-6-astra",
+      suggestedEffort: "max",
+    });
+    writeAgentWrappers(root, "planning", "plan-review", "all-valid");
+    writeFileSync(
+      join(root, "README.md"),
+      "# silly-skills\n\n![skills](https://img.shields.io/badge/skills-1-blue)\n",
+      "utf8",
+    );
+
+    const result = validate(root);
+
+    const finding = result.errors.find((error) => error.code === "AGENT_BADGE_COUNT");
+    expect(finding).toBeDefined();
+    expect(finding?.message).toContain("missing the canonical agent-count badge");
+  });
+
   test("gitignored files are not scanned for forbidden content", () => {
     const root = newRoot();
     writeFileSync(join(root, ".gitignore"), "ignored/\n", "utf8");
