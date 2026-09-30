@@ -2,7 +2,7 @@
 
 Read this file when running checks F through J. It restates what `plan-writer` is required to leave in the plan file. A miss is a blocker, same rank as checks A through E.
 
-Describe the three highest-impact execution blockers in detail. Count and identify every remaining blocker in the coverage ledger. A reporting limit never makes a failed requirement pass. For equally consequential writer-contract misses, prioritize T0, test-before-next, continuation, final gates, unresolved decisions, research, and diagrams.
+Describe every execution blocker in detail; there is no reporting cap, and a display limit never makes a failed requirement pass. For equally consequential writer-contract misses, prioritize T0, test-before-next, continuation, final gates, unresolved decisions, research, and diagrams.
 
 ## Check F — Research
 
@@ -11,7 +11,7 @@ Describe the three highest-impact execution blockers in detail. Count and identi
 - names sources, how others did it, what matters, pros and cons, and what the plan will follow, or
 - contains the line `No useful public source found.`
 
-Each source is an `http` or `https` URL. Use the shared five-URL budget. Verify the claim against the fetched content and the target version when the plan relies on a version-specific contract. An inaccessible source is not proof of a defect: record the access failure and any substitute evidence. If a necessary contract remains unverified, the approval gate produces INCOMPLETE unless a demonstrated blocker already requires REJECT. Optional unreadable sources belong in Notes. A fetched contradiction is evidence for a blocker. A "no useful public source" line satisfies the research-section format but does not waive a necessary external-contract check.
+Each source is an `http` or `https` URL. Verify the claim against the fetched content and the target version when the plan relies on a version-specific contract. An inaccessible source is not proof of a defect: record the access failure and any substitute evidence. If a necessary contract remains unverified, the approval gate produces INCOMPLETE unless a demonstrated blocker already requires REJECT. Optional unreadable sources belong in Notes. A fetched contradiction is evidence for a blocker. A "no useful public source" line satisfies the research-section format but does not waive a necessary external-contract check.
 
 ## Check G — Questions
 

@@ -2,332 +2,211 @@
 
 > Add a release-notes skill to this repository. It should turn merged pull requests into a human-focused changelog and recommend the SemVer bump that goes with it.
 
-This is the real Roadmap entry at `README.md:83` in this repository, used as-is as a real feature request.
+This is the real Roadmap entry in this repository's `README.md`. Both runs were fresh OpenCode child sessions on 2026-09-29, each on its own clone of this repository at commit `3c14f1a`, told to work non-interactively and record assumptions. Both ran on `openai/gpt-6-sol` at variant `high`, OpenCode's model for its General subagent there. The with-skill run read plan-writer 0.5.0 from `.agents/skills/plan-writer/`. The without-skill run was told not to follow any `SKILL.md` as planning instructions. The outputs below are excerpts of the files each run wrote.
 
 ## Without skill
 
-An agent with no plan-writer still produces a reasonable-looking task list, but it is a to-do list, not a plan: no exploration is shown, no category decision is made explicit, and the acceptance criteria are not things another agent could check.
+The baseline wrote a 71-line plan. It is a good plan: it read the release tooling, noticed that the release workflow infers the bump from commit messages, and drew a diagram. Its evidence section:
 
 ```markdown
-Plan for the release-notes skill:
+## Repository evidence and integration points
 
-1. Create `skills/workflow/release-notes/SKILL.md` with the usual sections.
-2. Write `examples.md` next to it.
-3. Update the README to list the new skill and bump the badge.
-4. Add a CHANGELOG entry.
-5. Run `bun run validate` to make sure it passes.
-
-I'll have the skill read merged PRs (probably with `gh pr list --state merged`) and
-turn them into a changelog section, then suggest whether the release should be a
-patch, minor, or major bump based on the PR titles.
+- `README.md:140-142` already names `release-notes` on the roadmap, so the change should replace that placeholder with an entry in the skills table and overview; the badge at `README.md:6` must change from 14 to 15.
+- `scripts/validate.ts:86-93,917-950,1113-1135,1161-1170,561-625` establishes allowed categories, required companion `examples.md`, exact attribution footer, layout, and badge count. Use `skills/workflow/release-notes/` (release preparation is a workflow), with `metadata.version: "0.1.0"` and `metadata.category: workflow`.
+- `skills/workflow/skill-writer/SKILL.md:34-49,52-96,126-163` records the existing six-section skill shape, worked-example shape, bounded work and feedback convention. This is format evidence for the new skill, not planning instructions.
+- `CHANGELOG.md:7-9` has an empty `[Unreleased]` section. `CONTRIBUTING.md:7-13` requires a matching changelog entry when adding a skill.
+- `RELEASING.md:7-9,37-50,52-68,72-88` distinguishes per-skill version bumps from repository releases and describes `[Unreleased]` as the source moved by `prepare-release`. `scripts/prepare-release.ts:14-29` confirms the release preparer moves that section to a dated version and prints the GitHub Release body.
+- `.github/workflows/release.yml:52-135` currently infers the repository bump from Conventional Commit messages, with patch as a fallback. The new skill must identify its proposal as advice, explain when an impact-based recommendation differs, and not promise that a workflow run with blank `version` will use its recommendation. A maintainer can enter the recommended version manually.
+- `.github/workflows/ci.yml:14-19` runs validation, Bun tests, and Markdown lint on pull requests.
 ```
 
-This baseline never opens `skill-writer/SKILL.md` to check the six-section contract, never notices that `scripts/validate.ts` enforces the README's skill-count badge as an exact match, and its one acceptance criterion — "make sure it passes" — is not something a second agent could run without guessing which command and which exit code count as success. It also picks the `workflow` category without saying why, and it never asks whether the skill should write the changelog entry into `CHANGELOG.md` directly or only print it, even though that choice affects a file the repository's own release tooling parses.
+It names the README badge but not the second hard-coded count in `scripts/validate.test.ts`, so adding a fifteenth skill would pass `bun run validate` and fail `bun test`. Its citations carry no excerpts or digests, so nothing can check them mechanically.
 
 ## With skill
 
-**Step 1 — restate and classify.** "Add a release-notes skill that turns merged pull requests into a changelog and a SemVer recommendation." Intent: `build`. Tier: `standard` — four files touched (`SKILL.md`, `examples.md`, `README.md`, `CHANGELOG.md`), one real design decision (how the skill sources merged pull requests and what it does with the changelog entry), no migration, no public interface change outside this repository. `review: optional`.
-
-**Step 2 — resume check.** No `docs/plans/*release-notes*` file exists yet. Start fresh.
-
-**Step 3 — idea refinement.** The request already names a concrete deliverable (a skill that turns merged pull requests into a changelog and a bump recommendation), so it passes the idea-vagueness test. Skipped; noted in one line and moved on.
-
-**Step 4 — branch name.** `CONTRIBUTING.md` states no branch convention. Sampling this repository's own recent branches (`git branch -a`) shows two real patterns: `feat/<slug>` and `<username>/<ticket-id>-<slug>`. This request has no tracked ticket, so the `<username>/...` pattern does not apply; the observed `feat/<slug>` pattern does. Branch: `feat/add-release-notes-skill`.
-
-**Step 5 — explore.** Reads, in order: `README.md` (the roadmap line at `:83`, the Skills table, the badge line), `skills/workflow/skill-writer/SKILL.md` (the category list at `:35`, the six-section contract), `scripts/validate.ts` (`CATEGORIES` at `:83-89`, `checkBadgeCount` at `:463`), `CHANGELOG.md` (the `## [Unreleased]` heading at `:7`), and `skills/workflow/issue-refiner/SKILL.md` for the shape of a "preference order" table, since release-notes will need one for how it sources pull requests. 12 files read, under budget.
-
-**Step 6 — ticket vagueness.** Not applicable; this came as a direct request, not a tracked ticket.
-
-**Step 7 — research.** Queries come from the request: a human-focused changelog generated from merged pull requests, plus a SemVer recommendation. Two pages opened, under the budget of 5 searches and 5 pages. [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) groups entries as Added, Changed, and Fixed and tells the writer to record changes for people, not as a commit dump. [Semantic Versioning](https://semver.org/) maps a breaking change to major, a backward-compatible feature to minor, and a fix to patch. What this plan will follow: print a Keep a Changelog block and a SemVer recommendation, and do not invent a second grouping scheme. Queries not run: none.
-
-**Step 8 — IS/GAP ledger, risks, and the slop check.**
-
-| Gap | IS today (evidence) | GAP |
-| --- | --- | --- |
-| G1 | `README.md:83` lists `release-notes` as a Roadmap bullet with no implementation | No `skills/*/release-notes/SKILL.md` exists |
-| G2 | `skill-writer/SKILL.md:35` requires one of six categories and the fixed six-section body | The new skill must pick a category and follow the contract exactly |
-| G3 | `scripts/validate.ts:463` (`checkBadgeCount`) fails the build unless the README badge equals the discovered skill count | Adding a skill without updating the badge and the Roadmap line breaks `bun run validate` |
-| G4 | `CHANGELOG.md:7` (`## [Unreleased]`) has no entry for this skill | A new skill needs a `### Added` line in the same change, per `CONTRIBUTING.md` |
-
-Hidden requirements and risks, still in step 8:
-
-| Risk | What breaks | Mitigation | Carried by |
-| --- | --- | --- | --- |
-| Description over 700 characters | Costs tokens in every session's system prompt, against the house rule this repository now follows | Keep the description under 700 characters and verify with a length check | T1 |
-| Badge count drifts from the real skill count | `bun run validate` fails with `BADGE_COUNT` | Bump the badge in the same commit that adds the skill | T3 |
-
-The category defaults to `workflow` during the slop check — it produces a repository artifact from git history the way `conventions-codifier` does, not a review of a diff the way the `review` skills do. The slop check cuts one item a first draft might add: a new `bun run release-notes` package script — the request never asked for a script, only a skill.
-
-**Step 9 — product questions, then technical.** Product is already settled by the request: the person cutting the release, success is a changelog block plus a bump recommendation, and a package script is out of scope. One technical question is still open: **"Should release-notes write its entry directly into `CHANGELOG.md`, or only print it for the user to paste?"** Writing directly touches a file `scripts/prepare-release.ts` also parses, so a wrong default could corrupt a release. Default if unanswered: print only.
-
-**Step 10 — draft file and gate.** Because one technical question is open, plan-writer writes the draft — TL;DR, Scope, Research, and Questions — and stops.
+The run wrote a 281-line plan with 27 quoted citations and 6 coverage rows, and the bundled validator reported `docs/plans/2026-09-29-add-release-notes-skill.md: plan mode; 0 errors`. Its TL;DR and ledger:
 
 ```markdown
-Plan drafted: `docs/plans/2026-09-26-add-release-notes-skill.md` — tier standard.
-- Effort: M — four files, one design decision, no migration
-- Risk: low — additive change, existing skills and validator checks are unaffected
-- Decisions made: category is `workflow` because the skill produces a repository artifact from git history, not a diff review
-- Owner decisions pending: should release-notes write into `CHANGELOG.md` directly, or only print the entry? Writing directly touches a file `scripts/prepare-release.ts` also parses. Default if unanswered: print only.
-- Cut from scope: a `bun run release-notes` package script — not requested
-
-Owner decisions needed before this plan can be filled in:
-1. Write into `CHANGELOG.md` directly, or print the entry only? — only the owner can accept the risk of an automated edit to a file the release tooling parses. Default if unanswered: print only.
-```
-
-The open question in the reply is the technical one. The product decisions are already settled, so the draft records them under `### Product` and the reply does not ask them again.
-
-**After the answer ("print only, for now").** plan-writer resumes at step 11. The answer confirms the recorded default and introduces no new technology or constraint, so the second research pass does not run. `ui: no` — this is a Bun CLI repository with no web or mobile surface, and this plan does not add one, so the final verification wave has no UI QA todo. The request is a list of files to add, not a process or a user journey, so `## Design` records the omission.
-
-```markdown
----
-title: Add a release-notes skill
-request: "Add a release-notes skill to this repository. It should turn merged pull requests into a human-focused changelog and recommend the SemVer bump that goes with it."
-source: chat
-date: 2026-09-26
-status: planned
-tier: standard
-intent: build
-branch: feat/add-release-notes-skill
-ui: no
-review: optional
-review_round: 0
----
-
-# Add a release-notes skill
-
 ## TL;DR
 
-- Effort: M — four files, one design decision, no migration
-- Risk: low — additive change, existing skills and validator checks are unaffected
-- Decisions made: category is `workflow` because the skill produces a repository artifact from git history, not a diff review; pull-request source order follows `issue-refiner`'s preference-table pattern (`gh` first, `glab` second, `git log <tag>..HEAD` as a fallback)
-- Owner decisions pending: none — write into `CHANGELOG.md` directly, or print only? Answered: print only
-- Cut from scope: a `bun run release-notes` package script — not requested
-- Branch: `feat/add-release-notes-skill` — follows this repository's own observed `feat/<slug>` pattern; no tracked ticket, so the `<username>/<ticket-id>-<slug>` pattern seen elsewhere does not apply
-
-## Scope
-
-### Affected users
-
-Maintainers cutting a release, who currently write the changelog and pick the SemVer bump by hand.
-
-### Ideal state
-
-Running the skill against a range of merged pull requests produces a ready-to-paste `### Added` / `### Changed` / `### Fixed` block and a recommended bump, without touching `CHANGELOG.md` itself.
+- Effort: M — a new skill and worked example, catalogue and changelog updates, and one existing count test.
+- Risk: medium — incomplete PR selection or title-based guesses can misstate a release; the catalogue count currently has two independent checks.
+- Decisions made: the request is concrete, so early refinement was skipped; use `docs` because the output is release documentation; print a draft without editing a project's changelog; use a supplied verified PR list or GitHub merged PRs for an explicitly bounded release range; omit a model hint and persona because none is required. These are non-interactive defaults.
+- Owner decisions pending: none — defaults recorded under Questions; revise on explicit direction.
+- Cut from scope: a new release script, auto-publishing, a GitLab adapter, and changes to released changelog sections; these add integration or write risk beyond a drafting skill.
+- Branch: `feat/add-release-notes-skill` — matches the observed `feat/<slug>` repository branches; no ticket is attached.
 
 ### IS / GAP ledger
 
 | Gap | IS today (evidence) | GAP |
 | --- | --- | --- |
-| G1 | `README.md:83` lists `release-notes` as a Roadmap bullet with no implementation | No `skills/workflow/release-notes/SKILL.md` exists |
-| G2 | `skill-writer/SKILL.md:35` requires one of six categories and the fixed six-section body | The new skill must follow the contract exactly |
-| G3 | `scripts/validate.ts:463` fails the build unless the README badge equals the discovered skill count | The badge and the Roadmap line need updating in the same change |
-| G4 | `CHANGELOG.md:7` has no entry for this skill | A `### Added` line is required in the same change |
+| G1 | `README.md:141` calls release-notes a roadmap item; `RELEASING.md:62` says automation infers versions from commits, not user impact | No reusable, PR-grounded, human-focused release-notes drafting procedure with a defensible SemVer recommendation and uncertainty handling. |
+| G2 | `skills/workflow/skill-writer/SKILL.md:38` sets new-skill version; `skills/workflow/skill-writer/SKILL.md:41` requires six sections; `scripts/validate.ts:943` rejects invalid examples | The new skill and its worked example must meet the house format and exercise success and missing/ambiguous-input cases. |
+| G3 | `README.md:6` advertises 14; `scripts/validate.test.ts:710` asserts 14; `scripts/validate.ts:622` rejects a mismatched badge | Adding the 15th skill needs both the catalogue and the count test updated. |
+| G4 | `CHANGELOG.md:7` has an empty `[Unreleased]`; `CONTRIBUTING.md:11` requires an entry when a skill is added | The addition must be recorded under `[Unreleased]` without altering published entries. |
+```
 
-### Risks
+The count test came from following the validator's consumers, recorded as a coverage row and a quoted citation:
 
-| Risk | What breaks | Mitigation | Carried by |
-| --- | --- | --- | --- |
-| Description over 700 characters | Costs tokens in every session's system prompt | Keep the description under 700 characters and check its length | T1 |
-| Badge count drifts from the real skill count | `bun run validate` fails with `BADGE_COUNT` | Bump the badge in the same commit that adds the skill | T3 |
+```json
+{
+  "id": "V3",
+  "paths": [
+    "scripts/validate.ts",
+    "scripts/validate.test.ts",
+    "package.json",
+    ".github/workflows/ci.yml"
+  ],
+  "searches": [
+    "rg -n 'BADGE_COUNT|MISSING_EXAMPLES|skillCount|validate' scripts package.json .github/workflows/ci.yml"
+  ],
+  "producers": [
+    "catalogue files"
+  ],
+  "consumers": [
+    "validation",
+    "hard-coded skill count test",
+    "CI"
+  ],
+  "citationIds": [
+    "C9",
+    "C10",
+    "C11",
+    "C17",
+    "C18"
+  ],
+  "state": "inspected"
+}
+```
 
-### Must have
+```json
+{
+  "id": "C11",
+  "kind": "source",
+  "path": "scripts/validate.test.ts",
+  "startLine": 710,
+  "endLine": 710,
+  "excerpt": "    expect(result.skillCount).toBe(14);",
+  "sha256": "4df1f4d31d5f82103c6228b0001525476618a246b091320fce606b8a9b4c14fd"
+}
+```
 
-- A `skills/workflow/release-notes/SKILL.md` and `examples.md` that pass `bun run validate` (G1, G2)
-- The README table, badge, and Roadmap updated in the same change (G3)
-- A `CHANGELOG.md` entry in the same change (G4)
+Its baseline records the commands as they actually ran, including the one that failed:
 
-### Must NOT have
+```json
+[
+  {
+    "command": "bun run validate",
+    "exit": 0,
+    "result": "14 skills validated, 0 errors",
+    "limitations": "structure, not release-note quality"
+  },
+  {
+    "command": "bun test",
+    "exit": 0,
+    "result": "115 pass, 0 fail across 4 files",
+    "limitations": "current count assertion is fixed at 14"
+  },
+  {
+    "command": "gh pr list --state merged --limit 2 --json number,title,body,mergedAt,baseRefName,url",
+    "exit": 1,
+    "result": "no git remote points to a known GitHub host",
+    "limitations": "no live PR fixture available in this checkout"
+  }
+]
+```
 
-- A new `bun run release-notes` package script — not requested
-- Any write to `CHANGELOG.md` from the skill itself — the owner chose print-only
+The todo that closes the count gap:
 
-## Research
-
-- Sources: [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/), [Semantic Versioning 2.0.0](https://semver.org/)
-- How others did it: Keep a Changelog groups a release into Added, Changed, and Fixed, written for people. SemVer picks major, minor, or patch from whether the change breaks callers, adds a compatible feature, or only fixes.
-- What matters: one grouping scheme, and a bump rule that follows the change rather than the pull request count.
-- Pros and cons: printing the entry keeps the release tooling's parse of `CHANGELOG.md` intact; writing the file directly is faster and can corrupt that parse.
-- What this plan will follow: print a Keep a Changelog block and a SemVer recommendation.
-- Queries not run: none
-
-## Questions
-
-### Product
-
-- Who it is for — answer: the person cutting the release. The request already names a human-focused changelog.
-- What success looks like — answer: a ready-to-paste changelog block and a recommended bump.
-- Out of scope — answer: a package script. The request asked for a skill, not a script.
-
-### Technical
-
-- Write the entry into `CHANGELOG.md`, or print it only? — answer: print only. Writing the file touches a file `scripts/prepare-release.ts` also parses.
-
-## Design
-
-Diagram: omitted — the request is a list of files to add, not a process, a user journey, or a system interaction.
-
-## Verification strategy
-
-| Gap | Proof | Expected |
-| --- | --- | --- |
-| G1 | `bun run validate` | reports one more skill than before, 0 errors |
-| G2 | manual read of `SKILL.md` | exactly six H2 sections in the fixed order, footer present |
-| G3 | `bun run validate` | no `BADGE_COUNT` error |
-| G4 | `grep -c 'release-notes' CHANGELOG.md` | at least 1 |
-
-## Execution strategy
-
-Finish T0, then each wave in the order this list gives, then the final wave. Todos inside one wave stay as independent as that wave's line says. F1–F4 stay one parallel wave. Do not stop at the end of a wave. Do not ask for a continue. If a todo's checks fail, fix that todo and run the checks again until they pass, then continue. Stop only when every todo and every gate is `- [x] Done`.
-
-- T0: copy this plan into the project if it is not already there
-- Wave 1: T1, T2 (independent)
-- Wave 2: T3 (needs T1, to know the final skill name and description)
-- Wave 3: T4 (needs T3, to reference the final line numbers)
-- Final wave: F1, F2, F3, F4
-
-## Todos
-
-Every todo starts with `- [ ] Open`. When you build this plan, run that todo's Acceptance and its QA scenario — the happy path, and the failure path unless it is n/a. Only after those checks pass, make this todo's commit when it says `Commit: yes`, then change that line to `- [x] Done` in the project copy. Do not start the next todo until that is done. If T0 copied the file, keep editing that copy. Do not run this test on a final-wave gate.
-
-When the wave is done, start the next wave, including the final wave. Do not ask for a continue. If a todo's checks fail, fix that todo and run the checks again until they pass, then continue.
-
-### T0 — Copy the plan into the project
-
-- [ ] Open
-- Do: if this file is not already inside the project, copy it to `docs/plans/` under its current name and do the rest of the build there. If it is already there, do not copy it.
-- Must not: change any other part of the plan while copying, or make a second copy when it is already in the project
-- Closes gap: none
-- Depends on: none
-- References: this file
-- Acceptance: the file exists at `docs/plans/2026-09-26-add-release-notes-skill.md` inside the project
-- QA scenario: happy — the file is already under `docs/plans/` and there is no second copy; failure — the file is outside the project, one copy appears under `docs/plans/`, and the outside file is left as it was
-- Commit: no
-
-### T1 — Write the release-notes SKILL.md
+```markdown
+### T2 — Register the skill and update the hard-coded count
 
 - [ ] Open
-- Do: write `skills/workflow/release-notes/SKILL.md` following `skill-writer`'s six-section contract; source pull requests with the preference order `gh pr list --state merged` first, `glab mr list --merged` second, `git log <last-tag>..HEAD --oneline` as a fallback; keep the description under 700 characters
-- Must not: write into `CHANGELOG.md`; the skill only prints the entry
-- Closes gap: G1, G2
-- Depends on: none
-- References: `skills/workflow/skill-writer/SKILL.md:35`, `skills/workflow/issue-refiner/SKILL.md` (preference-table pattern)
-- Acceptance: `bun run validate` reports no `LAYOUT`, `FRONTMATTER`, `NAME_MISMATCH`, or `FOOTER` error for this file
-- QA scenario: happy — run the skill against this repository's own last five merged pull requests, expect a changelog block and a bump recommendation; failure — run it with no merged pull requests in range, expect it to say so and print nothing
-- Commit: no, folds into the wave commit
-
-### T2 — Write examples.md
-
-- [ ] Open
-- Do: write `skills/workflow/release-notes/examples.md` with a real scenario built from this repository's own merged pull requests
-- Must not: invent pull request titles that were not actually merged
-- Closes gap: G1
-- Depends on: T1
-- References: `skills/workflow/skill-writer/SKILL.md` (`### examples.md` rules)
-- Acceptance: `bun run validate` reports no `MISSING_EXAMPLES` error for `skills/workflow/release-notes/`
-- QA scenario: happy — the three required headings appear in order; failure — a temporary blank `examples.md` reproduces `MISSING_EXAMPLES`, then is restored
-- Commit: no, folds into the wave commit
-
-### T3 — Update the README
-
-- [ ] Open
-- Do: bump the skill-count badge by one, add a `workflow | release-notes` row to the Skills table, remove the Roadmap bullet at `README.md:83`
-- Must not: touch any other Roadmap entry
+- Do: update the `README.md` skill-count badge to 15, add the `docs` skill row, remove its fulfilled roadmap bullet, and update the existing 14-skill assertion/description in `scripts/validate.test.ts` to 15.
+- Must not: change the validator's counting logic, the existing installer, or unrelated documentation.
 - Closes gap: G3
-- Depends on: T1
-- References: `README.md:83`, `scripts/validate.ts:463`
-- Acceptance: `bun run validate` reports no `BADGE_COUNT` error
-- QA scenario: happy — the badge, the table row, and the Roadmap removal are all present; failure — leaving the badge unbumped reproduces `BADGE_COUNT`, then is fixed
-- Commit: no, folds into the wave commit
-
-### T4 — Add the CHANGELOG entry
-
-- [ ] Open
-- Do: add one `### Added` line under `## [Unreleased]` naming the new skill in the same one-line style as the existing 0.1.0 entries
-- Must not: create a new release section; this stays under `[Unreleased]`
-- Closes gap: G4
-- Depends on: T3
-- References: `CHANGELOG.md:7`
-- Acceptance: `grep -c 'release-notes' CHANGELOG.md` is at least 1
-- QA scenario: happy — the line appears under `### Added`; failure — n/a, this is a documentation-only edit
-- Commit: yes — `feat(workflow): add release-notes skill`
-
-## Final verification wave
-
-Change `- [ ] Open` to `- [x] Done` in the project copy when that gate is finished, before the next one starts. The test-before-next rule under `## Todos` does not apply to this wave.
-
-### F1 — Plan compliance
-
-- [ ] Open
-- Do: confirm the skill file, `examples.md`, the README row, and the changelog line exist, and that no `bun run release-notes` script was added
-- Acceptance: `bun run validate` reports the new skill and no `BADGE_COUNT` error, and `package.json` has no `release-notes` script
-- Commit: no
-
-### F2 — Code quality
-
-- [ ] Open
-- Do: run `bun run validate` and `bun test`. This repository defines no separate build command. Then scan the new skill for an empty code block left as a placeholder and for a description over 700 characters.
-- Acceptance: both commands exit 0, and the description is under 700 characters
-- Commit: no
-
-### F3 — Scenario QA
-
-- [ ] Open
-- Do: execute the happy and failure QA scenario on T1, T2, T3, and T4
-- Acceptance: the changelog block and bump recommendation print, an empty pull-request range prints nothing, and a missing `examples.md` reproduces `MISSING_EXAMPLES` before it is restored
-- Commit: no
-
-### F4 — Scope fidelity
-
-- [ ] Open
-- Do: compare the diff with T1 through T4
-- Acceptance: the diff touches only `skills/workflow/release-notes/`, `README.md`, and `CHANGELOG.md`
-- Commit: no
-
-`ui: no` — this repository is a Bun CLI and a markdown catalogue with no web or mobile surface, and this plan adds none, so no automated UI QA todo is added.
-
-## Success criteria
-
-| Gap | Closed by | Proof |
-| --- | --- | --- |
-| G1 | T1, T2 | `bun run validate` reports the new skill, 0 errors |
-| G2 | T1 | manual read confirms the six-section contract |
-| G3 | T3 | `bun run validate` reports no `BADGE_COUNT` error |
-| G4 | T4 | `CHANGELOG.md` names the skill under `[Unreleased]` |
-
-## Review
-
+- Depends on: T1, T3
+- References: `README.md:6`, `README.md:71`, `README.md:141`, `scripts/validate.ts:622`, `scripts/validate.test.ts:710`, `package.json:5`, `CHANGELOG.md:7`.
+- Acceptance: `bun run validate` exits 0 and prints `15 skills validated, 0 errors`; `bun test` exits 0 and reports `115 pass` and `0 fail`.
+- QA scenario: happy — README row resolves to the new skill, roadmap has no release-notes bullet, badge and count assertion both equal 15. Failure — before changing the count assertion, `bun test scripts/validate.test.ts` fails on the existing 14-skill assertion; after fixing it, rerun and expect 0 failures.
+- Commit: yes — `feat(docs): add release-notes skill` (include T1 and T3 files in this one commit).
 ```
 
-```markdown
-Plan written: `docs/plans/2026-09-26-add-release-notes-skill.md` — tier standard, review optional, 9 todos in 4 waves, T0 first.
-- Effort: M — four files, one design decision, no migration
-- Risk: low — additive change, existing skills and validator checks are unaffected
-- Decisions made: category is `workflow`; pull-request source order follows `issue-refiner`'s preference-table pattern
-- Owner decisions pending: none
-- Cut from scope: a `bun run release-notes` package script — not requested
-- Branch: `feat/add-release-notes-skill`
-Next: (a) run plan-review on this path on a different model family — recommended; (b) start building from the plan. Which?
+<!-- markdownlint-disable-next-line MD024 -->
+## Prompt
+
+> Change app/core/rate_limit.py to a sliding-window limit instead of fixed windows. Keep check_rate_limit's signature.
+
+The `hidden-consumer` fixture in `scripts/fixtures/planning/`: a small Python service whose limiter has 23 relevant producers and consumers, including a plugin loaded by string, key-format readers, an ops script, and docs. Both runs were fresh OpenCode child sessions on 2026-09-29 on `openai/gpt-6-sol` at variant `high`, with identical copies of the project, told to work non-interactively. Scoring used the evaluator-only key `ground-truth/hidden-consumer.json`, which neither run could see.
+
+<!-- markdownlint-disable-next-line MD024 -->
+## Without skill
+
+The baseline wrote a 206-line plan with `status: planned`. Its text names 9 of the 23 relevant paths. It never mentions the plugin registry and its `config/plugins.json` entry, the scheduler, the CLI, the route modules, or `config/limits.json`. It has no record of what was searched, so a reviewer cannot tell an unread consumer from an irrelevant one.
+
+<!-- markdownlint-disable-next-line MD024 -->
+## With skill
+
+The run wrote a 776-line plan whose Evidence index cites all 23 relevant files with quoted excerpts and file digests, in 7 inspected coverage rows, with an empty frontier and three traced critical flows. The validator reported `0 errors`. One of its flows:
+
+```json
+{
+  "id": "FL1",
+  "requirementIds": [
+    "MH1",
+    "MH2",
+    "MH3"
+  ],
+  "todoIds": [
+    "T1",
+    "T2"
+  ],
+  "evidenceIds": [
+    "C8",
+    "C6",
+    "C1",
+    "C7",
+    "C2"
+  ],
+  "entry": "dispatch /messages, /search or /uploads",
+  "startingState": "client has fewer than max_requests accepted timestamps in the prior window_seconds",
+  "effects": [
+    "middleware calls check_rate_limit with the client and current time",
+    "store prunes timestamps outside (now-window_seconds, now], admits and records one timestamp only if capacity remains",
+    "on admission response carries X-RateLimit-Remaining",
+    "on denial RateLimited carries earliest legal retry and middleware returns 429 with safe integer Retry-After, with no handler invocation"
+  ],
+  "recovery": "client waits Retry-After and retries; next request prunes the oldest event and succeeds when capacity exists",
+  "counterexample": "100 requests at t=59.9 then another at t=60.0 must be denied until t=119.9; boundary equality must admit"
+}
 ```
 
-```text
-Not part of the plan file above. This is the shape when the request is a flow.
+A resumed run on the fixture's paused draft, whose frontier listed only the throttle callers and `RateLimited` importers, also reached 23 of 23. Its transcript shows the frontier searches and file reads before its first write to the plan. It excluded the plugin registry with a boundary reason:
 
-flowchart TD
-  merged[Merged pull requests]
-  skill[release-notes skill]
-  printed[Printed changelog and bump]
-  merged --> skill --> printed
+```json
+{
+  "id": "V6",
+  "paths": [
+    "app/plugins/registry.py",
+    "config/plugins.json",
+    "app/plugins/audit.py",
+    "app/jobs/cleanup.py"
+  ],
+  "searches": [
+    "rg -n rate_limit|load_enabled|cleanup|audit app config"
+  ],
+  "producers": [
+    "config/plugins.json",
+    "app/jobs/scheduler.py"
+  ],
+  "consumers": [],
+  "citationIds": [
+    "C19",
+    "C21",
+    "C20",
+    "C15"
+  ],
+  "state": "excluded",
+  "reason": "Registry dynamically imports the limiter module but calls none of its functions; audit and cleanup use no limiter state. Registration name remains unchanged."
+}
 ```
-
-### When idea refinement actually fires
-
-The prompt above already names a concrete deliverable, so step 3 skips straight past idea refinement. A fuzzier version of the same request shows the other branch: "We should make it easier for maintainers to see what changed before they cut a release." This states a problem area, not a change, and neither who benefits precisely nor what "easier" means can be inferred from the request alone — it fails the idea-vagueness test.
-
-```markdown
-Before I explore the codebase, three quick questions:
-1. Who hits this most — the person cutting the release, or reviewers checking what shipped?
-2. What would "easier" look like when it's done: a generated changelog draft, a dashboard, something else?
-3. Any constraint I should design around — must it avoid touching CHANGELOG.md directly, must it need no new dependency, anything else out of scope?
-```
-
-Answering "the person cutting the release; a generated changelog draft; must not write CHANGELOG.md directly" turns the fuzzy idea into exactly the request used above, and step 1 restates and classifies it from there. In a non-interactive run, or if the user has nothing to add, plan-writer proceeds on its own best reading and records the assumption under "Decisions made" instead of stopping.

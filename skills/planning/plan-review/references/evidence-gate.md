@@ -1,10 +1,10 @@
 # Evidence gate
 
-Read this file when building the coverage ledger and before deciding a verdict. The gate checks whether the plan is executable on current evidence. It does not require implementing the plan first.
+Read this file when building the coverage ledger and before deciding a verdict. The gate checks whether the plan is executable on current evidence. It does not require implementing the plan first. [references/validator-contract.md](validator-contract.md)'s Plan grammar and Gate record sections define the plan's grammar, the required-target list, and the evidence-kind/id scheme; this file explains how to use them, not a substitute for them.
 
 ## Build the ledger
 
-Give each obligation a stable ID. Cover every required outcome, Must NOT Have, todo, prerequisite, acceptance criterion, and external contract that implementation depends on. Group obligations only when the same evidence supports all of them. Map each row to its owning todos and planned QA. Also account for Checks A–J.
+Give each obligation a stable `O<n>` id. Cover every required target validator-contract.md names: each `MH<n>` and `MN<n>`; every todo's `.start`, `.acceptance`, and `.qa`; every `dep:T<a>:T<b>`; every `F<n>.acceptance`; every Evidence index flow's `flow:<id>`; every external citation's `contract:<id>`; and `check:A` through `check:J`. Group targets into one obligation only when the same evidence supports all of them. Map each row to its owning todos and planned QA. Also account for Checks A–J.
 
 Record three things separately:
 
@@ -60,7 +60,7 @@ Newly demonstrated failures remain reportable even when an earlier round passed 
 
 ## Evidence limits and verdicts
 
-- A timeout, unavailable repository, unreadable contract, or exhausted read budget does not prove a defect. It produces INCOMPLETE if required evidence remains unavailable and no demonstrated blocker exists.
+- A timeout, unavailable repository, or unreadable contract does not prove a defect. Finish every available independent check first; only a genuine access failure, not a self-imposed limit, produces INCOMPLETE if required evidence remains unavailable and no demonstrated blocker exists.
 - An inaccessible optional reference is a note. An inaccessible necessary contract is unverified unless another inspected source establishes it.
 - A missing required decision, broken dependency, or demonstrated contradiction produces REJECT. If gaps also remain, include them with the rejection.
 - Zero blockers with required unverified rows is INCOMPLETE. Only zero blockers plus complete required coverage can produce OKAY.
@@ -68,3 +68,7 @@ Newly demonstrated failures remain reportable even when an earlier round passed 
 - Structural validation can check report shape and arithmetic. It cannot prove that the reviewer read the cited code or that a flow works. Never use a passing validator as the sole approval evidence.
 
 Before saving OKAY, reconcile the ledger, critical-flow records, Checks A–J, blocker count, and frontmatter. After saving, re-read the review and confirm that its verdict and identity still match the evidence. If writing is unavailable, return the review with the limitation and do not claim that the plan file was updated.
+
+## Checkpoint format for a retryable INCOMPLETE
+
+An INCOMPLETE round that leaves the door open to another round records, per unresolved obligation: which checks this round actually completed (with their evidence ids), which searches or sources remain unopened and why, and what new evidence or newly runnable check would resolve it. A round that repeats this list unchanged from the previous round, with no new evidence and no newly runnable check, is not progress and does not justify spending another round; say so and stop instead of retrying identically.

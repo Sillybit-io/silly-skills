@@ -704,10 +704,10 @@ describe("the real repository", () => {
     expect(result.errors.filter((error) => error.code === "MISSING_EXAMPLES")).toEqual([]);
   });
 
-  test("the repository has 14 skills and no model-hint or agent-wrapper errors", () => {
+  test("the repository has 18 skills and no model-hint or agent-wrapper errors", () => {
     const result = validate(join(import.meta.dir, ".."));
 
-    expect(result.skillCount).toBe(14);
+    expect(result.skillCount).toBe(18);
     expect(
       result.errors.filter(
         (error) => error.code === "AGENT_WRAPPERS" || error.code === "SUGGESTED_MODEL",

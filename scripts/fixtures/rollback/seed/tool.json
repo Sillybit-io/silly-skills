@@ -1,0 +1,6 @@
+{
+  "name": "memory",
+  "command": "legacy/bin/memory",
+  "enabled": false,
+  "label": "work profile"
+}

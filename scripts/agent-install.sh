@@ -37,9 +37,12 @@ persona directory that contains that tool's file.
                       the current project.
   --dest <dir>        Install to this directory instead of the tool default.
                       Overrides --global.
-  --model <id>        Rewrite the wrapper's model line to this value.
-  --effort <level>    Rewrite the wrapper's effort line (or, for cursor, the
-                      [effort=...] suffix) to this value.
+  --model <id>        Rewrite the wrapper's model line to this value. For
+                      opencode, a trailing #<variant> sets the variant.
+  --effort <level>    Rewrite the wrapper's effort: the claude-code effort
+                      line, the cursor [effort=...] suffix, or the opencode
+                      #<variant>. On opencode a legacy reasoningEffort line
+                      becomes the variant and is removed.
   --agents-dir <dir>  Read personas from this directory instead of agents/
                       beside a clone. Local only; ignores --source.
   --source <url>      Download from this GitHub URL even inside a clone.
@@ -226,7 +229,77 @@ resolve_dest() {
   esac
 }
 
-# Rewrites the model/effort lines of $1 and writes the result to $2.
+# Sets `key: value` in the frontmatter of stdin: replaces an existing line, or
+# inserts one after the `after` key, or before the closing `---`. Values come
+# through the environment, so `#`, `&`, and backslashes stay literal.
+set_key() {
+  KEY="$1" VAL="$2" AFTER="$3" awk '
+    BEGIN { k = ENVIRON["KEY"]; v = ENVIRON["VAL"]; a = ENVIRON["AFTER"] }
+    { lines[NR] = $0 }
+    END {
+      end = 0
+      if (lines[1] == "---") for (i = 2; i <= NR; i++) if (lines[i] == "---") { end = i; break }
+      found = 0; anchor = 0
+      for (i = 2; i < end; i++) {
+        if (index(lines[i], k ":") == 1) found = i
+        if (a != "" && index(lines[i], a ":") == 1) anchor = i
+      }
+      for (i = 1; i <= NR; i++) {
+        if (i == found) { print k ": " v; continue }
+        if (!found && i == end && !anchor) print k ": " v
+        print lines[i]
+        if (!found && i == anchor) print k ": " v
+      }
+    }'
+}
+
+# OpenCode V2 carries effort as a model variant: `provider/model#variant`.
+# Explicit --effort wins, then a variant in --model, then the wrapper's own
+# variant, then a legacy `reasoningEffort` line, which is removed.
+normalize_opencode() {
+  NEWMODEL="$model" NEWEFFORT="$effort" awk '
+    function unquote(v) {
+      if (v ~ /^".*"$/ || v ~ /^\047.*\047$/) return substr(v, 2, length(v) - 2)
+      return v
+    }
+    BEGIN { nm = ENVIRON["NEWMODEL"]; ne = ENVIRON["NEWEFFORT"] }
+    { lines[NR] = $0 }
+    END {
+      end = 0
+      if (lines[1] == "---") for (i = 2; i <= NR; i++) if (lines[i] == "---") { end = i; break }
+      base = ""; variant = ""; legacy = ""; nv = ""; mline = 0
+      for (i = 2; i < end; i++) {
+        v = lines[i]
+        if (v ~ /^model:/) {
+          sub(/^model:[ \t]*/, "", v); v = unquote(v); mline = i
+          p = index(v, "#")
+          if (p > 0) { base = substr(v, 1, p - 1); variant = substr(v, p + 1) } else base = v
+        } else if (v ~ /^reasoningEffort:/) {
+          sub(/^reasoningEffort:[ \t]*/, "", v); legacy = unquote(v)
+        }
+      }
+      if (nm != "") {
+        p = index(nm, "#")
+        if (p > 0) { base = substr(nm, 1, p - 1); nv = substr(nm, p + 1) } else base = nm
+      }
+      if (base == "") { print "error: the wrapper has no model line; pass --model" > "/dev/stderr"; exit 3 }
+      final = ne
+      if (final == "") final = nv
+      if (final == "") final = variant
+      if (final == "") final = legacy
+      out = "model: " base
+      if (final != "") out = out "#" final
+      for (i = 1; i <= NR; i++) {
+        if (i > 1 && i < end && lines[i] ~ /^reasoningEffort:/) continue
+        if (i == mline) { print out; continue }
+        if (i == end && mline == 0) print out
+        print lines[i]
+      }
+    }'
+}
+
+# Rewrites the model/effort lines of $1 and writes the result to $2. With no
+# override the wrapper is copied byte for byte.
 write_wrapper() {
   src="$1"
   out="$2"
@@ -239,47 +312,47 @@ write_wrapper() {
   rewritten="$work_dir/rewritten.md"
   cp "$src" "$rewritten"
 
-  if [ "$tool" = "cursor" ]; then
-    if [ -n "$model" ] || [ -n "$effort" ]; then
-      awk -v newmodel="$model" -v neweffort="$effort" '
-        /^model: / {
-          line = $0
-          sub(/^model: /, "", line)
-          base = line
-          bracket = ""
-          idx = index(line, "[")
-          if (idx > 0) {
-            base = substr(line, 1, idx - 1)
-            bracket = substr(line, idx)
+  if [ -n "$model" ] || [ -n "$effort" ]; then
+    case "$tool" in
+      cursor)
+        NEWMODEL="$model" NEWEFFORT="$effort" awk '
+          BEGIN { newmodel = ENVIRON["NEWMODEL"]; neweffort = ENVIRON["NEWEFFORT"]; fm = 0 }
+          NR == 1 && $0 == "---" { fm = 1; print; next }
+          fm == 1 && $0 == "---" { fm = 2; print; next }
+          fm == 1 && /^model: / {
+            line = $0
+            sub(/^model: /, "", line)
+            base = line
+            bracket = ""
+            idx = index(line, "[")
+            if (idx > 0) {
+              base = substr(line, 1, idx - 1)
+              bracket = substr(line, idx)
+            }
+            if (newmodel != "") base = newmodel
+            if (neweffort != "") bracket = "[effort=" neweffort "]"
+            print "model: " base bracket
+            next
           }
-          if (newmodel != "") base = newmodel
-          if (neweffort != "") bracket = "[effort=" neweffort "]"
-          print "model: " base bracket
-          next
-        }
-        { print }
-      ' "$rewritten" >"$rewritten.tmp"
-      mv "$rewritten.tmp" "$rewritten"
-    fi
-  else
-    if [ -n "$model" ]; then
-      sed -i.bak "s#^model: .*#model: ${model}#" "$rewritten"
-      rm -f "$rewritten.bak"
-    fi
-    if [ -n "$effort" ]; then
-      effort_key="effort"
-      [ "$tool" = "opencode" ] && effort_key="reasoningEffort"
-      if grep -q "^${effort_key}: " "$rewritten"; then
-        sed -i.bak "s#^${effort_key}: .*#${effort_key}: ${effort}#" "$rewritten"
-        rm -f "$rewritten.bak"
-      else
-        awk -v key="$effort_key" -v val="$effort" '
-          /^model: / { print; print key ": " val; next }
           { print }
-        ' "$rewritten" >"$rewritten.tmp"
-        mv "$rewritten.tmp" "$rewritten"
-      fi
-    fi
+        ' "$rewritten" >"$rewritten.tmp" || return 1
+        ;;
+      opencode)
+        normalize_opencode <"$rewritten" >"$rewritten.tmp" || return 1
+        ;;
+      claude-code)
+        cp "$rewritten" "$rewritten.tmp"
+        if [ -n "$model" ]; then
+          set_key model "$model" "" <"$rewritten.tmp" >"$rewritten.step" || return 1
+          mv "$rewritten.step" "$rewritten.tmp"
+        fi
+        if [ -n "$effort" ]; then
+          set_key effort "$effort" model <"$rewritten.tmp" >"$rewritten.step" || return 1
+          mv "$rewritten.step" "$rewritten.tmp"
+        fi
+        ;;
+    esac
+    mv "$rewritten.tmp" "$rewritten"
   fi
 
   mkdir -p "$(dirname "$out")"

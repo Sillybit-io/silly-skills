@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- `plan-scout` 0.1.0: a read-only subagent that finds every producer and consumer of a named entry point, file, symbol, or format, following imports, string registrations, path strings, data formats, configuration, docs, ops scripts, and tests. Returns quoted excerpts, the searches it ran, boundary reasons, and what it could not read. Never edits, runs a command, delegates, or offers an opinion on the plan. `plan-writer` and `plan-review` may each delegate one bounded discovery question to it.
+- `plan-builder` 0.1.0: the skill a normal coding agent loads to build a reviewed plan. Captures a byte-exact baseline snapshot with `scripts/capture-build-state.ts` before any edit, then a start, checkpoint, and passed receipt per todo, recording the todo's real Acceptance and QA as actually run. Commits only that todo's owned paths. Resumes an interrupted build from its last recorded receipt, recovering from an unrecorded edit instead of guessing past it, and never marks a todo Done without a durable passed receipt. The final gate spawns a fresh `plan-result-review` child and reports the build complete only once that review currently reads `MATCH`.
+- `plan-loop` 0.1.0: automates the writer-then-reviewer cycle without weakening either skill's independence. Every round's reviewer, and the fix step between rounds, runs in a freshly launched child session — never the loop's own session, and never the session that just fixed or reviewed the plan. A reviewer's task payload holds only the plan path, the project root, and the round instruction, never a parent's verdict or persuasion. Stops at the first OKAY, at five rounds without a fresh consent, or at a denied launch, an unavailable input, a depth limit, or an identical blocked checkpoint, returning a structured handback instead of an invented independence claim.
+- `plan-result-review` 0.1.0: compares everything a build changed with the reviewed plan it implemented, from the build's own baseline snapshot, so it sees staged, unstaged, and untracked work, deletions, renames, binaries, modes, and symlinks, including the owner's own pre-build work. Maps every requirement to a change and every changed artifact to a todo, and explains each difference with its location, expected and actual result, reason, and reason source. Returns `MATCH`, `MISMATCH (<n> differences)`, or `INCOMPLETE`.
+- `agents/plan-scout/`, `agents/plan-builder/`, `agents/plan-loop/`, and `agents/plan-result-reviewer/`: the Claude Code, OpenCode, and Cursor files for each new persona, plus its `skill` sidecar.
+- The repository catalogue now lists 18 skills.
+
+### Changed
+
+- `plan-review` 0.5.0: no source, URL, or detailed-blocker count — the owner chose completeness over investigation cost for this skill, overriding `skill-writer`'s numeric investigation budgets. Every round now writes a machine-readable `#### Gate record` alongside its prose, checked by the bundled validator before the reviewer replies. The OpenCode wrapper moved from `mode: primary` to `mode: all`, so it can run as a child as well as an interactive session, and gained a `plan-scout` delegation; the Claude Code wrapper gained `Bash` and `Agent`.
+- `plan-writer` 0.5.0: gained real-run examples and two new reference files (`coverage.md`, `evidence-index.md`); all three host wrappers updated for the same child/primary handling as `plan-review`.
+- `create-agent` 0.2.0: handles editing an existing persona, `all` mode in a child context, a parent question handback, the Agent capability, four Claude model aliases, and OpenCode's `#<variant>` model syntax (normalizing a legacy `reasoningEffort` field into it).
+- `scripts/validate-plan.ts`, bundled inside `plan-review`, gained the D4 build-state inventory and digest functions (`inventoryState`, `stateDigest`, `verifySnapshot`, and related helpers) that `plan-builder`'s `capture-build-state.ts` and `plan-result-review`'s `inventory-changes.ts` both call directly, so a snapshot and the validator's own resume check can never drift apart from having two separate implementations.
+
 ## [0.7.0] - 2026-09-27
 
 ### Changed

@@ -1,0 +1,13 @@
+{
+  "plan": "docs/plans/2026-09-28-greeter-shout.md",
+  "cases": {
+    "dirty-disjoint": {
+      "expected": "T0, T1, and T2 Done with passed receipts. T1's first acceptance run fails because test_greet.py pins the old text, and T1 is repaired before it is Done. Commits contain only their owned paths. Every owner path keeps its baseline index and working-tree bytes.",
+      "ownerPaths": ["HISTORY.txt", "LICENSE.txt", "README.md", "notes.txt", "owner-todo.txt"]
+    },
+    "mixed-owner": {
+      "expected": "greet.py holds an unstaged owner edit, so T1's required commit collides. The builder records a checkpoint naming the collision, keeps T1 Open, and does not stage owner content.",
+      "collision": "greet.py"
+    }
+  }
+}
