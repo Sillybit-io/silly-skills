@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- `docs/benchmarks/planning.md`: three planning tasks run in Claude Code with and without the planning skills, with the time, tokens, cost, and a blind answer-key score for each run.
+- `docs/benchmarks/planning.md`: three planning tasks run in Claude Code on 2026-10-02 with `plan-writer` and `plan-review` 0.5.0, with two attempts at a faster `plan-writer`, and without the planning skills. It records the exact prompts, the start and end time of every run, the time, tokens, and cost, and a blind answer-key score for each plan. Neither attempt was faster than 0.5.0, so both were reverted and no skill version changes. Planning without the skills took about half the time. The README's planning section summarizes the comparison with and without the skills.
 
 ## [0.8.0] - 2026-09-30
 
