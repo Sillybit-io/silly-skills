@@ -11,7 +11,7 @@ Describe every execution blocker in detail; there is no reporting cap, and a dis
 - names sources, how others did it, what matters, pros and cons, and what the plan will follow, or
 - contains the line `No useful public source found.`
 
-Each source is an `http` or `https` URL. Open at most 5 sources that back no external contract, and count the rest as not opened in the Checked line. A source that backs a contract follows Check A's page limit instead. Verify the claim against the fetched content and the target version when the plan relies on a version-specific contract. An inaccessible source is not proof of a defect: record the access failure and any substitute evidence. If a necessary contract remains unverified, the approval gate produces INCOMPLETE unless a demonstrated blocker already requires REJECT. Optional unreadable sources belong in Notes. A fetched contradiction is evidence for a blocker. A "no useful public source" line satisfies the research-section format but does not waive a necessary external-contract check.
+Each source is an `http` or `https` URL. Verify the claim against the fetched content and the target version when the plan relies on a version-specific contract. An inaccessible source is not proof of a defect: record the access failure and any substitute evidence. If a necessary contract remains unverified, the approval gate produces INCOMPLETE unless a demonstrated blocker already requires REJECT. Optional unreadable sources belong in Notes. A fetched contradiction is evidence for a blocker. A "no useful public source" line satisfies the research-section format but does not waive a necessary external-contract check.
 
 ## Check G — Questions
 

@@ -60,7 +60,7 @@ Newly demonstrated failures remain reportable even when an earlier round passed 
 
 ## Evidence limits and verdicts
 
-- A timeout, unavailable repository, or unreadable contract does not prove a defect. Finish every available independent check first. Only a genuine access failure or one of the skill's named limits (the round pause, the contract page limit, the probe time limit, the validator retry limit) produces INCOMPLETE when required evidence remains unavailable and no demonstrated blocker exists. No other self-imposed stop does.
+- A timeout, unavailable repository, or unreadable contract does not prove a defect. Finish every available independent check first; only a genuine access failure, not a self-imposed limit, produces INCOMPLETE if required evidence remains unavailable and no demonstrated blocker exists.
 - An inaccessible optional reference is a note. An inaccessible necessary contract is unverified unless another inspected source establishes it.
 - A missing required decision, broken dependency, or demonstrated contradiction produces REJECT. If gaps also remain, include them with the rejection.
 - Zero blockers with required unverified rows is INCOMPLETE. Only zero blockers plus complete required coverage can produce OKAY.
@@ -71,4 +71,4 @@ Before saving OKAY, reconcile the ledger, critical-flow records, Checks A–J, b
 
 ## Checkpoint format for a retryable INCOMPLETE
 
-An INCOMPLETE round that leaves the door open to another round records, per unresolved obligation: which checks this round actually completed (with their evidence ids), which searches or sources remain unopened and why, and what new evidence or newly runnable check would resolve it. A round that repeats this list unchanged from the previous round, with no new evidence and no newly runnable check, is not progress and does not justify spending another round; say so and stop instead of retrying identically. A paused round is this kind of checkpoint, even when a blocker makes it a REJECT: its `Paused:` line lists the obligations it did not reach, and the next review round starts with them.
+An INCOMPLETE round that leaves the door open to another round records, per unresolved obligation: which checks this round actually completed (with their evidence ids), which searches or sources remain unopened and why, and what new evidence or newly runnable check would resolve it. A round that repeats this list unchanged from the previous round, with no new evidence and no newly runnable check, is not progress and does not justify spending another round; say so and stop instead of retrying identically.

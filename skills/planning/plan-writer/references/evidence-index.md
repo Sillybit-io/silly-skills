@@ -42,7 +42,7 @@ One entry per critical flow: `id`, `requirementIds` (MH ids), `todoIds`, `eviden
 
 ## Baseline
 
-`revision` (or `"nonGit": true`), `dirty` (paths and states at the time of writing), and `checks`: each project command you ran, with `command`, numeric `exit`, `result`, and `limitations`. Record failures as they are. A red baseline is information for the builder, not a reason to hide the check. A check stopped at the 10-minute limit records `exit: 124`, the usual timeout exit code, `timed out after 10 minutes` as its `result`, and under `limitations` that F2 has no baseline for it.
+`revision` (or `"nonGit": true`), `dirty` (paths and states at the time of writing), and `checks`: each project command you ran, with `command`, numeric `exit`, `result`, and `limitations`. Record failures as they are. A red baseline is information for the builder, not a reason to hide the check.
 
 ## Before `status: planned`
 
