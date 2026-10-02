@@ -142,6 +142,21 @@ Once a plan is reviewed, say "build this plan" to your normal coding agent — O
 
 `plan-builder`, `plan-loop`, and `plan-result-review` all use the validator bundled inside `plan-review`, so installing any of them pulls in `plan-review` too; `plan-loop` also needs `plan-writer`, and `plan-builder` needs `plan-result-review`. `plan-scout` is optional everywhere it is offered — every skill that can delegate to it also works without it, searching the codebase itself instead. Claude Code and Cursor only run subagents, so every planning persona there returns its result to whatever session launched it and routes an owner's question back up rather than asking directly; OpenCode's `plan-writer`, `plan-review`, `plan-builder`, and `plan-loop` personas can also be switched to directly as your own session. Where a skill suggests a model from a family a host cannot run, its wrapper pins the closest model that host offers instead, and says so in its own last line.
 
+### Benchmark: with and without the skills
+
+Three planning tasks were run in Claude Code on `claude-fable-5-1` at `max` effort: once with `plan-writer` 0.6.0 and `plan-review` 0.6.0, and once with no planning skill. A blind scorer checked each plan against an answer key written before any plan existed.
+
+| Task | Variant | Time (min) | Input tokens | Output tokens | Cost | Answer key |
+| --- | --- | --- | --- | --- | --- | --- |
+| T1: add a release-notes skill | With the skills | 27.8 | 4.93M | 147k | $15.25 | 12/12 |
+| T1: add a release-notes skill | Without | 16.9 | 1.73M | 68k | $7.67 | 12/12 |
+| T2: add `--uninstall` to the agent installer | With the skills | 25.1 | 2.97M | 111k | $11.56 | 13/13 |
+| T2: add `--uninstall` to the agent installer | Without | 11.3 | 1.18M | 52k | $5.24 | 13/13 |
+| T3: rename `plan-review` to `plan-reviewer` | With the skills | 27.8 | 5.82M | 152k | $15.83 | 10/11 |
+| T3: rename `plan-review` to `plan-reviewer` | Without | 10.1 | 3.34M | 49k | $8.28 | 9/11 |
+
+Without the skills, Claude Code planned in about half the time and for about half the cost, and its plans covered nearly the same answer-key items: 34 of 36, against 35. What the skills add is mostly outside the keys. Every line a skill plan cites comes with a quoted excerpt and a file hash that the validator checks: 26 to 117 lines per plan, against 0 to 19 unchecked references without the skills. A skill plan also records the project's checks as a baseline, traces critical flows, and ends with a final verification wave. Each number is one run. Cost is the API-equivalent price Claude Code reports. [docs/benchmarks/planning.md](docs/benchmarks/planning.md) has the method, the answer keys, every measurement, and the comparison with 0.5.0.
+
 ## Versioning
 
 Versions live at two levels. The repository follows SemVer as a whole: each release is a git tag plus a GitHub Release, and every notable change is recorded in [CHANGELOG.md](CHANGELOG.md). Each skill also carries its own `metadata.version` in its frontmatter and moves independently — patch for wording, minor for a new capability, major for a change to how you invoke it — so you can see that one skill changed without reading the whole repository changelog. [RELEASING.md](RELEASING.md) walks through the commands for both levels.
