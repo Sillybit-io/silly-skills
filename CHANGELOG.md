@@ -10,6 +10,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - `docs/benchmarks/planning.md`: three planning tasks run in Claude Code with and without the planning skills, with the time, tokens, cost, and a blind answer-key score for each run.
 
+### Changed
+
+- `plan-writer` 0.6.0: step 5 may run read-only baseline checks, such as tests, lint, and validation, in the background while the investigation continues. A check that can write into the working tree, such as a build, finishes before any file it could change is cited, and every result is collected before the draft is written. The Claude Code persona may now run the project's own test, lint, validate, and build commands for the baseline, which the skill already required.
+
 ## [0.8.0] - 2026-09-30
 
 ### Added
