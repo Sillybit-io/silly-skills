@@ -13,13 +13,14 @@ A handback is a structured refusal to fake progress. It has six fields:
   tool, dependency, or piece of evidence this session cannot reach),
   `"depth"` (this session cannot launch the next child itself), or
   `"blocked"` (an identical checkpoint with no new evidence, per Workflow
-  step 8).
+  step 8, or two writer pauses in a row that leave the same frontier, per
+  step 2).
 - `planPath` — the plan this concerns, so the recipient does not have to
   guess or re-resolve it.
 - `nextRole` — who should act next: `"writer"`, `"reviewer"`, or `"owner"`.
 - `inputs` — what that next actor needs: an open question's exact text, the
-  missing tool or evidence, the round count at the consent boundary, or the
-  repeated blocker.
+  missing tool or evidence, the round count at the consent boundary, the
+  repeated blocker, or the frontier two pauses left unchanged.
 - `reason` — one sentence naming why this session cannot do it itself.
 - `nextAction` — the smallest concrete step that unblocks this: launch a
   fresh writer with the fix-only step for round `<n>`, launch a fresh
