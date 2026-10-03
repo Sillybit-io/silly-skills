@@ -15,6 +15,18 @@ Read this file when you write `### Evidence index` under Scope, and again before
 }
 ```
 
+## Appending entries
+
+Do not write or rewrite the index as one large object. Under `### Evidence index`, the skeleton holds one block with `schemaVersion`, `baseline`, and empty arrays. Add each citation, coverage row, frontier item, or flow as its own fenced `json` block directly below, holding only that key:
+
+````markdown
+```json
+{ "citations": [{ "id": "C7", "kind": "source", "path": "src/app.ts", "startLine": 10, "endLine": 12, "excerpt": "...", "sha256": "..." }] }
+```
+````
+
+The validator merges every block under the heading: arrays concatenate, `baseline` merges one level deep (its `checks` arrays concatenate), and any other later key replaces an earlier one. A duplicate id across blocks is still an error. Insert each new block above `## Research`, so the anchor is unique. To resolve a frontier item, edit or delete its own block. A plan with one big block stays valid.
+
 ## Citations
 
 Every backticked `path:line` or `path:start-end` in the plan, outside code fences, must fall inside a citation for the same path. Several prose references can share one citation.
