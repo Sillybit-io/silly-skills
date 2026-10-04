@@ -10,7 +10,8 @@ Every cell is one run. The page gives the exact prompts, the start and end time 
 
 ## Summary
 
-- **Neither attempt made planning faster, so both were reverted.** Over the three tasks, 0.5.0 took 78.4 minutes and cost $37.16. The first attempt took 80.7 minutes and cost $42.64. The second attempt took 80.8 minutes and cost $42.14. `plan-writer` stays at 0.5.0.
+- **Neither attempt made planning faster, so both were reverted.** Over the three tasks, 0.5.0 took 78.4 minutes and cost $37.16. The first attempt took 80.7 minutes and cost $42.64. The second attempt took 80.8 minutes and cost $42.14. Both attempts were reverted, so the benchmark's baseline is the released 0.5.0.
+- **This benchmark does not measure 0.6.0.** `plan-writer` and `plan-review` 0.6.0 came after these runs, on the same pull request. They add skeleton-first writing, a validator that merges several Evidence index blocks, and a placeholder check. Nothing here shows whether they are faster, slower, or more reliable than 0.5.0.
 - **Single runs vary a lot.** The second attempt changed one sentence, and its runs did not act on it, so they were close to repeat runs of 0.5.0. They still differed from the 0.5.0 runs by up to 2.9 minutes per task and by up to 2.4 times in input tokens. With one run per cell, this benchmark cannot separate small differences between skill versions.
 - **Without the planning skills, Claude Code planned in about half the time.** It took 38.3 minutes and cost $21.19 over the three tasks, and its plans scored 34 of 36 answer-key items, against 36 for 0.5.0. That time gap is far larger than the spread between repeat runs. What the skills add is mostly outside the keys: every line a skill plan cites comes with a quoted excerpt and a file hash, and a validator checks both.
 
@@ -30,7 +31,7 @@ T1 is the README's roadmap item, and the same request that `skills/planning/plan
 
 | Variant | Planning skills in the clone's `.claude/skills/` | Commit | Status |
 | --- | --- | --- | --- |
-| 0.5.0 | `plan-writer` and `plan-review` 0.5.0 | `76bc021` | The current release |
+| 0.5.0 | `plan-writer` and `plan-review` 0.5.0 | `76bc021` | The release measured here, and the baseline for both attempts |
 | First attempt | Both skills as changed for speed: batched searches, reads, and digests; a search reused while its scope is unchanged; stricter evidence to exclude an edge; read-only baseline checks in the background; a 50-file pause; limits on web research, contract lookups, baseline checks, and validator retries; and a late research pass | `e7d80e3` | Reverted in `8fb0114` |
 | Second attempt | 0.5.0 with one change: `plan-writer` step 5 says read-only baseline checks may run in the background | `8dca147` | Reverted in `3854e93` |
 | Without skills | None | none | none |
