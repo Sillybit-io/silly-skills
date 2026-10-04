@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-10-04
+
 ### Changed
 
 - `plan-writer` 0.6.0: builds the plan as one file in small independent edits. It writes a skeleton once right after the branch name, appends each new citation, coverage row, frontier item, flow, and baseline check as it is found, and fills one placeholder, subsection, row, or todo per edit. An entry that already exists, such as a pending coverage row, is edited in place when it is resolved, refreshed, answered, or fixed, because appending a second row never replaces the first. It never calls Write on an existing plan or regenerates the Evidence index. The three plan-writer personas state the same rule.
