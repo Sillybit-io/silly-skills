@@ -787,6 +787,40 @@ describe("plan mode", () => {
     expect(codes(run(root))).toContain("FRONTMATTER");
   });
 
+  test("an Evidence index split into one block per entry validates like a single block", () => {
+    const root = makeProject();
+    const index = evidenceIndex(root) as Record<string, unknown[]>;
+    const fence = (value: unknown) => `\`\`\`json\n${JSON.stringify(value)}\n\`\`\`\n\n`;
+    const blocks =
+      fence({ schemaVersion: 1, citations: [], coverage: [], frontier: [], flows: [], baseline: index.baseline }) +
+      (index.citations as unknown[]).map((c) => fence({ citations: [c] })).join("") +
+      (index.coverage as unknown[]).map((c) => fence({ coverage: [c] })).join("") +
+      (index.flows as unknown[]).map((f) => fence({ flows: [f] })).join("");
+    const single = planText(root);
+    writePlan(root, single);
+    const expected = codes(run(root));
+    writePlan(root, single.replace(/### Evidence index\n\n```json\n[\s\S]*?\n```\n/, `### Evidence index\n\n${blocks}`));
+    expect(codes(run(root))).toEqual(expected);
+    expect(codes(run(root))).not.toContain("EVIDENCE_INDEX");
+  });
+
+  test("a leftover skeleton placeholder fails in a planned plan but not in a draft", () => {
+    const root = makeProject();
+    const withPlaceholder = planText(root).replace("### Affected users\n", "### Affected users\n\n<!-- todo: affected users -->\n");
+    writePlan(root, withPlaceholder);
+    expect(codes(run(root))).toContain("PLACEHOLDER");
+    writePlan(root, withPlaceholder.replace(/^status: .*$/m, "status: draft"));
+    expect(codes(run(root))).not.toContain("PLACEHOLDER");
+  });
+
+  test("a duplicate citation id across split Evidence index blocks fails", () => {
+    const root = makeProject();
+    const index = evidenceIndex(root) as Record<string, unknown[]>;
+    const dup = `\`\`\`json\n${JSON.stringify({ citations: [index.citations[0]] })}\n\`\`\`\n`;
+    writePlan(root, planText(root).replace(/(### Evidence index\n\n```json\n[\s\S]*?\n```\n)/, `$1\n${dup}`));
+    expect(codes(run(root))).toContain("CITATION");
+  });
+
   test("a fenced example heading is not parsed as a todo", () => {
     const root = makeProject();
     writePlan(root, planText(root));
