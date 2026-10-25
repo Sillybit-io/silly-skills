@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- Planning documents stay focused on execution. A real architecture-tier plan reached 462 KB after three review rounds: 164 KB of `## Review`, where the validator reads only the latest round, and a 143 KB Evidence index whose excerpts quoted 7.6 lines on average. Every agent that builds or reviews the plan reads all of it on every turn.
+- `plan-review` 1.0.0: the plan keeps a history table and only the latest round. Earlier bodies move verbatim to `<plan-stem>.review-history.md`, verified before replacement, with retry deduplication and migration of multiple legacy rounds. Only blockers, open obligations, and missing evidence are rendered; verified observations stay in the gate record. Reused observations retain their original evidence and hashes, and require comparison of the prior spec and dependencies; unavailable comparisons trigger a recheck. The validator accepts compact rounds and legacy tables, rejects duplicate rendered obligations, and accepts short anchors only inside ranges longer than three lines. The blocker template now matches the validator's `id` and `obligationIds` fields.
+- `plan-writer` 1.0.0: long citations use one-to-three-line anchors while retaining file hashes. Decisions and flow traces are recorded once. Fix-only edits leave the spec as current truth, and read unresolved items from both current and legacy review formats. A todo's `Do` targets 150 words; a spec over 150 KB triggers a repetition check. T0 carries existing review history alongside the plan and preserves conflicting destinations.
+- `plan-builder` 1.0.0: declares the destination history file as a report on every snapshot, so verified archive appends do not interrupt resume. T0 preserves sibling history during relocation. History bytes remain available to result review; unexplained changes still require investigation.
+- `plan-result-review` 1.0.0: keeps only the latest result round, archives older ones with verification before replacement, and carries unresolved differences and approved deviations forward. The history file remains inventoried and is classified as review bookkeeping only after its changes are checked.
+- `plan-loop` 0.1.1: reads the latest round and the history table, and finds an earlier round's full body in the review history file.
+- `agents/plan-reviewer/` and `agents/plan-result-reviewer/`: the prompts that limit writes now allow the review history file beside the plan.
+- Workflow and output-contract changes take major skill versions, as required by the contribution policy. Existing plan formats remain readable by the validator.
+
 ## [0.9.0] - 2026-10-04
 
 ### Changed

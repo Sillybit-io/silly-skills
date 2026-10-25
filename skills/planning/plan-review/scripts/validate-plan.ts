@@ -281,6 +281,15 @@ function tableRows(lines: Line[], from: number, to: number): { cells: string[]; 
   return rows;
 }
 
+/** Table rows without each table's header, the row directly above a `| --- |` separator. */
+function tableBodyRows(lines: Line[], from: number, to: number): { cells: string[]; no: number }[] {
+  const headers = new Set<number>();
+  for (let i = from; i + 1 < to; i++) {
+    if (!lines[i].fenced && /^\|(\s*:?-{3,}:?\s*\|)+$/.test(lines[i + 1].text.trim())) headers.add(lines[i].no);
+  }
+  return tableRows(lines, from, to).filter((r) => !headers.has(r.no));
+}
+
 function fencedJson(
   lines: Line[],
   from: number,
@@ -585,10 +594,27 @@ function readBytes(abs: string): Buffer | null {
   }
 }
 
+/** The longest excerpt that may anchor a longer cited range instead of quoting it whole. */
+export const ANCHOR_MAX_LINES = 3;
+/** An anchor needs this many non-blank characters, so `}` cannot anchor anything. */
+export const ANCHOR_MIN_CHARS = 10;
+
+/** An excerpt matches when it is the whole cited range, or an anchor: one to
+ * ANCHOR_MAX_LINES consecutive whole lines inside the range. Both compare after
+ * trimming the ends and normalizing line endings; internal whitespace must match. */
 function excerptMatches(content: string, start: number, end: number, excerpt: string): boolean {
   const lines = content.replace(/\r\n?/g, "\n").split("\n");
   if (start < 1 || end < start || end > lines.length) return false;
-  return lines.slice(start - 1, end).join("\n").trim() === excerpt.replace(/\r\n?/g, "\n").trim();
+  const range = lines.slice(start - 1, end);
+  const want = excerpt.replace(/\r\n?/g, "\n").trim();
+  if (range.join("\n").trim() === want) return true;
+  if (range.length <= ANCHOR_MAX_LINES) return false;
+  const count = want.split("\n").length;
+  if (count > ANCHOR_MAX_LINES || want.replace(/\s/g, "").length < ANCHOR_MIN_CHARS) return false;
+  for (let i = 0; i + count <= range.length; i++) {
+    if (range.slice(i, i + count).join("\n").trim() === want) return true;
+  }
+  return false;
 }
 
 function lineCount(content: string): number {
@@ -1579,17 +1605,31 @@ function validateReview(
   if (!last || Number(last.cells[0]) !== latest.round.number || !(last.cells[2] ?? "").startsWith(recorded ?? "?")) {
     err(ctx, "RENDERED_MISMATCH", last?.no ?? review.headingLine, `history table's last round must be ${latest.round.number} with verdict ${recorded ?? "?"}`);
   }
-  const ledger = sectionsOf(plan.lines, 4, latest.round.start, latest.round.end).find((s) => s.title === "Coverage and evidence");
-  if (!ledger) err(ctx, "RENDERED_MISMATCH", latest.round.headingLine, "round has no '#### Coverage and evidence' ledger");
-  else {
-    const rows = tableRows(plan.lines, ledger.start, ledger.end).filter((r) => r.cells.length >= 2 && !/^ID\b/.test(r.cells[0]));
-    const renderedStatus = new Map(rows.map((r) => [r.cells[0].split(/\s+/)[0], r.cells[r.cells.length - 1]]));
-    for (const [id, status] of obligationStatus) {
-      if (!renderedStatus.has(id)) err(ctx, "RENDERED_MISMATCH", ledger.headingLine, `obligation ${id} is missing from the rendered ledger`);
-      else if (renderedStatus.get(id) !== status) err(ctx, "RENDERED_MISMATCH", ledger.headingLine, `rendered status of ${id} is '${renderedStatus.get(id)}', gate record says '${status}'`);
+  // Every obligation that is not verified is rendered with its status; verified
+  // ones live in the gate record alone. A legacy full '#### Coverage and evidence'
+  // table still passes, as long as every row it renders agrees.
+  const ledgers = sectionsOf(plan.lines, 4, latest.round.start, latest.round.end).filter(
+    (s) => s.title === "Open obligations" || s.title === "Coverage and evidence",
+  );
+  const open = [...obligationStatus].filter(([, s]) => s !== "verified");
+  const ledgerLine = ledgers[0]?.headingLine ?? latest.round.headingLine;
+  if (ledgers.length === 0 && open.length > 0) {
+    err(ctx, "RENDERED_MISMATCH", ledgerLine, `round has no '#### Open obligations' list for ${open.map(([id]) => id).join(", ")}`);
+  }
+  const renderedIds = new Set<string>();
+  for (const ledger of ledgers) {
+    for (const r of tableBodyRows(plan.lines, ledger.start, ledger.end)) {
+      const id = r.cells[0].split(/\s+/)[0];
+      const status = r.cells.length >= 2 ? r.cells[r.cells.length - 1] : "";
+      if (renderedIds.has(id)) err(ctx, "RENDERED_MISMATCH", r.no, `duplicate rendered obligation ${id}`);
+      renderedIds.add(id);
+      if (!obligationStatus.has(id)) err(ctx, "RENDERED_MISMATCH", r.no, `rendered row ${id} is not in the gate record`);
+      else if (obligationStatus.get(id) !== status) err(ctx, "RENDERED_MISMATCH", r.no, `rendered status of ${id} is '${status}', gate record says '${obligationStatus.get(id)}'`);
     }
-    for (const id of renderedStatus.keys()) {
-      if (!obligationStatus.has(id)) err(ctx, "RENDERED_MISMATCH", ledger.headingLine, `rendered ledger row ${id} is not in the gate record`);
+  }
+  if (ledgers.length > 0) {
+    for (const [id] of open) {
+      if (!renderedIds.has(id)) err(ctx, "RENDERED_MISMATCH", ledgerLine, `open obligation ${id} is missing from the rendered list`);
     }
   }
   outcome.eligible = expected === "OKAY" && recorded === "OKAY";

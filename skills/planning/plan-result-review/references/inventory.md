@@ -46,3 +46,10 @@ Use NUL-separated output so paths with spaces and newlines survive. Read content
 ## Read what you inventoried
 
 For every changed path, read the diff and enough of the file to judge its behavior. For every requirement, read the code that should satisfy it, including callers and consumers the plan's Evidence index names. Checks that execute code run in a disposable copy of the project, never in the project itself.
+
+The helper keeps the sibling review history in the inventory even when the
+builder declared it through `--report` for resume. Inspect that exact file's
+diff: byte-preserving copies and verbatim archived rounds are review bookkeeping,
+not implementation changes. Keep a row for them. An unrelated addition,
+rewritten old round, deletion, or lost owner content is still a difference;
+the report declaration never waives owner-work preservation.

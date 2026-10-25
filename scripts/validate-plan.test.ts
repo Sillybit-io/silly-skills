@@ -354,6 +354,10 @@ type GateOptions = {
   renderStatus?: (o: Obligation) => string;
   renderVerdict?: string;
   history?: string;
+  /** Render only the open obligations, under '#### Open obligations', as plan-review 1.0.0 writes a round. */
+  compact?: boolean;
+  /** Obligation ids to leave out of the rendered list. */
+  hide?: string[];
 };
 
 function gateRecord(root: string, planDigest: string, options: GateOptions = {}) {
@@ -388,9 +392,27 @@ function renderRound(gate: ReturnType<typeof gateRecord>, options: GateOptions =
   const flows = gate.flows.filter((f) => f.status === "verified").length;
   const blockers = (gate.blockers as unknown[]).length;
   const verdictText = options.renderVerdict ?? (gate.verdict === "REJECT" ? `REJECT (${blockers} blockers)` : gate.verdict);
-  const rows = obligations
-    .map((o) => `| ${o.id} targets | ${o.required === false ? "no" : "yes"} | ${o.evidenceIds.join(", ")} | ${o.observed} | ${o.plannedQa} | ${options.renderStatus ? options.renderStatus(o) : o.status} |`)
-    .join("\n");
+  const listed = obligations
+    .filter((o) => !options.compact || o.status !== "verified")
+    .filter((o) => !(options.hide ?? []).includes(o.id));
+  const status = (o: Obligation) => (options.renderStatus ? options.renderStatus(o) : o.status);
+  const ledger = options.compact
+    ? listed.length === 0
+      ? ""
+      : `#### Open obligations
+
+| Obligation | Targets | Evidence | Observed | Status |
+| --- | --- | --- | --- | --- |
+${listed.map((o) => `| ${o.id} | ${o.targets.join(", ")} | ${o.evidenceIds.join(", ")} | ${o.observed} | ${status(o)} |`).join("\n")}
+
+`
+    : `#### Coverage and evidence
+
+| ID / obligation / owning todos | Required? | Evidence kind and location | Observed result | Planned QA | Status |
+| --- | --- | --- | --- | --- | --- |
+${listed.map((o) => `| ${o.id} targets | ${o.required === false ? "no" : "yes"} | ${o.evidenceIds.join(", ")} | ${o.observed} | ${o.plannedQa} | ${status(o)} |`).join("\n")}
+
+`;
   return `
 ### Round ${gate.round}
 
@@ -398,13 +420,7 @@ function renderRound(gate: ReturnType<typeof gateRecord>, options: GateOptions =
 
 **Scope:** whole plan; ${verified}/${required.length} required obligations verified; ${flows}/1 critical flows verified.
 
-#### Coverage and evidence
-
-| ID / obligation / owning todos | Required? | Evidence kind and location | Observed result | Planned QA | Status |
-| --- | --- | --- | --- | --- | --- |
-${rows}
-
-#### Gate record
+${ledger}#### Gate record
 
 \`\`\`json
 ${JSON.stringify(gate, null, 2)}
@@ -589,13 +605,13 @@ function setBoxes(root: string, done: string[]): void {
 const T1_COMMIT = (t: string) =>
   t.replace("- QA scenario: happy — greets; failure — empty name.\n- Commit: no.", "- QA scenario: happy — greets; failure — empty name.\n- Commit: yes — `feat: greet`.");
 
-function buildScenario(options: { stopAfter?: "T1-start" | "T1-checkpoint"; t1Commit?: boolean; omitCommit?: boolean } = {}) {
+function buildScenario(options: { stopAfter?: "T1-start" | "T1-checkpoint"; t1Commit?: boolean; omitCommit?: boolean; reports?: string[] } = {}) {
   const root = makeProject();
   const text = reviewedPlan(root, { mutatePlan: options.t1Commit ? T1_COMMIT : undefined });
   const spec = canonicalSpecDigest(text);
   const gate = /#### Gate record\n\n```json\n([\s\S]*?)\n```/.exec(text) as RegExpExecArray;
   const gateDigest = sha(canon(JSON.parse(gate[1])));
-  const baseline = saveSnapshot(snapshot(root, "silly-skills/plan-builds/run/baseline"), spec);
+  const baseline = saveSnapshot(snapshot(root, "silly-skills/plan-builds/run/baseline", { reports: options.reports }), spec);
   const carry = JSON.parse(readFileSync(join(root, ".git", baseline.snapshot, "manifest.json"), "utf8")).paths.map((p: { path: string }) => p.path);
   const inputs: ReceiptInput[] = [
     { todo: "T0", event: "start" },
@@ -606,7 +622,7 @@ function buildScenario(options: { stopAfter?: "T1-start" | "T1-checkpoint"; t1Co
   if (options.stopAfter !== "T1-start") {
     writeFileSync(join(root, "src/app.ts"), APP.replace("return register(config);", "return register(`hello ${config}`);"));
     if (options.t1Commit) git(root, "commit", "-q", "-am", "T1");
-    after = saveSnapshot(snapshot(root, "silly-skills/plan-builds/run/T1", { carry }), spec);
+    after = saveSnapshot(snapshot(root, "silly-skills/plan-builds/run/T1", { carry, reports: options.reports }), spec);
     inputs.push({ todo: "T1", event: "checkpoint", after });
     if (options.stopAfter !== "T1-checkpoint") {
       const commit = options.t1Commit && !options.omitCommit ? { sha: git(root, "rev-parse", "HEAD").toString().trim() } : undefined;
@@ -697,6 +713,39 @@ describe("plan mode", () => {
     const root = makeProject();
     writePlan(root, planText(root, { mutateIndex: (i) => ((i.citations as Record<string, unknown>[])[0].excerpt = lines(APP, 1, 3).replace("return register", "return  register")) }));
     expect(codes(run(root))).toContain("EXCERPT");
+  });
+
+  test("one-, two-, and three-line anchors inside a longer cited range validate", () => {
+    for (const excerpt of [lines(APP, 2, 2), lines(APP, 1, 2), lines(APP, 5, 7).replace(/\n/g, "\r\n")]) {
+      const root = makeProject();
+      writePlan(root, planText(root, { mutateIndex: (i) => Object.assign((i.citations as Record<string, unknown>[])[0], { endLine: 7, excerpt }) }));
+      expect(run(root).errors).toEqual([]);
+    }
+  });
+
+  test("ranges of at most three lines require the whole quote", () => {
+    for (const endLine of [2, 3]) {
+      const root = makeProject();
+      writePlan(root, planText(root, { mutateIndex: (i) => Object.assign((i.citations as Record<string, unknown>[])[0], { endLine, excerpt: lines(APP, 2, 2) }) }));
+      expect(codes(run(root))).toContain("EXCERPT");
+    }
+  });
+
+  test("an anchor outside the range, a trivial anchor, and a partial excerpt over three lines fail with EXCERPT", () => {
+    const set = (excerpt: string, endLine?: number) => (i: Record<string, unknown>) => {
+      const c = (i.citations as Record<string, unknown>[])[0];
+      c.excerpt = excerpt;
+      if (endLine) c.endLine = endLine;
+    };
+    for (const mutateIndex of [
+      set("export function register(name: string): string {", 4),
+      set("}", 7),
+      set(lines(APP, 2, 6), 7),
+    ]) {
+      const root = makeProject();
+      writePlan(root, planText(root, { mutateIndex }));
+      expect(codes(run(root))).toContain("EXCERPT");
+    }
   });
 
   test("a line range past the end of the file fails", () => {
@@ -924,6 +973,85 @@ describe("review mode", () => {
     expect(codes(run(root2, ["--review"]))).toContain("RENDERED_MISMATCH");
   });
 
+  const REJECTED: GateOptions = {
+    verdict: "REJECT",
+    obligations: [
+      { id: "O1", targets: ALL_TARGETS, evidenceIds: ["C1", "P1"], observed: "traced", plannedQa: "Q1", status: "verified" },
+      { id: "O2", targets: ["T2.acceptance"], evidenceIds: ["P1"], observed: "flag test cannot fail", plannedQa: "Q1", status: "contradicted" },
+    ],
+    blockers: [{ id: "B1", obligationIds: ["O2"], location: "T2 Acceptance", failure: "cannot detect a broken flag", evidenceIds: ["P1"], fix: "assert the flag output" }],
+  };
+
+  test("a compact round renders only its open obligations and validates", () => {
+    const root = makeProject();
+    const text = reviewedPlan(root, { ...REJECTED, compact: true });
+    expect(text).toContain("#### Open obligations");
+    expect(text).not.toContain("| O1 |");
+    const result = run(root, ["--review"]);
+    expect(result.errors).toEqual([]);
+    expect(result.expectedVerdict).toBe("REJECT");
+  });
+
+  test("an OKAY round with no open obligation needs no rendered list", () => {
+    const root = makeProject();
+    const text = reviewedPlan(root, { compact: true });
+    expect(text).not.toContain("#### Open obligations");
+    const result = run(root, ["--review"]);
+    expect(result.errors).toEqual([]);
+    expect(result.gateEligible).toBe(true);
+  });
+
+  test("an open obligation left out of the rendered list fails", () => {
+    const root = makeProject();
+    reviewedPlan(root, { ...REJECTED, compact: true, hide: ["O2"] });
+    expect(run(root, ["--review"]).errors.some((e) => e.code === "RENDERED_MISMATCH" && e.message.includes("O2"))).toBe(true);
+    const root2 = makeProject();
+    const obligations = [
+      ...(REJECTED.obligations as Obligation[]),
+      { id: "O3", targets: ["MH2"], evidenceIds: [], observed: "flag contract page unreachable", plannedQa: "Q1", status: "unverified" },
+    ];
+    reviewedPlan(root2, { ...REJECTED, obligations, compact: true, hide: ["O3"] });
+    const errors = run(root2, ["--review"]).errors;
+    expect(errors.some((e) => e.code === "RENDERED_MISMATCH" && e.message === "open obligation O3 is missing from the rendered list")).toBe(true);
+  });
+
+  test("duplicate rows cannot hide a wrong status in either accepted ledger heading", () => {
+    for (const secondHeading of ["", "\n#### Coverage and evidence\n\n| ID | Status |\n| --- | --- |\n"]) {
+      const root = makeProject();
+      const text = reviewedPlan(root, { ...REJECTED, compact: true });
+      const row = text.split("\n").find((line) => line.startsWith("| O2 |")) as string;
+      writePlan(root, text.replace(row, `${row.replace("| contradicted |", "| verified |")}\n${secondHeading}${row}`));
+      const result = run(root, ["--review"]);
+      expect(result.errors.some((e) => e.message.includes("duplicate rendered obligation O2"))).toBe(true);
+      expect(result.errors.some((e) => e.message.includes("rendered status of O2 is 'verified'"))).toBe(true);
+    }
+  });
+
+  test("unknown rendered obligations and an incorrect compact status are refused", () => {
+    const root = makeProject();
+    const text = reviewedPlan(root, { ...REJECTED, compact: true, renderStatus: () => "verified" });
+    writePlan(root, text.replace("#### Gate record", "| O99 | unknown |\n\n#### Gate record"));
+    const result = run(root, ["--review"]);
+    expect(result.errors.some((e) => e.message.includes("rendered status of O2"))).toBe(true);
+    expect(result.errors.some((e) => e.message.includes("rendered row O99 is not in the gate record"))).toBe(true);
+  });
+
+  test("only the latest round is read, so earlier round bodies may live in the review history file", () => {
+    const root = makeProject();
+    const draft = planText(root, { status: "reviewed", reviewRound: 2 });
+    const gate = gateRecord(root, canonicalSpecDigest(draft), { round: 2 });
+    const history = `
+| Round | Date | Verdict | Blockers | Summary |
+| --- | --- | --- | --- | --- |
+| 1 | 2026-09-29 | REJECT | 1 | B1 T2 flag test cannot fail |
+| 2 | 2026-09-29 | OKAY | 0 | B1 fixed |
+`;
+    writePlan(root, planText(root, { status: "reviewed", reviewRound: 2, review: `${history}${renderRound(gate, { compact: true })}` }));
+    const result = run(root, ["--review"]);
+    expect(result.errors).toEqual([]);
+    expect(result.gateEligible).toBe(true);
+  });
+
   test("editing the plan after review makes the review stale", () => {
     const root = makeProject();
     const text = reviewedPlan(root);
@@ -985,6 +1113,25 @@ describe("resume mode", () => {
     const changed = run(root, ["--review", "--resume"]);
     expect(codes(changed)).toContain("SPEC_CHANGED");
     expect(changed.resumeEligible).toBe(false);
+  });
+
+  test("only the declared history path can change without blocking resume", () => {
+    const history = PLAN.replace(/\.md$/, ".review-history.md");
+    for (const declared of [false, true]) {
+      const { root } = buildScenario({ reports: declared ? [history] : [] });
+      writeFileSync(join(root, history), "# Review history: Fixture plan\n\n### Result round 1\n\nArchived result.\n");
+      const result = run(root, ["--review", "--resume"]);
+      expect(result.resumeEligible).toBe(declared);
+      if (declared) {
+        expect(result.errors).toEqual([]);
+        writeFileSync(join(root, "docs/plans/unrelated.review-history.md"), "unrecorded work\n");
+        const unrelated = run(root, ["--review", "--resume"]);
+        expect(unrelated.resumeEligible).toBe(false);
+        expect(unrelated.drift).toContain("docs/plans/unrelated.review-history.md [worktree]");
+      } else {
+        expect(result.drift).toContain(`${history} [worktree]`);
+      }
+    }
   });
 
   test("a later rejection revokes the approval the build started from", () => {

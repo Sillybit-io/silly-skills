@@ -54,7 +54,7 @@ For stateful changes, trace failure before and after each distinct irreversible 
 
 Fix verification and approval verification answer different questions. First establish that each listed defect is resolved. Then revisit all critical flows and requirement mappings before approval, including unchanged sections.
 
-Reuse an observation only if its source content and the plan obligations it supports still match. A repository revision plus the word `dirty` is insufficient: dirty file contents can change without either value changing. Compare evidence-file digests, inspect changed callers or dependencies, and record the scope of reuse. Re-read or probe when dependencies changed or the earlier review has no supporting evidence.
+Reuse an observation only if its source content and the supporting plan text, dependencies, and contracts still match. A repository revision plus the word `dirty` is insufficient: dirty file contents can change without either value changing. An unchanged spec digest proves plan-text equality; if it changed, compare against a retained prior spec or Git version whose digest matches the previous round. Without that comparison, recheck the obligation. Preserve the original evidence entries and source hashes in the new gate record; a reuse note supplements them, never replaces them. Re-read or probe when dependencies changed or the earlier review has no supporting evidence.
 
 Newly demonstrated failures remain reportable even when an earlier round passed that area. Preserve the old verdict and explicitly state why the new one supersedes it. Do not invent findings to justify a confidence challenge, and do not treat a user's confidence as evidence.
 

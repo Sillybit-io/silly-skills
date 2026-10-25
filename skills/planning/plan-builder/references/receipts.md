@@ -40,6 +40,23 @@ and slug; a resumed build reuses the same run directory and never recaptures
 its existing baseline. Never point `--output` at a temporary directory: a
 snapshot must outlive this session.
 
+## Review history as a report
+
+Before the baseline, declare the exact project-relative path of the history file
+beside T0's destination plan, even if it does not exist yet. Pass that path with
+`--report <path>` on the baseline and **every** later capture. `--carry` inherits
+paths and includes, not report declarations. The manifest's
+`administrative.reports` is the record used by resume; a Build note alone does
+not declare a report.
+
+This keeps a result review's archive append out of source-drift checks while
+retaining the file's bytes in snapshots and the result inventory. Before
+resuming after a review, verify that the history changed only by the documented
+verbatim archive operation. Deletions, rewrites, or unexplained additions still
+require investigation. Never declare a wildcard or a source file as a report
+to hide drift. A legacy build without this declaration uses the normal recovery
+receipt path before continuing; never rewrite its earlier snapshots.
+
 ## The receipt sequence, per todo
 
 1. **start.** Before any effect. `before` is the previous receipt's end state
