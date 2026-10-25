@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-10-25
+
 ### Changed
 
 - Planning documents stay focused on execution. A real architecture-tier plan reached 462 KB after three review rounds: 164 KB of `## Review`, where the validator reads only the latest round, and a 143 KB Evidence index whose excerpts quoted 7.6 lines on average. Every agent that builds or reviews the plan reads all of it on every turn.
