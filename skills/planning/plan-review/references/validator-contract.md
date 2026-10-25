@@ -85,7 +85,7 @@ One fenced `json` object under `### Evidence index`. The heading may hold severa
 }
 ```
 
-- A `source` excerpt must equal the cited lines after trimming leading and trailing whitespace and normalizing line endings. Internal whitespace must match. The `sha256` covers the whole file, so the excerpt tolerance cannot hide drift.
+- A `source` excerpt is either the whole cited range or an anchor: one to three consecutive whole lines inside the range, with at least ten non-blank characters. Both compare after trimming leading and trailing whitespace and normalizing line endings. Internal whitespace must match. Quote a range of three lines or fewer whole; anchor a longer one. The `sha256` covers the whole file, so neither tolerance can hide drift.
 - Paths are project-relative. Absolute paths, `..`, and symlinks that resolve outside the project are errors.
 - A `planned` path must not exist yet, unless the plan already has a Build section. Existing code cannot be relabelled as planned to avoid reading it.
 - Coverage `state` is `inspected` (needs at least one citation), `excluded` (needs a boundary `reason`), or `pending`. Pending rows and a non-empty `frontier` are allowed only in a draft.
@@ -118,7 +118,9 @@ Each review round ends with one fenced `json` object under `#### Gate record`:
 }
 ```
 
-`checks` holds A through J. Evidence kinds are `source`, `probe`, `documentation`, `plan-inspection`, and `planned-qa`. Evidence ids may also name Evidence index citations.
+`checks` holds A through J. Evidence kinds are `source`, `probe`, `documentation`, `plan-inspection`, and `planned-qa`. Evidence ids may also name Evidence index citations. A `planned-qa` entry is optional: it never supports a status by itself, so a round may leave it out, and an obligation's `plannedQa` field is optional too.
+
+**Rounds.** The validator reads only the latest `### Round <n>` under `## Review`. plan-review moves each earlier round's body to the review history file, `<plan-stem>.review-history.md` beside the plan, and keeps only its row in the history table. The validator never reads that file. A plan that still holds earlier round bodies validates the same way.
 
 **Required targets.** Every one needs a required obligation (`required` omitted or `true`): each `MH<n>` and `MN<n>`; `T<n>.start`, `T<n>.acceptance`, and `T<n>.qa` for every todo; `dep:T<a>:T<b>` for every dependency; `F<n>.acceptance` for every final gate; `flow:<id>` for every Evidence index flow; `contract:<id>` for every external citation; and `check:A` through `check:J`. Setting `required: false` does not cover a target.
 
@@ -130,7 +132,7 @@ Each review round ends with one fenced `json` object under `#### Gate record`:
 2. Otherwise, any uncovered target, unverified obligation, or missing or unverified flow or check gives INCOMPLETE.
 3. Otherwise, OKAY.
 
-The recorded verdict must equal the expected verdict. OKAY sets `status: reviewed`. REJECT and INCOMPLETE set `status: planned`. The rendered round must agree with the JSON: the `**Verdict:** PLAN-REVIEW: ...` line and its blocker count; a `**Scope:**` line containing `<v>/<r> required obligations verified` and `<v>/<r> critical flows verified`; the last row of the history table; and one `#### Coverage and evidence` row per obligation id, with the same status in its last cell. `planDigest` must equal the current spec digest, and every `sources` entry must match the current file bytes. `gateRecordDigest` is the SHA-256 of the gate record's canonical JSON.
+The recorded verdict must equal the expected verdict. OKAY sets `status: reviewed`. REJECT and INCOMPLETE set `status: planned`. The rendered round must agree with the JSON: the `**Verdict:** PLAN-REVIEW: ...` line and its blocker count; a `**Scope:**` line containing `<v>/<r> required obligations verified` and `<v>/<r> critical flows verified`; the last row of the history table; and, under `#### Open obligations`, one row for every obligation whose status is not `verified`, its id first and its status in the last cell. Verified obligations are not rendered; the gate record holds them, and a round with no open obligation needs no list. A legacy `#### Coverage and evidence` table is read the same way. Every row either heading renders must name a gate record obligation with the same status. `planDigest` must equal the current spec digest, and every `sources` entry must match the current file bytes. `gateRecordDigest` is the SHA-256 of the gate record's canonical JSON.
 
 ## Build record and snapshots
 

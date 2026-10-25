@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- Planning plans stay execution documents. A real architecture-tier plan reached 462 KB after three review rounds: 164 KB of `## Review`, where no tool reads anything but the latest round, and a 143 KB Evidence index whose excerpts quoted 7.6 lines on average. Every agent that builds or reviews the plan reads all of it on every turn.
+- `plan-review` 0.7.0: `## Review` holds the history table, now with a Summary column, and only the latest round. Before it writes a round, the reviewer appends the previous round's body verbatim to `<plan-stem>.review-history.md` beside the plan. A round renders only what is open, its blockers, its contradicted or unverified obligations under `#### Open obligations`, and its missing evidence; verified obligations, flow traces, and check results live in the gate record alone, each `observed` in one sentence. `#### Coverage and evidence`, `#### Critical flows`, and `#### Checked` are gone. `planned-qa` entries are optional. A re-review carries a verified obligation forward when its source digests and the plan text it covers are unchanged. The gate record template's blocker now matches the validator's `id` and `obligationIds` fields. The bundled validator accepts the compact round, still accepts a legacy full table, and accepts an anchor excerpt.
+- `plan-writer` 0.7.0: a citation of more than three lines quotes a one-to-three-line anchor from inside its range instead of the whole range; the file SHA-256 still detects drift. Each thing is said once: a flow is traced only in its Evidence index entry, a decision is argued only in `## Questions`, a TL;DR bullet holds two sentences, and `### Coverage` holds five. The fix-only step edits the spec into its corrected state, never narrates review history inside it, and reads only the latest round. A todo's `Do` holds about 150 words. Above 150 KB without `## Review`, step 19 searches the plan for repetition.
+- `plan-result-review` 0.2.0: `## Result review` keeps only the latest round; earlier rounds move to the same review history file.
+- `plan-loop` 0.1.1: reads the latest round and the history table, and finds an earlier round's full body in the review history file.
+- `agents/plan-reviewer/` and `agents/plan-result-reviewer/`: the prompts that limit writes now allow the review history file beside the plan.
+
 ## [0.9.0] - 2026-10-04
 
 ### Changed

@@ -35,12 +35,12 @@ Every backticked `path:line` or `path:start-end` in the plan, outside code fence
 
 | Kind | Fields | Rule |
 | --- | --- | --- |
-| `source` | `id`, `path`, `startLine`, `endLine`, `excerpt`, `sha256` | `excerpt` is the literal text of those lines. `sha256` is the SHA-256 of the whole file as read |
+| `source` | `id`, `path`, `startLine`, `endLine`, `excerpt`, `sha256` | `excerpt` is the literal text of those lines when the range is three lines or fewer. For a longer range it is an anchor: one to three consecutive whole lines from inside the range, at least ten non-blank characters. `sha256` is the SHA-256 of the whole file as read |
 | `planned` | `id`, `path`, `createdBy` | A file a todo creates. The path must not exist yet |
 | `self` | `id` | T0's reference to this file |
 | `external` | `id`, `url`, `version`, `accessed`, `excerpt`, `obligation` | A contract a todo relies on, at the version the project uses, or `rolling` with the date |
 
-Copy excerpts from the file, never from memory. Compute `sha256` from the bytes you read, for example `shasum -a 256 <path>`. Paths are relative to the project root. The excerpt check trims leading and trailing whitespace and normalizes line endings. It does not normalize internal spaces.
+Copy excerpts from the file, never from memory. A whole-range quote of a long range is still valid, but it costs every later reader that many lines and adds no check the anchor and the digest do not already make. Cite what the plan relies on: the IS cells, the todo References, the flows, and the coverage rows. A file you read only to rule it out is an `excluded` coverage row with its reason. Compute `sha256` from the bytes you read, for example `shasum -a 256 <path>`. Paths are relative to the project root. The excerpt check trims leading and trailing whitespace and normalizes line endings. It does not normalize internal spaces.
 
 ## Coverage
 
@@ -52,7 +52,7 @@ Each open item has `item`, `reason`, and `nextAction`. A planned plan has an emp
 
 ## Flows
 
-One entry per critical flow: `id`, `requirementIds` (MH ids), `todoIds`, `evidenceIds`, `entry`, `startingState`, ordered `effects`, `recovery`, and one `counterexample` to test. A flow is critical when its failure loses data, strands a user after a state change, or breaks a required integration. When the change has no runtime flow, leave `flows` empty and set `noRuntimeFlowReason`.
+One entry per critical flow: `id`, `requirementIds` (MH ids), `todoIds`, `evidenceIds`, `entry`, `startingState`, ordered `effects`, `recovery`, and one `counterexample` to test. This entry is the flow's only trace; `### Critical flows` names it in one line. A flow is critical when its failure loses data, strands a user after a state change, or breaks a required integration. When the change has no runtime flow, leave `flows` empty and set `noRuntimeFlowReason`.
 
 ## Baseline
 

@@ -3,7 +3,7 @@ name: plan-review
 description: Reviews implementation plans against repository evidence and critical end-to-end flows. Records coverage, source traces, probes, and unresolved assumptions before returning OKAY, REJECT, or INCOMPLETE. Checks dependencies, QA, research, questions, diagrams, and execution gates. Rechecks whole-plan readiness after fixes and can run a five-round fix loop. Use when reviewing a plan, checking readiness for implementation, challenging an earlier approval, or asking for the plan-review verdict.
 license: CC-BY-ND-4.0
 metadata:
-  version: "0.6.0"
+  version: "0.7.0"
   category: planning
   suggested-model: openai/gpt-6-astra
   suggested-effort: max
@@ -13,7 +13,7 @@ metadata:
 
 ## Purpose
 
-plan-review answers whether a capable developer can execute a plan without inventing missing decisions or encountering a known failure. Approval requires evidence, not merely an empty blocker list. Missing required evidence produces INCOMPLETE. A demonstrated execution defect produces REJECT. The skill checks the plan; it does not certify unimplemented software. A different reviewer can provide a useful second opinion, but model choice is advisory and never replaces evidence. Review writes obey the host tool's permissions and planning-mode restrictions. There is no source, URL, or detailed-blocker count: the owner chose completeness over investigation cost, which overrides `skill-writer`'s numeric investigation budgets for this planning skill only; finish every available independent check instead of stopping at a count.
+plan-review answers whether a capable developer can execute a plan without inventing missing decisions or encountering a known failure. Approval requires evidence, not merely an empty blocker list. Missing required evidence produces INCOMPLETE. A demonstrated execution defect produces REJECT. The skill checks the plan; it does not certify unimplemented software. A different reviewer can provide a useful second opinion, but model choice is advisory and never replaces evidence. Review writes obey the host tool's permissions and planning-mode restrictions. There is no source, URL, or detailed-blocker count: the owner chose completeness over investigation cost, which overrides `skill-writer`'s numeric investigation budgets for this planning skill only; finish every available independent check instead of stopping at a count. Completeness applies to the investigation, not to what the plan stores. The plan stays an execution document: `## Review` holds the history table and only the latest round. Each earlier round moves verbatim to a review history file beside the plan, which no agent needs in order to fix or build. A round never restates its gate record as prose.
 
 ## When to use / when NOT to use
 
@@ -46,10 +46,10 @@ Do NOT use plan-review when you:
 8. Check D — QA executability. Require commands or tools, concrete inputs, and observable outcomes. Verify that QA reaches the real integration path, not only a stub or a file's existence. Future tests are planned checks, never evidence that the implementation passes. A grep for documentation headings does not establish documentation accuracy.
 9. Check E — UI QA. Verify `ui:` against manifests, entry points, templates/views, mobile targets, and the proposed surface. If UI exists or is added, require the last automated UI QA todo to name the tool, route/screen, viewports, steps, expected result, and screenshot path.
 10. Checks F–J — read [references/writer-contract.md](references/writer-contract.md). Check research, Product-before-Technical questions, required diagrams, final gates, todo boxes, test-before-next, continuation, and T0.
-11. Record each observation as verified, contradicted, or unverified, with its evidence kind and actual result. Use Notes only when an observation cannot affect executability or a required outcome. Missing critical evidence belongs under Unverified, not Notes. A defect stays open until evidence resolves it; changed wording alone is not a fix. Assign each piece of evidence a stable id: reuse an Evidence index citation id (`C<n>`) for a source or external contract; give each executed probe a new `P<n>`; give each todo's planned Acceptance/QA a new `Q<n>` (`planned-qa`, never sufficient alone). Give each obligation a stable `O<n>` and list every required target it covers, using the exact strings validator-contract.md's Gate record section names (`MH<n>`, `MN<n>`, `T<n>.start`/`.acceptance`/`.qa`, `dep:T<a>:T<b>`, `F<n>.acceptance`, `flow:<id>`, `contract:<id>`, `check:A`–`check:J`). Group targets into one obligation only when the same evidence supports all of them.
-12. On every re-review, verify fixes and their affected paths. Before any OKAY, perform the whole-plan approval gate below: revisit every critical flow and requirement-to-todo mapping, including unchanged migration, rollback, and integration sections. Reuse evidence only after comparing its source digests and relevant plan obligations with the current revision, recording what still applies. A previous "passed" label without evidence does not qualify. New evidence-backed correctness findings are allowed in every round; avoid unrelated style or architecture churn.
+11. Record each observation as verified, contradicted, or unverified, with its evidence kind and actual result. Use Notes only when an observation cannot affect executability or a required outcome. Missing critical evidence belongs under Unverified, not Notes. A defect stays open until evidence resolves it; changed wording alone is not a fix. Assign each piece of evidence a stable id: reuse an Evidence index citation id (`C<n>`) for a source or external contract; give each executed probe a new `P<n>`. A todo's planned Acceptance/QA may get a `Q<n>` (`planned-qa`, never sufficient alone); leave it out unless an obligation's `plannedQa` names it. Give each obligation a stable `O<n>` and list every required target it covers, using the exact strings validator-contract.md's Gate record section names (`MH<n>`, `MN<n>`, `T<n>.start`/`.acceptance`/`.qa`, `dep:T<a>:T<b>`, `F<n>.acceptance`, `flow:<id>`, `contract:<id>`, `check:A`–`check:J`). Group targets into one obligation only when the same evidence supports all of them.
+12. On every re-review, verify fixes and their affected paths. Before any OKAY, perform the whole-plan approval gate below: revisit every critical flow and requirement-to-todo mapping, including unchanged migration, rollback, and integration sections. Reuse evidence only after comparing its source digests and relevant plan obligations with the current revision, recording what still applies. Carry a previous round's verified obligation forward without re-reading it when every source digest it cites is unchanged and the plan text it covers did not change; record the carry-forward as one `plan-inspection` evidence entry. Re-read everything a fix touched, and every caller and test of a seam the fix changed. A previous "passed" label without evidence does not qualify. New evidence-backed correctness findings are allowed in every round; avoid unrelated style or architecture churn.
 13. Decide the verdict by the approval gate. Describe every blocker in detail: location, failure, evidence, and concrete fix. There is no display limit; a reporting limit never makes a failed requirement pass. When many blockers are equally consequential, list T0, test-before-next, continuation, final-gate, unresolved-decision, research, and diagram misses first. Record skipped checks and missing evidence explicitly.
-14. Append the round to `## Review`, including a `#### Gate record` fenced `json` object built from this round's obligations, evidence, flows, checks, and blockers, matching [references/validator-contract.md](references/validator-contract.md)'s schema exactly. Update `review_round`. Set `status: reviewed` only for OKAY; use `planned` for REJECT or INCOMPLETE, including when revoking a prior approval. Preserve earlier verdicts and evidence. **Edit the plan file at the path you were given — not a copy.** A disposable copy is only ever for probes that must not touch live data; it is never where the round is saved, and losing access to one never excuses skipping the other. If a shell command you tried for setting up a probe copy is denied or fails, that failure has no bearing on your Edit/Write access to the plan path: retry the probe a different way or skip the probe, but still edit the real plan file with the round you have. Re-read the saved result at that real path and verify it matches the evidence and current plan digest before replying. Run `bun <plan-review-base>/scripts/validate-plan.ts <plan> --review --root <project>` against that same real path and resolve every reported error before replying; a passing validator run is required, not sufficient, evidence that the round is structurally sound.
+14. Save the round. When `## Review` already holds a `### Round <n>`, first append that round's whole body, verbatim and with the writer's `#### Fixed` lines under it, to the review history file: `<plan-stem>.review-history.md` in the plan's directory, created with the H1 `# Review history: <plan title>` when absent. Then delete that body from the plan; its history-table row stays. Add the new history row, with a summary of at most 120 characters, and write the new `### Round <n>` in the Output format's shape, ending with a `#### Gate record` fenced `json` object built from this round's obligations, evidence, flows, checks, and blockers, matching [references/validator-contract.md](references/validator-contract.md)'s schema exactly. Render only what is open: the blockers, the obligations that are not verified, and the missing evidence. Verified obligations, flow traces, and check results live in the gate record alone; keep each of its `observed`, `result`, and `counterexample` fields to one sentence. Update `review_round`. Set `status: reviewed` only for OKAY; use `planned` for REJECT or INCOMPLETE, including when revoking a prior approval. **Edit the plan file at the path you were given — not a copy.** A disposable copy is only ever for probes that must not touch live data; it is never where the round is saved, and losing access to one never excuses skipping the other. If a shell command you tried for setting up a probe copy is denied or fails, that failure has no bearing on your Edit/Write access to the plan path: retry the probe a different way or skip the probe, but still edit the real plan file with the round you have. Re-read the saved result at that real path and verify it matches the evidence and current plan digest before replying. Run `bun <plan-review-base>/scripts/validate-plan.ts <plan> --review --root <project>` against that same real path and resolve every reported error before replying; a passing validator run is required, not sufficient, evidence that the round is structurally sound.
 15. On OKAY, stop. On REJECT in review mode, offer the fix loop. In loop mode, invoke `plan-writer`'s fix-only follow-up for the recorded blockers, then re-review. If that skill is unavailable, stop and say so. On INCOMPLETE, name the smallest missing check; continue another round only if loop consent and available evidence permit it. Do not rewrite a requirement merely to eliminate a verification gap.
 
 ### Approval gate
@@ -76,76 +76,55 @@ PLAN-REVIEW: REJECT (<n> blockers)
 PLAN-REVIEW: INCOMPLETE
 ```
 
-Append a history row and round body. Include all the sections below, using `None` where appropriate. Evidence entries are concise observed facts, not private reasoning transcripts.
+The plan's `## Review` holds the history table and exactly one round, the latest. Write only the sections below, and leave out a section that would say `None`, except `#### Unverified`. Every verified obligation, every flow trace, and every check result lives in the gate record alone: never repeat them as prose. Evidence entries are concise observed facts, not private reasoning transcripts.
 
 ````markdown
 ## Review
 
-| Round | Date | Verdict | Blockers |
-| --- | --- | --- | --- |
-| 1 | <date> | REJECT | 2 |
-| consent | <date> | — | user approved loop mode |
-| 2 | <date> | INCOMPLETE | 0 |
-| 3 | <date> | OKAY | 0 |
+| Round | Date | Verdict | Blockers | Summary |
+| --- | --- | --- | --- | --- |
+| 1 | <date> | REJECT | 2 | B1 <short name>; B2 <short name> |
+| consent | <date> | — | — | user approved loop mode |
+| 2 | <date> | OKAY | 0 | B1 and B2 fixed |
 
 ### Round <n>
 
 **Verdict:** PLAN-REVIEW: REJECT (2 blockers)
 **Mode:** <review | loop; consent and rounds used>
-**Review identity:** <plan digest; repository revision/dirty state when available; evidence-file digests>
-**Scope:** <whole plan; required obligations verified/total; critical flows verified/total>
+**Review identity:** <plan digest>; <repository revision and dirty state, when available>; source digests are in the gate record
+**Scope:** whole plan; <v>/<r> required obligations verified; <v>/<r> critical flows verified
 
 #### Blockers
 
-1. **<todo/flow> — <failure>.** Evidence: <source/probe and observed result>. Fix: <concrete change and verification>.
-2. **<todo/flow> — <failure>.** Evidence: <source/probe and observed result>. Fix: <concrete change and verification>.
-<Every remaining blocker, in the same detail; there is no cap.>
+1. **B<n> — <todo/flow> — <failure>.** Evidence: <ids and the observed result>. Fix: <concrete change and how to verify it>.
+<Every remaining blocker, one paragraph each; there is no cap.>
 
-#### Fixed (only on a round after the first)
+#### Fixed
 
-- Blocker <id> from round <n>: <change and evidence that resolves the failure>.
+<Only on a round after the first.>
 
-#### Coverage and evidence
+- B<n> from round <n-1>: fixed | still open — <evidence id and observed result, one line>.
 
-| ID / obligation / owning todos | Required? | Evidence kind and location | Observed result | Planned QA | Status |
-| --- | --- | --- | --- | --- | --- |
-| O<n>; targets <MH<n>/T<n>.start etc.>; todos | yes/no | source trace / executed probe / versioned documentation / plan inspection, with the evidence id | <actual result, or not checked> | <Q<n> command, or none> | verified / contradicted / unverified |
+#### Open obligations
 
-#### Critical flows
+<Only when an obligation is contradicted or unverified. One row per such obligation; verified ones are not listed.>
 
-- <flow>: <entry → preconditions → ordered writes → external effects → recovery>; counterexample checked: <input/state>; evidence: <ledger ids>; outcome: <result>.
-- Whole-plan pass: <what was rechecked, evidence reused with identity, and uncovered obligations>.
+| Obligation | Targets | Evidence | Observed | Status |
+| --- | --- | --- | --- | --- |
+| O<n> | <targets> | <ids> | <one sentence> | contradicted / unverified |
 
 #### Unverified
 
-- <missing evidence, affected obligation, why it matters, and smallest next check; include the actual access failure>.
-- Planned implementation tests not run: <future tests; these are not required review evidence and do not themselves force INCOMPLETE>.
-- Owner waivers: <separate from technical resolution; None when absent>.
+- <missing evidence, the obligation it blocks, the smallest next check, and the actual access failure>, or None.
+- Owner waivers: <only when one exists; separate from technical resolution>.
 
 #### Notes (non-blocking)
 
 - <at most five; observations that would not stop execution>
 
-#### Checked
-
-- References opened: <n> of <n>; <k> broken; omitted locations and affected obligations: <list>.
-- Todos startable: <n> of <n>.
-- Contradictions: none | <where>.
-- QA scenarios executable: <n> of <n>.
-- UI claim: `ui: yes | no` verified | contradicted — <evidence>. Automated UI QA todo last: yes | no | not applicable.
-- Research: present | missing — sources opened <n> of <n>; <k> broken.
-- Questions: Product before Technical | wrong order — open items with neither answer nor default: <n>.
-- Diagram: present | omitted — <reason> | required and missing.
-- Final wave: F1–F4 present | missing <which> — UI QA last: yes | no | not applicable.
-- Todo boxes: every todo starts `- [ ] Open`. The `## Todos` intro says to pass that todo's Acceptance and QA scenario, commit when it says `Commit: yes`, mark `- [x] Done`, and only then start the next todo. The final wave does not inherit that rule | missing | applied to the final wave.
-- Waves: the plan says to continue through every wave until every todo and gate is done, and to fix a failed check and continue | stops between waves | missing.
-- T0: first todo, copies the plan into `docs/plans/` only when it is not already there, and the build continues there | missing | not first | copies unconditionally | build stays outside.
-- Previous blockers fixed: <n> of <n> | first round.
-- Approval gate: <PASS | FAIL | INCOMPLETE>; <evidence-backed reason>.
-
 #### Gate record
 
-The machine-checkable form of everything above. Build it from the same ledger; do not invent it separately. [references/validator-contract.md](references/validator-contract.md) is authoritative for the schema, the required-target list, and evidence kinds.
+The machine-checkable round. Build it from the same ledger; do not invent it separately. [references/validator-contract.md](references/validator-contract.md) is authoritative for the schema, the required-target list, and evidence kinds.
 
 ```json
 {
@@ -153,22 +132,21 @@ The machine-checkable form of everything above. Build it from the same ledger; d
   "round": <n>,
   "planDigest": "<this round's spec digest>",
   "repository": { "revision": "<commit>", "dirty": ["<path>"] },
-  "sources": [{ "path": "<file>", "sha256": "<64 hex>" }],
+  "sources": [{ "path": "<file inspected outside the Evidence index>", "sha256": "<64 hex>" }],
   "evidence": [
-    { "id": "P<n>", "kind": "probe", "command": "<command>", "inputs": "<fixture>", "exit": <n>, "result": "<observed>", "omissions": "<what was stubbed, or none>" },
-    { "id": "Q<n>", "kind": "planned-qa", "command": "<the todo's planned Acceptance/QA command>" }
+    { "id": "P<n>", "kind": "probe", "command": "<command>", "inputs": "<fixture>", "exit": <n>, "result": "<one sentence>", "omissions": "<what was stubbed, or none>" }
   ],
   "obligations": [
-    { "id": "O<n>", "targets": ["<every required target this obligation covers>"], "evidenceIds": ["<C/P/Q ids>"], "observed": "<actual result>", "plannedQa": "<Q id, if any>", "status": "verified | contradicted | unverified" }
+    { "id": "O<n>", "targets": ["<every required target this obligation covers>"], "evidenceIds": ["<C/P ids>"], "observed": "<one sentence>", "status": "verified | contradicted | unverified" }
   ],
-  "flows": [{ "id": "<Evidence index flow id>", "status": "verified | contradicted", "counterexample": "<input/state tried>", "evidenceIds": ["<ids>"] }],
-  "checks": { "A": { "status": "verified | contradicted", "evidenceIds": ["<ids>"], "observed": "<this plan's actual result for check A, not a generic restatement>" }, "...": "one entry for each of A through J" },
-  "blockers": [{ "obligationId": "O<n>", "location": "<path:line or flow id>", "failure": "<what fails>", "evidenceIds": ["<ids>"], "fix": "<concrete change>" }],
+  "flows": [{ "id": "<Evidence index flow id>", "status": "verified | contradicted", "counterexample": "<input or state tried, one sentence>", "evidenceIds": ["<ids>"] }],
+  "checks": { "A": { "status": "verified | contradicted", "evidenceIds": ["<ids>"], "observed": "<this plan's actual result for check A, one sentence>" }, "...": "one entry for each of A through J" },
+  "blockers": [{ "id": "B<n>", "obligationIds": ["O<n>"], "location": "<path:line or flow id>", "failure": "<what fails>", "evidenceIds": ["<ids>"], "fix": "<concrete change>" }],
   "verdict": "OKAY | REJECT | INCOMPLETE"
 }
 ```
 
-Every required target from validator-contract.md's Gate record section has a covering obligation: each `MH<n>`/`MN<n>`, each todo's `.start`/`.acceptance`/`.qa`, each `dep:T<a>:T<b>`, each `F<n>.acceptance`, each Evidence index flow's `flow:<id>`, each external citation's `contract:<id>`, and `check:A` through `check:J`. An obligation that is `verified` or `contradicted` cites at least one `C`/`P` evidence id; `planned-qa` or a `planned` citation alone never carries a verified or contradicted status. Every contradicted obligation has a matching `blockers` entry. `gateRecordDigest` (recorded later, in Build) is the SHA-256 of this object's canonical JSON, defined in validator-contract.md.
+Every required target from validator-contract.md's Gate record section has a covering obligation: each `MH<n>`/`MN<n>`, each todo's `.start`/`.acceptance`/`.qa`, each `dep:T<a>:T<b>`, each `F<n>.acceptance`, each Evidence index flow's `flow:<id>`, each external citation's `contract:<id>`, and `check:A` through `check:J`. One obligation covers every target the same evidence supports, for example all the todos whose start, acceptance, and QA one plan inspection verified. An obligation that is `verified` or `contradicted` cites at least one `C`/`P` evidence id; `planned-qa` or a `planned` citation alone never carries a verified or contradicted status. Every contradicted obligation has a matching `blockers` entry. `gateRecordDigest` (recorded later, in Build) is the SHA-256 of this object's canonical JSON, defined in validator-contract.md.
 ````
 
 Reply block, review mode or the final round of loop mode:
@@ -216,12 +194,15 @@ MUST:
 - MUST run the whole-plan approval gate after fixes, including unchanged critical flows.
 - MUST distinguish observed results, source-traced conclusions, assumptions, and future QA.
 - MUST report missing required evidence as INCOMPLETE when no demonstrated blocker remains.
-- MUST preserve prior evidence and state why a prior verdict changes.
+- MUST move the previous round's body verbatim to the review history file before writing the next round, keep its history-table row, and state why a prior verdict changes.
+- MUST keep `## Review` to the history table and the latest round.
 
 NEVER:
 
 - NEVER block on architecture preference, naming, code style, or optimality alone.
-- NEVER edit the plan file outside `## Review` and the two frontmatter keys it owns, except through `plan-writer`'s own fix-only follow-up step during the fix loop.
+- NEVER edit the plan file outside `## Review` and the two frontmatter keys it owns, except through `plan-writer`'s own fix-only follow-up step during the fix loop. The review history file beside the plan is the one other file a round writes.
+- NEVER delete a round's text. Moving it to the review history file is the only way it leaves the plan.
+- NEVER restate verified obligations, flow traces, or check results as prose; the gate record holds them.
 - NEVER fix a plan itself; only `plan-writer`, invoked explicitly, changes the plan's content.
 - NEVER add a blocker to look thorough. Zero blockers is a legitimate, common outcome.
 - NEVER infer approval from zero blockers, elapsed effort, a passing structural script, or user pressure.
@@ -242,19 +223,20 @@ NEVER:
 - [ ] The run's mode (review or loop) is recorded and followed correctly.
 - [ ] The round number is correct and no more than 5 since the last consent.
 - [ ] The plan identity and whole-plan obligation ledger are recorded; unopened evidence is listed honestly.
-- [ ] All ten checks (A–J) each produced a line under "Checked". Check J produces the todo-box line, including the test-before-next instruction, the waves line, and the T0 line.
+- [ ] All ten checks (A–J) have a gate record `checks` entry whose `observed` states this plan's result. Check J's covers the todo boxes, the test-before-next instruction, the waves rule, and T0.
 - [ ] Every unresolved blocker is described in detail, with evidence and a fix; there is no cap.
 - [ ] Notes are capped at five.
 - [ ] The verdict is OKAY, REJECT, or INCOMPLETE under the gate, and is the final reply's first line.
-- [ ] `## Review` was written with the round appended to the history table, never overwriting an earlier round's body. The write landed on the real plan file at its given path, not only on a disposable copy used for drafting or validation.
+- [ ] The previous round's body, if any, was appended verbatim to the review history file before it left the plan. `## Review` holds the history table, with this round's row, and only this round. The write landed on the real plan file at its given path, not only on a disposable copy used for drafting or validation.
+- [ ] No verified obligation, flow trace, or check result is repeated as prose; only blockers, open obligations, and missing evidence are rendered.
 - [ ] `review_round` and `status` match the outcome of this round.
-- [ ] `#### Gate record` is a fenced `json` object with every required target covered, agrees with the prose round (verdict, blocker count, scope counts, coverage-table statuses), and passes `validate-plan.ts --review`.
-- [ ] Every critical flow has a recorded trace and counterexample check, including its applicable recovery path.
+- [ ] `#### Gate record` is a fenced `json` object with every required target covered, agrees with the prose round (verdict, blocker count, scope counts, open-obligation statuses), and passes `validate-plan.ts --review`.
+- [ ] Every critical flow has a gate record entry with its counterexample and status, after a trace that covered its recovery path.
 - [ ] Reused evidence matches the current plan/source identity; a prior pass alone was not reused as evidence.
 - [ ] Missing critical evidence prevents approval, even after every previously reported blocker is fixed.
 - [ ] Planned tests are separate from executed probes; optional notes cannot hide required work.
 - [ ] The saved verdict, coverage totals, frontmatter, and final reply agree.
-- [ ] Nothing outside `## Review` and the two frontmatter keys changed, unless `plan-writer`'s fix-only follow-up step ran during a loop round.
+- [ ] Nothing outside `## Review`, the two frontmatter keys, and the review history file changed, unless `plan-writer`'s fix-only follow-up step ran during a loop round.
 
 <!-- markdownlint-disable-next-line MD034 -->
 © Sillybit — https://github.com/Sillybit-io/silly-skills — CC BY-ND 4.0. Attribution required; do not republish modified versions without written approval.

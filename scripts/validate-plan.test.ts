@@ -354,6 +354,10 @@ type GateOptions = {
   renderStatus?: (o: Obligation) => string;
   renderVerdict?: string;
   history?: string;
+  /** Render only the open obligations, under '#### Open obligations', as plan-review 0.7.0 writes a round. */
+  compact?: boolean;
+  /** Obligation ids to leave out of the rendered list. */
+  hide?: string[];
 };
 
 function gateRecord(root: string, planDigest: string, options: GateOptions = {}) {
@@ -388,9 +392,27 @@ function renderRound(gate: ReturnType<typeof gateRecord>, options: GateOptions =
   const flows = gate.flows.filter((f) => f.status === "verified").length;
   const blockers = (gate.blockers as unknown[]).length;
   const verdictText = options.renderVerdict ?? (gate.verdict === "REJECT" ? `REJECT (${blockers} blockers)` : gate.verdict);
-  const rows = obligations
-    .map((o) => `| ${o.id} targets | ${o.required === false ? "no" : "yes"} | ${o.evidenceIds.join(", ")} | ${o.observed} | ${o.plannedQa} | ${options.renderStatus ? options.renderStatus(o) : o.status} |`)
-    .join("\n");
+  const listed = obligations
+    .filter((o) => !options.compact || o.status !== "verified")
+    .filter((o) => !(options.hide ?? []).includes(o.id));
+  const status = (o: Obligation) => (options.renderStatus ? options.renderStatus(o) : o.status);
+  const ledger = options.compact
+    ? listed.length === 0
+      ? ""
+      : `#### Open obligations
+
+| Obligation | Targets | Evidence | Observed | Status |
+| --- | --- | --- | --- | --- |
+${listed.map((o) => `| ${o.id} | ${o.targets.join(", ")} | ${o.evidenceIds.join(", ")} | ${o.observed} | ${status(o)} |`).join("\n")}
+
+`
+    : `#### Coverage and evidence
+
+| ID / obligation / owning todos | Required? | Evidence kind and location | Observed result | Planned QA | Status |
+| --- | --- | --- | --- | --- | --- |
+${listed.map((o) => `| ${o.id} targets | ${o.required === false ? "no" : "yes"} | ${o.evidenceIds.join(", ")} | ${o.observed} | ${o.plannedQa} | ${status(o)} |`).join("\n")}
+
+`;
   return `
 ### Round ${gate.round}
 
@@ -398,13 +420,7 @@ function renderRound(gate: ReturnType<typeof gateRecord>, options: GateOptions =
 
 **Scope:** whole plan; ${verified}/${required.length} required obligations verified; ${flows}/1 critical flows verified.
 
-#### Coverage and evidence
-
-| ID / obligation / owning todos | Required? | Evidence kind and location | Observed result | Planned QA | Status |
-| --- | --- | --- | --- | --- | --- |
-${rows}
-
-#### Gate record
+${ledger}#### Gate record
 
 \`\`\`json
 ${JSON.stringify(gate, null, 2)}
@@ -699,6 +715,29 @@ describe("plan mode", () => {
     expect(codes(run(root))).toContain("EXCERPT");
   });
 
+  test("a short anchor inside a longer cited range validates", () => {
+    const root = makeProject();
+    writePlan(root, planText(root, { mutateIndex: (i) => ((i.citations as Record<string, unknown>[])[0].excerpt = "  return register(config);") }));
+    expect(run(root).errors).toEqual([]);
+  });
+
+  test("an anchor outside the range, a trivial anchor, and a partial excerpt over three lines fail with EXCERPT", () => {
+    const set = (excerpt: string, endLine?: number) => (i: Record<string, unknown>) => {
+      const c = (i.citations as Record<string, unknown>[])[0];
+      c.excerpt = excerpt;
+      if (endLine) c.endLine = endLine;
+    };
+    for (const mutateIndex of [
+      set("export function register(name: string): string {"),
+      set("}"),
+      set(lines(APP, 2, 6), 7),
+    ]) {
+      const root = makeProject();
+      writePlan(root, planText(root, { mutateIndex }));
+      expect(codes(run(root))).toContain("EXCERPT");
+    }
+  });
+
   test("a line range past the end of the file fails", () => {
     const root = makeProject();
     writePlan(root, planText(root, { mutateIndex: (i) => ((i.citations as Record<string, unknown>[])[1].endLine = 40) }));
@@ -922,6 +961,64 @@ describe("review mode", () => {
     const root2 = makeProject();
     reviewedPlan(root2, { renderVerdict: "INCOMPLETE" });
     expect(codes(run(root2, ["--review"]))).toContain("RENDERED_MISMATCH");
+  });
+
+  const REJECTED: GateOptions = {
+    verdict: "REJECT",
+    obligations: [
+      { id: "O1", targets: ALL_TARGETS, evidenceIds: ["C1", "P1"], observed: "traced", plannedQa: "Q1", status: "verified" },
+      { id: "O2", targets: ["T2.acceptance"], evidenceIds: ["P1"], observed: "flag test cannot fail", plannedQa: "Q1", status: "contradicted" },
+    ],
+    blockers: [{ id: "B1", obligationIds: ["O2"], location: "T2 Acceptance", failure: "cannot detect a broken flag", evidenceIds: ["P1"], fix: "assert the flag output" }],
+  };
+
+  test("a compact round renders only its open obligations and validates", () => {
+    const root = makeProject();
+    const text = reviewedPlan(root, { ...REJECTED, compact: true });
+    expect(text).toContain("#### Open obligations");
+    expect(text).not.toContain("| O1 |");
+    const result = run(root, ["--review"]);
+    expect(result.errors).toEqual([]);
+    expect(result.expectedVerdict).toBe("REJECT");
+  });
+
+  test("an OKAY round with no open obligation needs no rendered list", () => {
+    const root = makeProject();
+    const text = reviewedPlan(root, { compact: true });
+    expect(text).not.toContain("#### Open obligations");
+    const result = run(root, ["--review"]);
+    expect(result.errors).toEqual([]);
+    expect(result.gateEligible).toBe(true);
+  });
+
+  test("an open obligation left out of the rendered list fails", () => {
+    const root = makeProject();
+    reviewedPlan(root, { ...REJECTED, compact: true, hide: ["O2"] });
+    expect(run(root, ["--review"]).errors.some((e) => e.code === "RENDERED_MISMATCH" && e.message.includes("O2"))).toBe(true);
+    const root2 = makeProject();
+    const obligations = [
+      ...(REJECTED.obligations as Obligation[]),
+      { id: "O3", targets: ["MH2"], evidenceIds: [], observed: "flag contract page unreachable", plannedQa: "Q1", status: "unverified" },
+    ];
+    reviewedPlan(root2, { ...REJECTED, obligations, compact: true, hide: ["O3"] });
+    const errors = run(root2, ["--review"]).errors;
+    expect(errors.some((e) => e.code === "RENDERED_MISMATCH" && e.message === "open obligation O3 is missing from the rendered list")).toBe(true);
+  });
+
+  test("only the latest round is read, so earlier round bodies may live in the review history file", () => {
+    const root = makeProject();
+    const draft = planText(root, { status: "reviewed", reviewRound: 2 });
+    const gate = gateRecord(root, canonicalSpecDigest(draft), { round: 2 });
+    const history = `
+| Round | Date | Verdict | Blockers | Summary |
+| --- | --- | --- | --- | --- |
+| 1 | 2026-09-29 | REJECT | 1 | B1 T2 flag test cannot fail |
+| 2 | 2026-09-29 | OKAY | 0 | B1 fixed |
+`;
+    writePlan(root, planText(root, { status: "reviewed", reviewRound: 2, review: `${history}${renderRound(gate, { compact: true })}` }));
+    const result = run(root, ["--review"]);
+    expect(result.errors).toEqual([]);
+    expect(result.gateEligible).toBe(true);
   });
 
   test("editing the plan after review makes the review stale", () => {

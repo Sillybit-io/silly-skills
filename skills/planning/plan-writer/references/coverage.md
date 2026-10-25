@@ -35,7 +35,7 @@ An empty or failed search is not proof of absence. Record its scope and the syno
 
 Every relevant edge ends in one of two states:
 
-- **inspected** — you opened the code at that location and recorded a citation with a literal excerpt of the lines you rely on.
+- **inspected** — you opened the code at that location and recorded a citation with a literal excerpt of the lines you rely on: the whole range when it is three lines or fewer, otherwise a one-to-three-line anchor from inside it.
 - **excluded** — you name the boundary reason it cannot affect the change, such as "owner data copied byte for byte and never parsed", and cite the evidence for that reason.
 
 "Probably fine" is not a reason. An edge still unread stays `pending`, and `pending` rows block the planned state.
@@ -58,7 +58,7 @@ On resume, re-read the draft from disk. Recompute the SHA-256 of every cited sou
 
 ## Fix-only follow-up
 
-A blocker about coverage, a flow, or a missed consumer reopens investigation along that blocker's affected paths. Follow those edges to closure, update the coverage rows, citations, critical flows, and the QA that proves the fix. Do not redesign unrelated sections.
+A blocker about coverage, a flow, or a missed consumer reopens investigation along that blocker's affected paths. Follow those edges to closure, update the coverage rows, citations, critical flows, and the QA that proves the fix. Edit each entry into its corrected state; the `### Coverage` paragraph never gains a sentence about what a fix reopened. Do not redesign unrelated sections.
 
 ## Delegating discovery
 

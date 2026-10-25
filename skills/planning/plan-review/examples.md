@@ -81,10 +81,14 @@ docs/plans/plan.md. Round 1's OKAY had no evidence behind it and is revoked.
 Fix these blockers and re-review until approved? (yes / I will fix them myself)
 ```
 
-The saved review preserved round 1 and appended round 2, plus a `#### Gate
+The saved review kept round 1's history row and added round 2, plus a `#### Gate
 record` fenced JSON object the bundled validator accepts with zero errors.
 This excerpt shows the history and scope; the complete record also stored
-seven source and eleven probe evidence entries with their digests:
+seven source and eleven probe evidence entries with their digests. The run used
+0.5.0, which also kept round 1's body in the plan and rendered every obligation
+as a table row. From 0.7.0, round 1's body moves to the review history file
+beside the plan, only open obligations are rendered, and the history table
+gains a Summary column; the verdict and scope lines below are unchanged:
 
 ```markdown
 | Round | Date | Verdict | Blockers |

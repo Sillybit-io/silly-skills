@@ -3,7 +3,7 @@ name: plan-result-review
 description: Compares everything a build changed with the reviewed plan it implemented, from the build's baseline snapshot. Inventories committed, staged, unstaged, untracked, deleted, renamed, binary, mode, and symlink changes, maps every requirement to a change and every change to a todo, checks that the owner's pre-build work survived, and explains each difference with its location, reason, and reason source. Returns MATCH, MISMATCH, or INCOMPLETE. Use when asked to check a build against its plan, review the result, confirm nothing was missed, or run a plan's scope-fidelity gate.
 license: CC-BY-ND-4.0
 metadata:
-  version: "0.1.0"
+  version: "0.2.0"
   category: planning
   suggested-model: openai/gpt-6-astra
   suggested-effort: max
@@ -31,7 +31,7 @@ Do NOT use plan-result-review when you:
 
 ## Workflow
 
-1. Resolve the plan path from the request. Read the whole plan from disk: frontmatter, spec, `## Review`, `## Build`, and any earlier `## Result review` rounds. The plan's approval is the latest OKAY round.
+1. Resolve the plan path from the request. Read the whole plan from disk: frontmatter, spec, `## Review`, `## Build`, and the latest `## Result review` round, if any. The plan's approval is the latest OKAY round.
 2. Record the identity: the plan's canonical spec digest, the current HEAD, and the dirty state. Record the phase: the gate you run for, such as `F4`, or `completion`.
 3. Choose the baseline. Read [references/inventory.md](references/inventory.md). Use the Build record's snapshot; otherwise an explicit snapshot, base, or range from the caller; otherwise ask. Never guess `HEAD~1`, and never compare only the last commit. When owner-work preservation must be certified and no readable snapshot exists, the verdict is INCOMPLETE.
 4. Build the change inventory with the helper `scripts/inventory-changes.ts`, or by hand as the reference describes. Include every path in the baseline and receipts, even when git no longer lists it. Record the totals by layer.
@@ -42,7 +42,7 @@ Do NOT use plan-result-review when you:
 9. Check the owner's work. For every path that had staged, unstaged, or untracked changes at the baseline, confirm those layers survived, unless a todo owned that exact change. A path restored to HEAD, a deleted untracked file, or a newly ignored file counts as changed even when `git diff` is empty.
 10. Record each difference with the fields in [references/differences.md](references/differences.md). Take an `approved` reason only from the owner's recorded decision, such as a Build note that quotes it or an answered question. Mark every other reason `inferred`, with its evidence, or `unknown`.
 11. Decide the verdict by that reference: MISMATCH for unapproved differences, then INCOMPLETE for missing required evidence, then MATCH.
-12. Append a round to `## Result review` in the plan, and preserve earlier rounds. Change nothing else in the plan or the project. Re-read the saved section and confirm that its verdict, counts, and identity match your findings.
+12. Save the round. When `## Result review` already holds a `### Result round <n>`, first append that round's body verbatim to the review history file, `<plan-stem>.review-history.md` in the plan's directory, created with the H1 `# Review history: <plan title>` when absent. Then delete that body from the plan; its table row stays. Add the new row and write the new round, so the plan holds only the latest one. Change nothing else in the plan or the project. Re-read the saved section and confirm that its verdict, counts, and identity match your findings.
 13. Reply with the verdict block.
 
 ### Handling feedback
@@ -134,7 +134,8 @@ MUST:
 NEVER:
 
 - NEVER guess a base such as `HEAD~1`, or review only the last commit.
-- NEVER change code, tests, configuration, or any part of the plan outside `## Result review`.
+- NEVER change code, tests, configuration, or any part of the plan outside `## Result review`. The review history file beside the plan is the one other file a round writes.
+- NEVER delete a round's text. Moving it to the review history file is the only way it leaves the plan.
 - NEVER invent a reason, or mark a reason `approved` without the owner's recorded decision.
 - NEVER treat a reason, a receipt, or a passing test as a waiver of a violated requirement.
 - NEVER report MATCH with an unexplained artifact, an unmapped requirement, or changed owner work.
@@ -149,7 +150,7 @@ NEVER:
 - [ ] The branch, each planned commit, each Done todo's recorded checks and commit order, and each receipt's changed paths have a row in Commitments.
 - [ ] Every difference has all its fields, and no reason is marked approved without a recorded owner decision.
 - [ ] The verdict follows MISMATCH, then INCOMPLETE, then MATCH, and its count equals the unapproved differences.
-- [ ] Only `## Result review` changed in the plan, and nothing changed in the project.
+- [ ] Only `## Result review` changed in the plan, and it holds the table and only the latest round. The previous round's body, if any, was appended verbatim to the review history file. Nothing else changed in the project.
 - [ ] The saved section was re-read and matches the reply.
 
 <!-- markdownlint-disable-next-line MD034 -->

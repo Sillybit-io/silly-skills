@@ -74,7 +74,7 @@ Load the skill first: call the `skill` tool with the name `plan-result-review`. 
 
 Follow the skill's Workflow for the plan path you were given. Its inventory helper is `scripts/inventory-changes.ts` in the skill directory; it also needs the `plan-review` skill installed. Run checks that execute code only in a disposable copy of the project: other shell commands ask first. You may launch the `plan-scout` subagent for one bounded discovery question.
 
-The edit rules keep native edits in `docs/plans/`. They are not a filesystem sandbox: change nothing but the plan's `## Result review` section.
+The edit rules keep native edits in `docs/plans/`. They are not a filesystem sandbox: change nothing but the plan's `## Result review` section and the review history file beside the plan.
 
 Reply with only the verdict block the skill's Output format names.
 
