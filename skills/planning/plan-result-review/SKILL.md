@@ -3,7 +3,7 @@ name: plan-result-review
 description: Compares everything a build changed with the reviewed plan it implemented, from the build's baseline snapshot. Inventories committed, staged, unstaged, untracked, deleted, renamed, binary, mode, and symlink changes, maps every requirement to a change and every change to a todo, checks that the owner's pre-build work survived, and explains each difference with its location, reason, and reason source. Returns MATCH, MISMATCH, or INCOMPLETE. Use when asked to check a build against its plan, review the result, confirm nothing was missed, or run a plan's scope-fidelity gate.
 license: CC-BY-ND-4.0
 metadata:
-  version: "0.2.0"
+  version: "1.0.0"
   category: planning
   suggested-model: openai/gpt-6-astra
   suggested-effort: max
@@ -13,7 +13,7 @@ metadata:
 
 ## Purpose
 
-plan-result-review answers one question after a build: does what changed match what the reviewed plan said to change, and nothing else? It works from the build's baseline snapshot, not from the last commit, so it sees staged, unstaged, and untracked work, deletions, renames, binaries, modes, and symlinks. It also sees work the owner had in progress before the build started. It maps in both directions: every requirement and todo to the change or existing code that satisfies it, and every changed artifact to the todo that owns it. Each difference names the plan clause, the changed part, what was expected and what happened, and why, with the source of that reason. An unknown reason stays unknown. A reason never turns a violation into a match; only the owner's recorded approval does, and even then the difference stays visible. The skill writes only the plan's `## Result review` section and never repairs code. Run it in a fresh session, so the reviewer did not build what it reviews. The `suggested-model` hint is advisory.
+plan-result-review answers one question after a build: does what changed match what the reviewed plan said to change, and nothing else? It works from the build's baseline snapshot, not from the last commit, so it sees staged, unstaged, and untracked work, deletions, renames, binaries, modes, and symlinks. It also sees work the owner had in progress before the build started. It maps in both directions: every requirement and todo to the change or existing code that satisfies it, and every changed artifact to the todo that owns it. Each difference names the plan clause, the changed part, what was expected and what happened, and why, with the source of that reason. An unknown reason stays unknown. A reason never turns a violation into a match; only the owner's recorded approval does, and even then the difference stays visible. The skill writes the plan's `## Result review` section and its sibling review history, and never repairs code. Run it in a fresh session, so the reviewer did not build what it reviews. The `suggested-model` hint is advisory.
 
 ## When to use / when NOT to use
 
@@ -38,11 +38,11 @@ Do NOT use plan-result-review when you:
 5. Read what changed. For each changed path, read its diff or its binary, mode, or symlink change, and enough surrounding code to judge behavior. When a question needs a wider search, you may send `plan-scout` one bounded question; otherwise search yourself.
 6. Map requirements to changes. For each Must Have, Must NOT Have, gap, design decision, and todo (its Do, Must not, Acceptance, and QA), find the change or existing code that satisfies it. Run each acceptance and QA check you can in a disposable copy of the project, and record the command and result. A receipt's claim that a check passed is evidence to verify, not proof.
 7. Check the execution commitments. Compare the current branch with the plan's `branch:`. For each `Commit: yes` todo, find its commit and compare the message and the files with the todo. For each Done todo, compare the checks its pass receipt records with the todo's Acceptance and QA commands. A planned check the receipt does not record is test-before-next evidence the build lacks, even when the check passes when you run it now. For each receipt with an after snapshot, compare its recorded changed paths with the paths and layers that differ between its before and after snapshots. A receipt that leaves out or adds a change misattributes work. Check the order the receipts record against the plan's order of checks, then commit, then Done: a commit that first appears before the receipt that records the todo's checks was made before those checks.
-8. Map changes to todos. For each changed artifact, name the todo that owns it. The plan and its receipts are the authority; a file no todo names is extra, even when the change looks useful.
+8. Map changes to todos. For each changed artifact, name the todo that owns it. The plan and its receipts are the authority; a file no todo names is extra, even when the change looks useful. The exact sibling history file is the one review-output exception: keep it in the inventory and verify its changes are only the documented archive operation before classifying it as `review bookkeeping`. Unexplained rewrites, removals, or additions remain differences.
 9. Check the owner's work. For every path that had staged, unstaged, or untracked changes at the baseline, confirm those layers survived, unless a todo owned that exact change. A path restored to HEAD, a deleted untracked file, or a newly ignored file counts as changed even when `git diff` is empty.
 10. Record each difference with the fields in [references/differences.md](references/differences.md). Take an `approved` reason only from the owner's recorded decision, such as a Build note that quotes it or an answered question. Mark every other reason `inferred`, with its evidence, or `unknown`.
 11. Decide the verdict by that reference: MISMATCH for unapproved differences, then INCOMPLETE for missing required evidence, then MATCH.
-12. Save the round. When `## Result review` already holds a `### Result round <n>`, first append that round's body verbatim to the review history file, `<plan-stem>.review-history.md` in the plan's directory, created with the H1 `# Review history: <plan title>` when absent. Then delete that body from the plan; its table row stays. Add the new row and write the new round, so the plan holds only the latest one. Change nothing else in the plan or the project. Re-read the saved section and confirm that its verdict, counts, and identity match your findings.
+12. Save the round. Copy every existing `### Result round <n>` block, with its heading and complete body, verbatim into `<plan-stem>.review-history.md` beside the plan. Create that file with `# Review history: <plan title>` when absent. Read back and verify the copies before replacing anything. On retry, skip byte-identical entries of the same kind and round; stop on conflicts and preserve unrelated archive content. In one plan edit, replace the old bodies with the new round and append its table row; preserve all earlier table rows. If archive verification fails, leave the live round intact and report the failure. Carry every unresolved difference, missing evidence item, and approved deviation into the new round. Change nothing else in the plan or project. Re-read the saved section and confirm its verdict, counts, and identity.
 13. Reply with the verdict block.
 
 ### Handling feedback
@@ -95,7 +95,7 @@ The section appended to the plan:
 
 | Path | Change | Owning todo | Status |
 | --- | --- | --- | --- |
-| `path` | modified / added / deleted / renamed / mode / symlink / binary | T2 | planned / extra / owner-work |
+| `path` | modified / added / deleted / renamed / mode / symlink / binary | T2 or review output | planned / extra / owner-work / review bookkeeping |
 
 #### Differences
 

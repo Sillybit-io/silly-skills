@@ -86,7 +86,7 @@ record` fenced JSON object the bundled validator accepts with zero errors.
 This excerpt shows the history and scope; the complete record also stored
 seven source and eleven probe evidence entries with their digests. The run used
 0.5.0, which also kept round 1's body in the plan and rendered every obligation
-as a table row. From 0.7.0, round 1's body moves to the review history file
+as a table row. From 1.0.0, round 1's body moves to the review history file
 beside the plan, only open obligations are rendered, and the history table
 gains a Summary column; the verdict and scope lines below are unchanged:
 

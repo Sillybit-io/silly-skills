@@ -608,6 +608,7 @@ function excerptMatches(content: string, start: number, end: number, excerpt: st
   const range = lines.slice(start - 1, end);
   const want = excerpt.replace(/\r\n?/g, "\n").trim();
   if (range.join("\n").trim() === want) return true;
+  if (range.length <= ANCHOR_MAX_LINES) return false;
   const count = want.split("\n").length;
   if (count > ANCHOR_MAX_LINES || want.replace(/\s/g, "").length < ANCHOR_MIN_CHARS) return false;
   for (let i = 0; i + count <= range.length; i++) {
@@ -1615,20 +1616,21 @@ function validateReview(
   if (ledgers.length === 0 && open.length > 0) {
     err(ctx, "RENDERED_MISMATCH", ledgerLine, `round has no '#### Open obligations' list for ${open.map(([id]) => id).join(", ")}`);
   }
-  const renderedStatus = new Map<string, string>();
+  const renderedIds = new Set<string>();
   for (const ledger of ledgers) {
     for (const r of tableBodyRows(plan.lines, ledger.start, ledger.end)) {
-      if (r.cells.length >= 2) renderedStatus.set(r.cells[0].split(/\s+/)[0], r.cells[r.cells.length - 1]);
+      const id = r.cells[0].split(/\s+/)[0];
+      const status = r.cells.length >= 2 ? r.cells[r.cells.length - 1] : "";
+      if (renderedIds.has(id)) err(ctx, "RENDERED_MISMATCH", r.no, `duplicate rendered obligation ${id}`);
+      renderedIds.add(id);
+      if (!obligationStatus.has(id)) err(ctx, "RENDERED_MISMATCH", r.no, `rendered row ${id} is not in the gate record`);
+      else if (obligationStatus.get(id) !== status) err(ctx, "RENDERED_MISMATCH", r.no, `rendered status of ${id} is '${status}', gate record says '${obligationStatus.get(id)}'`);
     }
   }
   if (ledgers.length > 0) {
     for (const [id] of open) {
-      if (!renderedStatus.has(id)) err(ctx, "RENDERED_MISMATCH", ledgerLine, `open obligation ${id} is missing from the rendered list`);
+      if (!renderedIds.has(id)) err(ctx, "RENDERED_MISMATCH", ledgerLine, `open obligation ${id} is missing from the rendered list`);
     }
-  }
-  for (const [id, status] of renderedStatus) {
-    if (!obligationStatus.has(id)) err(ctx, "RENDERED_MISMATCH", ledgerLine, `rendered row ${id} is not in the gate record`);
-    else if (obligationStatus.get(id) !== status) err(ctx, "RENDERED_MISMATCH", ledgerLine, `rendered status of ${id} is '${status}', gate record says '${obligationStatus.get(id)}'`);
   }
   outcome.eligible = expected === "OKAY" && recorded === "OKAY";
   return outcome;

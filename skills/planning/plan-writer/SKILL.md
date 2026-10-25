@@ -3,7 +3,7 @@ name: plan-writer
 description: Writes an implementation plan after investigating the codebase to closure. Classifies the request, follows producers and consumers until no relevant edge is unread, verifies external contracts at the target version, and asks product questions before technical ones. Writes docs/plans/<date>-<slug>.md with quoted citations, critical flows, a baseline, todos tested one at a time, and a final verification wave, then validates it. Resumes a draft from its open frontier. Use when writing a plan, planning a feature or refactor, making an implementation plan, breaking work into tasks, resuming a draft plan, or fixing a rejected plan.
 license: CC-BY-ND-4.0
 metadata:
-  version: "0.7.0"
+  version: "1.0.0"
   category: planning
   suggested-model: anthropic/claude-fable-5-1
   suggested-effort: max
@@ -48,14 +48,14 @@ Do NOT use plan-writer when you:
 12. After answers, research again when an answer adds a new point, and investigate again when new evidence adds seeds. Update the ledger, the flows, and the risks one row or bullet at a time. Change the Evidence index one entry at a time: append a block for a new entry, and edit an existing entry in place when new evidence changes it. Never regenerate the index.
 13. Write `## Design`. Read [references/diagram.md](references/diagram.md). Add the mermaid block when the request is a flow or a design; otherwise write `Diagram: omitted — <reason>`.
 14. Write the verification strategy: for every gap, the exact command or check that proves it closed, and the output it should produce.
-15. Write the todos with the fields in Output format, one todo per edit. T0 is always first: copy this plan into the project's `docs/plans/` if it is not already there. Every todo and every final-wave gate starts with `- [ ] Open`. The `## Todos` introduction tells the builder to run each todo's Acceptance and QA scenario, pass them, commit when the todo says `Commit: yes`, record the evidence, and only then mark `- [x] Done` and start the next todo. That rule does not apply to the final-wave gates. Every acceptance criterion is something an agent can run: a command with its expected output, or a selector with its expected state, with concrete data. For a prose deliverable, acceptance is structural: a validator passes, a section exists, a command printed in the document runs. Never a grep for a sentence.
+15. Write the todos with the fields in Output format, one todo per edit. T0 is always first: copy this plan and any sibling review history into the project's `docs/plans/` if they are not already there. Every todo and every final-wave gate starts with `- [ ] Open`. The `## Todos` introduction tells the builder to run each todo's Acceptance and QA scenario, pass them, commit when the todo says `Commit: yes`, record the evidence, and only then mark `- [x] Done` and start the next todo. That rule does not apply to the final-wave gates. Every acceptance criterion is something an agent can run: a command with its expected output, or a selector with its expected state, with concrete data. For a prose deliverable, acceptance is structural: a validator passes, a section exists, a command printed in the document runs. Never a grep for a sentence.
 16. Group the implementation todos into waves by dependency: todos that share no file and have no dependency between them go in one wave. T0 runs alone before wave 1. Above the wave list, tell the builder to finish T0, then each wave in list order, then the final wave, without stopping to ask for a continue, and to fix a failing todo and rerun its checks until they pass. After the Todos test paragraph, add its own paragraph: when a wave is done, start the next wave, including the final wave, without asking for a continue.
 17. Add the final verification wave. Read [references/final-wave.md](references/final-wave.md). Title the gates `F1`, `F2`, `F3`, and `F4`, in that order. When `ui: yes`, the last todo is the automated UI QA task.
 18. Apply the transcript test to every todo: it may hold a signature, a path, or a command, and nothing longer. Replace implementation code with the decision it encodes and the reference it came from. Evidence may be as long as the investigation needs; todo bodies stay short. A todo's `Do` holds about 150 words at most; split a todo that needs more, and move its rationale to `## Questions`.
 19. Validate. Read [references/evidence-index.md](references/evidence-index.md). Confirm no `<!-- todo: ... -->` placeholder is left. Measure the file without `## Review`. Above 150 KB, look for repetition before anything else: a decision argued in the TL;DR, in `## Questions`, and again in a todo; a flow traced in prose and in the index; an excerpt that quotes a long range whole; a coverage paragraph that lists every file the rows already list. Remove what you find. Run the validator bundled with `plan-review` on the plan with `--root <project>` and fix every error. The frontier must be empty and no coverage row pending. When Bun or `plan-review` is unavailable, keep `status: draft` and name the missing dependency in the TL;DR.
 20. Set `status: planned`, keep `review_round: 0`, and leave `## Review` empty.
 21. Reply with the path and the TL;DR, then: "Next: (a) run plan-review on `<path>` on a different model family — required, tier is architecture / recommended otherwise; (b) say 'build this plan' to your coding agent. Which?" In a non-interactive run, state the recommendation instead of asking, and stop.
-22. Fix-only follow-up after a rejection or an INCOMPLETE round. This is the step `plan-review` and `plan-loop` run. Re-read the plan from disk. Read the latest `### Round <n>`: every blocker and every row under its `#### Open obligations`, not only the detailed blockers. Earlier rounds sit in the review history file beside the plan; a fix never needs them. For each item, follow its affected paths as [references/coverage.md](references/coverage.md) describes, and fix the plan: coverage, citations, flows, todos, and the QA that proves the fix. Edit each affected sentence, row, or todo into its corrected state, so the spec reads as if it had been right from the start. Never narrate the fix inside the spec: no "round-2 fix", "the reviewer found", or "previously" in the TL;DR, Scope, Questions, or todos. Rewrite no section a blocker does not touch. Re-run the validator. Set `review_round` to that round's number, and under `#### Fixed` for that round add one line per fixed item, `- B<n>: <what changed, and where>`, at most two sentences each. Keep `status: planned`, and reply with the path and a one-line summary. An item you cannot fix because evidence is unavailable stays open and is named in the reply.
+22. Fix-only follow-up after a rejection or an INCOMPLETE round. This is the step `plan-review` and `plan-loop` run. Re-read the plan from disk. From the latest `### Round <n>`, read every blocker, `#### Unverified` item, and gate-record obligation whose status is not `verified`. Read both `#### Open obligations` and the legacy `#### Coverage and evidence` when present; absence of the newer heading never means there are no gaps. Earlier rounds normally stay unread in the archive. For each item, follow its affected paths as [references/coverage.md](references/coverage.md) describes, and fix the plan: coverage, citations, flows, todos, and the QA that proves the fix. Edit the affected text into its corrected state. Never narrate the fix inside the spec. Rewrite no section a blocker or gap does not touch. Re-run the validator. Keep `review_round` at that round's number and `status: planned`; append one line per fixed item under `#### Fixed`, using its blocker or obligation id and naming what changed and where. Do not rewrite the reviewer's original evidence or verdict. Reply with the path and a one-line summary; name anything still open.
 
 ### Writing discipline
 
@@ -201,13 +201,13 @@ When the wave is done, start the next wave, including the final wave. Do not ask
 ### T0 — Copy the plan into the project
 
 - [ ] Open
-- Do: if this file is not already inside the project, copy it to `docs/plans/` under its current name and do the rest of the build there. If it is already there, do not copy it.
-- Must not: change any other part of the plan while copying, or make a second copy
+- Do: if this file is not already under the project's `docs/plans/`, copy it there under its current name, together with `<plan-stem>.review-history.md` if present, and build in that copy. Verify copied bytes. Keep originals intact; reuse an identical destination and stop on a conflicting one. If already there, do not copy.
+- Must not: change any other part of the plan while copying, overwrite conflicting destination content, or make a second copy
 - Closes gap: none
 - Depends on: none
 - References: this file
 - Acceptance: `test -f docs/plans/<name>.md` exits 0
-- QA scenario: happy — the file is already under `docs/plans/` and no copy is made; failure — the file is outside the project, one copy appears under `docs/plans/`, and the outside file is unchanged
+- QA scenario: happy — the file is already under `docs/plans/` and no copy is made; relocation — plan and existing history arrive byte-identical and originals are unchanged; failure — a conflicting destination stops the copy without overwriting it
 - Commit: no
 
 ### T1 — <verb phrase>
@@ -333,7 +333,7 @@ NEVER:
 - NEVER invent a branch pattern the repository does not show any evidence of using.
 - NEVER put implementation code in a todo beyond a signature, a path, or a command — the transcript test.
 - NEVER narrate review history in the spec: no "round-2 fix", "the reviewer found", or "previously" outside `## Review`.
-- NEVER read the review history file to fix a plan; the latest round names everything a fix needs.
+- NEVER routinely load the review history to fix a plan; the latest round names everything a fix needs. A missing or interrupted live round requires recovery from the archive before fixing, not an assumption that nothing is open.
 - NEVER write "user tests manually", "verify it works", "manual read", or "check visually" as an acceptance criterion or a proof.
 - NEVER write a grep-for-a-sentence acceptance criterion for a prose deliverable.
 - NEVER answer an owner decision silently. It is either a recorded default with its reason, or a listed question.
@@ -357,7 +357,7 @@ NEVER:
 - [ ] `## Questions` has `### Product` before `### Technical`, and neither group is empty. No question asks the owner to read code.
 - [ ] The branch name traces to a stated convention, an observed one, or the documented default, and appears in both the frontmatter and the TL;DR.
 - [ ] Every gap is closed by at least one implementation todo, and every implementation todo closes at least one gap. T0, F1–F4, and the UI QA todo do not need a gap.
-- [ ] T0 is the first todo. It copies this plan into the project's `docs/plans/` only when the file is not already there.
+- [ ] T0 is first. It copies the plan and existing sibling history into `docs/plans/` only when needed, verifies bytes, and preserves conflicting destinations.
 - [ ] Every todo and every final-wave gate starts with `- [ ] Open`. The `## Todos` introduction states the test-before-next rule, and the final wave does not use it.
 - [ ] "Must NOT have" is present, numbered, and lists anything the slop check removed.
 - [ ] `## Design` is a mermaid block or `Diagram: omitted — <reason>`.

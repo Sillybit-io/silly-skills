@@ -120,7 +120,7 @@ Each review round ends with one fenced `json` object under `#### Gate record`:
 
 `checks` holds A through J. Evidence kinds are `source`, `probe`, `documentation`, `plan-inspection`, and `planned-qa`. Evidence ids may also name Evidence index citations. A `planned-qa` entry is optional: it never supports a status by itself, so a round may leave it out, and an obligation's `plannedQa` field is optional too.
 
-**Rounds.** The validator reads only the latest `### Round <n>` under `## Review`. plan-review moves each earlier round's body to the review history file, `<plan-stem>.review-history.md` beside the plan, and keeps only its row in the history table. The validator never reads that file. A plan that still holds earlier round bodies validates the same way.
+**Rounds.** The validator reads only the latest `### Round <n>` under `## Review`. plan-review copies and verifies every older body in `<plan-stem>.review-history.md` beside the plan before replacing the live round; retries skip byte-identical archive entries. The history table and consent rows remain in the plan. The validator never reads the archive. Legacy plans with multiple inline rounds or a full coverage table remain readable. The latest round must retain all unresolved items and the original supporting evidence and source hashes for any reused observation.
 
 **Required targets.** Every one needs a required obligation (`required` omitted or `true`): each `MH<n>` and `MN<n>`; `T<n>.start`, `T<n>.acceptance`, and `T<n>.qa` for every todo; `dep:T<a>:T<b>` for every dependency; `F<n>.acceptance` for every final gate; `flow:<id>` for every Evidence index flow; `contract:<id>` for every external citation; and `check:A` through `check:J`. Setting `required: false` does not cover a target.
 
@@ -132,7 +132,7 @@ Each review round ends with one fenced `json` object under `#### Gate record`:
 2. Otherwise, any uncovered target, unverified obligation, or missing or unverified flow or check gives INCOMPLETE.
 3. Otherwise, OKAY.
 
-The recorded verdict must equal the expected verdict. OKAY sets `status: reviewed`. REJECT and INCOMPLETE set `status: planned`. The rendered round must agree with the JSON: the `**Verdict:** PLAN-REVIEW: ...` line and its blocker count; a `**Scope:**` line containing `<v>/<r> required obligations verified` and `<v>/<r> critical flows verified`; the last row of the history table; and, under `#### Open obligations`, one row for every obligation whose status is not `verified`, its id first and its status in the last cell. Verified obligations are not rendered; the gate record holds them, and a round with no open obligation needs no list. A legacy `#### Coverage and evidence` table is read the same way. Every row either heading renders must name a gate record obligation with the same status. `planDigest` must equal the current spec digest, and every `sources` entry must match the current file bytes. `gateRecordDigest` is the SHA-256 of the gate record's canonical JSON.
+The recorded verdict must equal the expected verdict. OKAY sets `status: reviewed`. REJECT and INCOMPLETE set `status: planned`. The rendered round must agree with the JSON: the `**Verdict:** PLAN-REVIEW: ...` line and its blocker count; a `**Scope:**` line containing `<v>/<r> required obligations verified` and `<v>/<r> critical flows verified`; the last row of the history table; and, under `#### Open obligations`, one row for every obligation whose status is not `verified`, its id first and its status in the last cell. Verified obligations are not rendered; the gate record holds them, and a round with no open obligation needs no list. A legacy `#### Coverage and evidence` table is read the same way. Every row either heading renders must name a gate record obligation with the same status; duplicate ids across either heading are errors. `planDigest` must equal the current spec digest, and every `sources` entry must match the current file bytes. `gateRecordDigest` is the SHA-256 of the gate record's canonical JSON.
 
 ## Build record and snapshots
 
@@ -157,6 +157,13 @@ A snapshot is a directory with `manifest.json` and `objects/<sha256>` raw bytes.
 Each `paths` entry has a `path` and three layers: `head`, `index`, and `worktree`. A layer is `{"state": "absent"}`, `{"state": "unavailable"}` (HEAD and index outside git), or `{"state": "file" | "symlink", "mode", "length", "sha256"}`. A symlink layer stores the link target, never the target's contents. The path set is the union of HEAD, the index (`git ls-files --stage -z`), non-ignored untracked files, every walked `includes` path, and every path of the snapshots the capture carried forward. It keeps deleted, restored, and newly ignored paths as `absent` or retained entries.
 
 `stateDigest` is the SHA-256 of the canonical JSON `{"headRevision": ..., "paths": [...]}`. Declared report paths are left out. The plan's working-tree layer is replaced by `{"state": "plan", "specDigest": ...}`, so appending a receipt is not drift. Paths sort by UTF-8 bytes.
+
+Declare the destination plan's sibling review-history path with `--report` on
+every capture, including the baseline before the file exists. These declarations
+live in each manifest's `administrative.reports`; `--carry` does not inherit
+them. Report bytes remain in snapshot inventories and result reviews. Only
+verified archive operations qualify as review bookkeeping; source changes and
+unexplained history edits are not waived.
 
 A receipt:
 
