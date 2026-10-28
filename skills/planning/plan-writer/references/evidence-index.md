@@ -1,6 +1,6 @@
 # Evidence index
 
-Read this file when you write `### Evidence index` under Scope, and again before you set `status: planned`. The index is one fenced `json` object. The validator bundled with `plan-review` checks it: run `bun <plan-review-base>/scripts/validate-plan.ts <plan> --root <project>`, where `<plan-review-base>` is the installed `plan-review` skill directory. The full grammar is that skill's `references/validator-contract.md`.
+Read this file when you write the evidence index, `<stem>.evidence-index.md` beside the spec, and again before you set `status: planned`. The file holds a `# Evidence index: <title>` heading and fenced `json` blocks, nothing else; prose there is never read. It is part of the spec digest, so a changed citation is a changed plan. The validator bundled with `plan-review` checks it: run `bun <plan-review-base>/scripts/validate-plan.ts <plan> --root <project>`, where `<plan-review-base>` is the installed `plan-review` skill directory. The full grammar is that skill's `references/validator-contract.md`.
 
 ## Shape
 
@@ -17,7 +17,7 @@ Read this file when you write `### Evidence index` under Scope, and again before
 
 ## Appending entries
 
-Do not write or rewrite the index as one large object. Under `### Evidence index`, the skeleton holds one block with `schemaVersion`, `baseline`, and empty arrays. Add each citation, coverage row, frontier item, or flow as its own fenced `json` block directly below, holding only that key:
+Do not write or rewrite the index as one large object. The skeleton holds one block with `schemaVersion`, `baseline`, and empty arrays. Add each citation, coverage row, frontier item, or flow as its own fenced `json` block directly below, holding only that key:
 
 ````markdown
 ```json
@@ -25,7 +25,7 @@ Do not write or rewrite the index as one large object. Under `### Evidence index
 ```
 ````
 
-The validator merges every block under the heading: arrays concatenate, `baseline` merges one level deep (its `checks` arrays concatenate), and any other later key replaces an earlier one. A duplicate citation or flow id across blocks is still an error. Insert each new block above `## Research`, so the anchor is unique. A plan with one big block stays valid.
+The validator merges every block in the file: arrays concatenate, `baseline` merges one level deep (its `checks` arrays concatenate), and any other later key replaces an earlier one. A duplicate citation or flow id across blocks is still an error. Append each new block at the end of the file. An index with one big block stays valid.
 
 Appending only adds. It never updates: a coverage row `V1` appended as `inspected` after an earlier `V1` that is `pending` leaves both rows, and the pending one still fails validation once the plan is `planned`. So change an entry that already exists in place. Resolve a pending coverage row by editing its `state` and `citationIds` where it sits. Resolve a frontier item by deleting its entry. Refresh a citation's `excerpt` and `sha256` on resume, record an owner's answer, or fix a review finding the same way, touching only the fields that change. Never rewrite a whole block or the whole index to do it.
 

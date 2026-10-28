@@ -1,7 +1,7 @@
 # Receipts, commits, and resume
 
 Read this file before writing any receipt or making any commit. The schema for
-`manifest.json`, the Build record, and each receipt is defined once, in the
+`manifest.json`, the build record, and each receipt is defined once, in the
 plan-review skill's [validator-contract.md](../../plan-review/references/validator-contract.md)
 under "Build record and snapshots". This file explains how `plan-builder`
 uses that schema; it does not redefine it. A receipt or manifest that
@@ -9,7 +9,7 @@ disagrees with that contract is wrong, whichever file you copied it from.
 
 ## Skill identity
 
-The Build record's `skill` field is `{"name": "plan-builder", "version":
+The build record's `skill` field is `{"name": "plan-builder", "version":
 "<this skill's metadata.version>", "sha256": "<SHA-256 of this skill's
 SKILL.md bytes>"}`. It identifies which build of this skill produced the
 record; nothing else checks it, so record it honestly rather than
@@ -40,22 +40,25 @@ and slug; a resumed build reuses the same run directory and never recaptures
 its existing baseline. Never point `--output` at a temporary directory: a
 snapshot must outlive this session.
 
-## Review history as a report
+## Reports
 
-Before the baseline, declare the exact project-relative path of the history file
-beside T0's destination plan, even if it does not exist yet. Pass that path with
-`--report <path>` on the baseline and **every** later capture. `--carry` inherits
-paths and includes, not report declarations. The manifest's
-`administrative.reports` is the record used by resume; a Build note alone does
-not declare a report.
+`capture-build-state.ts` always declares the plan's `<stem>.reviews.md` and
+`<stem>.build.md` as reports, so appending a receipt or a result review round
+is not drift. Pass the spec path T0 builds in, so the declared paths are the
+right ones. `--report <path>` adds further report outputs; `--carry` does not
+inherit them, so repeat them on every capture. Never declare a wildcard or a
+source file as a report to hide drift.
 
-This keeps a result review's archive append out of source-drift checks while
-retaining the file's bytes in snapshots and the result inventory. Before
-resuming after a review, verify that the history changed only by the documented
-verbatim archive operation. Deletions, rewrites, or unexplained additions still
-require investigation. Never declare a wildcard or a source file as a report
-to hide drift. A legacy build without this declaration uses the normal recovery
-receipt path before continuing; never rewrite its earlier snapshots.
+## Keep receipts short
+
+A receipt is a record, not a notebook. It holds only the contract's keys; any
+other key, such as a list of changed paths, is an error, because the
+before and after snapshots already record what changed. `note`, and each
+check's or prerequisite's `observed`, stay under 200 characters: past that the
+validator lists a gap, past 400 an error. When a command prints more than that
+and the output matters, save it to
+`<run directory>/logs/<seq>-<todo>.log` and name that path in the receipt's
+`log`.
 
 ## The receipt sequence, per todo
 
@@ -68,9 +71,7 @@ receipt path before continuing; never rewrite its earlier snapshots.
    the plan needs a new review, not a receipt that quietly proceeds anyway.
 2. **checkpoint.** After the todo's edits are made, before its checks run.
    `before` is the start receipt's `before`. `after` is a fresh snapshot.
-   `changedPaths` is the raw layer differences between those two snapshots,
-   the plan file included, exactly as the validator contract's `changedPaths`
-   is defined. This receipt exists so a crash between the edit and the check
+   This receipt exists so a crash between the edit and the check
    still has a recorded, resumable state.
 3. **pass.** Only after the todo's real Acceptance command and every QA
    scenario ran and passed, and its commit (if `Commit: yes`) landed.
@@ -88,12 +89,22 @@ skip recording the checkpoint event itself.
 
 ## Commits
 
-Commit only the paths the todo's `Do`/`Commit` line names, with
-`git --literal-pathspecs commit --only -- <owned-paths>` (or its NUL
-pathspec-file form for paths with unusual characters), so anything else
-already staged stays staged and nothing else is swept in. After committing,
-check the resulting commit's file list against the todo's owned paths, and
-check that unrelated index/worktree state is unchanged.
+Commit the paths the todo's `Do`/`Commit` line names plus the plan
+directory, with `git --literal-pathspecs commit --only -- <owned-paths>
+docs/plans/<stem>` (or its NUL pathspec-file form for paths with unusual
+characters), so anything else already staged stays staged and nothing else is
+swept in. The plan directory carries the receipts and boxes up to this point.
+After committing, check the resulting commit's file list against the owned
+paths and the plan directory, and check that unrelated index/worktree state
+is unchanged. Use the todo's commit subject; you may shorten it, keeping its
+type, scope, and meaning.
+
+T0's commit is the plan directory alone, `docs(plans): add <slug> plan`. After
+F4 returns MATCH, one more plan-only commit, `docs(plans): complete <slug>
+build`, records the final boxes, receipts, and result review; it is not a
+todo and gets no receipt. A CHECKPOINT or BLOCKED stop makes no commit of its
+own; the next todo commit or the resumed build's final commit carries the
+plan directory forward.
 
 If an owned path also holds the project owner's pre-existing changes, or an
 edit this build did not intend, do not whole-file stage it and do not attempt
@@ -141,9 +152,9 @@ prior session, a manual edit, a tool crash mid-write) before touching
 anything further. Rerun every check that the drifted paths could affect, and
 record what you observed, whether or not it matches what the plan expects.
 Then append a `recovery` receipt: its `before` is the last recorded end
-state, its `after` is a fresh snapshot of the actual current state, its
-`changedPaths` is the real difference, and its `note` explains what you found
-and what you did about it. A `recovery` receipt makes its todo (or the todo
+state, its `after` is a fresh snapshot of the actual current state, and its
+`note` explains what you found and what you did about it, briefly; a longer
+account goes in the `log` file. A `recovery` receipt makes its todo (or the todo
 whose start receipt precedes the drift, if the drift began before any start
 receipt was recorded) active again; it does not itself advance that todo to
 passed. Never replay a commit, a delete, or any other irreversible action

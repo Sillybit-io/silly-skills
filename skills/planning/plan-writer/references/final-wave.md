@@ -9,7 +9,7 @@ Title them `F1`, `F2`, `F3`, and `F4`, in that order. They are one parallel wave
 - **F1 Plan compliance.** Every Must Have is present. Every Must NOT Have is absent. Cite the evidence.
 - **F2 Code quality.** Run the test, lint, and build commands the project actually defines. Name any of the three the project does not have. Compare the results with the baseline checks recorded in the Evidence index, so a failure that predates the change is named instead of hidden or blamed on the build. Then a language-appropriate slop pass: empty catches, debug logs, commented-out code, unused imports, and the local equivalent of a type escape.
 - **F3 Scenario QA.** Execute every todo's QA scenario, including the edge cases. Do not name a browser tool or a screenshot path. Those belong only to the UI QA todo.
-- **F4 Scope fidelity.** An independent result review in a fresh session compares every changed artifact with the plan, and every requirement with the change, from the build baseline: `plan-result-review` when it is installed. No extra files. No todo edits a file another todo owns. Each difference is explained with its location and reason.
+- **F4 Scope fidelity.** An independent result review in a fresh session compares every changed artifact with the plan, and every requirement with the change, from the build baseline: `plan-result-review` when it is installed. No extra files. No two todos in one wave edit the same file. Each difference is explained with its location and reason.
 
 Extra feature-specific checks are allowed. Title them `F5` onward and place them after `F4` and before the UI QA todo. Four gates is the minimum, not the maximum.
 

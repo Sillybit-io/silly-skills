@@ -3,7 +3,7 @@ name: plan-loop
 description: Drives a plan from a request or a draft to a reviewed plan by launching fresh plan-writer and plan-reviewer children in turn, never itself. Each round's reviewer is a new named session with no prior round's verdict in its payload; the fix step between rounds is a new plan-writer child too, never the session that wrote or reviewed before it. Stops at OKAY, at the five-round consent boundary, or at a genuinely unavailable input, with a structured handback instead of an invented independence claim. Building is the next request after review. Use when asked to write and review a plan until it passes, loop a plan through review, or fully automate planning to a reviewed state.
 license: CC-BY-ND-4.0
 metadata:
-  version: "0.1.1"
+  version: "0.2.0"
   category: planning
   suggested-model: anthropic/claude-sonnet-5
   suggested-effort: high
@@ -36,10 +36,10 @@ Do NOT use plan-loop when you:
 2. **No plan yet.** Launch a fresh `plan-writer` child with the request, exactly as a user would give it. Wait for it to finish before doing anything else; only one actor writes the plan at a time. If it stops at the draft-gate block with an owner question, and this is the user's own session, relay the question here and wait; if this session is itself a child, return a handback with `nextRole: "writer"` and the open question under `inputs`, rather than answering for the owner. Once the child reaches `status: planned`, continue.
 3. **An existing plan.** Read its `status`. `draft` needs a writer child first, as in step 2, given the plan path and its open frontier. `planned` or `reviewed` (on an explicit re-review request) starts the round loop below. Anything else is a handback naming what is unclear.
 4. **Round loop.** Read the plan fresh from disk. Count complete rounds since the last recorded consent (or since round 1 if none). At five, stop: on the user's own session, ask whether to continue for up to five more or stop; as a child, return a handback with `kind: "consent"` and the round count under `inputs`. Never continue past five rounds without a recorded fresh consent, and never treat an old consent as covering a new five.
-5. Launch a fresh `plan-reviewer` child. Its task payload is the plan path, the project root, and "one review round" — nothing else. It must not contain this loop's history, a fixer's own account of what it changed, or any framing of what verdict to expect; the reviewer reads the history table and the latest round from the plan file itself, on its own authority, not from this loop's telling.
-6. Wait for that child to finish, then read the verdict from the plan file's own `## Review` section — the durable record, not only the child's reply — so a resumed loop sees the same state a fresh one would.
+5. Launch a fresh `plan-reviewer` child. Its task payload is the plan path, the project root, and "one review round" — nothing else. It must not contain this loop's history, a fixer's own account of what it changed, or any framing of what verdict to expect; the reviewer reads the history table and the latest round from the plan's reviews file itself, on its own authority, not from this loop's telling.
+6. Wait for that child to finish, then read the verdict from `## Review` in the plan's `<stem>.reviews.md` — the durable record, not only the child's reply — so a resumed loop sees the same state a fresh one would.
 7. **OKAY.** Stop. Report the plan is reviewed; building is the next request, not this loop's job.
-8. **REJECT or INCOMPLETE.** If the blockers or gaps are identical to the immediately preceding round, with no new evidence and no newly runnable check named, stop and hand back rather than spending another round on an identical blocked checkpoint. Compare the new round's blockers and its `#### Fixed` list with the previous round's history-table row; that round's full body is in the review history file beside the plan when the row is not enough. Otherwise, launch a fresh `plan-writer` child for the fix-only step: the plan path and this round's number, nothing else. Wait for it. Then return to step 4 for a new round, with a new reviewer child — never the child that just fixed it, and never a resumed or forked session pretending to be new.
+8. **REJECT or INCOMPLETE.** If the blockers or gaps are identical to the immediately preceding round, with no new evidence and no newly runnable check named, stop and hand back rather than spending another round on an identical blocked checkpoint. Compare the new round's blockers and its `#### Fixed` list with the previous round, which sits directly below it in the reviews file. Otherwise, launch a fresh `plan-writer` child for the fix-only step: the plan path and this round's number, nothing else. Wait for it. Then return to step 4 for a new round, with a new reviewer child — never the child that just fixed it, and never a resumed or forked session pretending to be new.
 9. **A denied child launch, an unavailable tool, or a depth limit** that prevents launching a fresh child at any point is an immediate handback with the appropriate `nextRole` and `reason`; it is never worked around by reviewing or fixing inline. A host that blocks a nested spawn from inside a child (a reviewer or writer that itself tried to launch another child) surfaces as that child's own handback, which this loop relays upward rather than absorbing silently.
 
 ## Output format
@@ -68,7 +68,7 @@ MUST:
 - MUST launch a new named child session for every writer, fixer, and reviewer turn; never resume, fork, or reuse a session across roles or rounds.
 - MUST give a reviewer child only the plan path, the project root, and the round instruction — never this loop's history, a fixer's self-report, or any expected-verdict framing.
 - MUST wait for each writer or fixer child to finish before launching that round's reviewer, and never let more than one actor write the plan at once.
-- MUST read the verdict and round count from the plan file's own recorded state, not only from a child's reply, so a resumed loop matches a fresh one.
+- MUST read the verdict and round count from the plan's own recorded state in its spec and reviews file, not only from a child's reply, so a resumed loop matches a fresh one.
 - MUST stop and require fresh consent at five complete rounds since the last one, on the user's own session, or hand back as a child.
 - MUST return a structured handback (`kind`, `planPath`, `nextRole`, `inputs`, `reason`, `nextAction`) on a denied child launch, an unavailable tool, unreadable evidence, a depth limit, or an identical blocked checkpoint.
 - MUST stop at the first OKAY and report the plan reviewed, without launching a builder or any further round.
@@ -88,7 +88,7 @@ NEVER:
 - [ ] Every writer, fixer, and reviewer turn ran in its own newly launched child session, distinctly named, never resumed or forked.
 - [ ] Each reviewer child's task payload held only the plan path, project root, and round instruction.
 - [ ] Only one actor wrote the plan at a time; each writer/fixer child finished before its round's reviewer launched.
-- [ ] The recorded round count and verdict came from the plan file itself, and matched what a fresh read would show.
+- [ ] The recorded round count and verdict came from the plan's own files, and matched what a fresh read would show.
 - [ ] Consent was freshly recorded before any round past the fifth since the last consent.
 - [ ] A denied launch, unavailable tool, unreadable evidence, depth limit, or identical blocked checkpoint produced a handback with all six required fields, not a retried round or an inline substitute.
 - [ ] The loop stopped at the first OKAY without launching a builder.

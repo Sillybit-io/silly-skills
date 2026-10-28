@@ -38,7 +38,7 @@ Do not stop before the draft file exists. In an interactive session, stop after 
 
 In a non-interactive run, record each default and continue, including when the tier is `architecture`. A session that was told to ask and wait is interactive: write the draft, reply with the draft-gate block, and stop. Do not record a default and continue. A child session that another agent launched returns its open questions to that parent in the reply.
 
-The draft at this gate holds the TL;DR, Scope (including the IS/GAP ledger, the risks, and the Evidence index with its frontier), `## Research`, and `## Questions`. The other headings are present and empty.
+The draft at this gate holds the TL;DR, Scope (including the IS/GAP ledger and the risks), the evidence index with its frontier, `## Research`, and `## Questions`. The other headings are present and empty.
 
 ## Resume
 

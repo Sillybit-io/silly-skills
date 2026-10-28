@@ -11,6 +11,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   copyFileSync,
+  existsSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
@@ -66,15 +67,19 @@ function canon(value: unknown): string {
   );
 }
 
-/** Independent spec digest for fixture plans, which have no fenced headings or boxes. */
-function fixtureSpecDigest(text: string): string {
-  const body = text.split("\n## Review\n")[0].split("\n## Build\n")[0];
-  const kept = body
+/** Independent main-plan digest for fixture plans, which have no fenced boxes. */
+function fixtureMainDigest(text: string): string {
+  const kept = text
     .split("\n")
     .filter((line, i, all) => !(/^(status|review_round):/.test(line) && all.indexOf("---", 1) > i))
     .map((line) => (/^- \[[ x]\] (Open|Done)$/.test(line) ? "- [ ] Open" : line));
   while (kept.length > 0 && kept[kept.length - 1] === "") kept.pop();
-  return sha(`${kept.join("\n")}\n\n`);
+  return sha(`${kept.join("\n")}\n`);
+}
+
+/** Independent spec digest: both digests in hex, one per line. */
+function fixtureSpecDigest(text: string, evidence: string): string {
+  return sha(`${fixtureMainDigest(text)}\n${sha(`${evidence.replace(/\n$/, "")}\n`)}\n`);
 }
 
 /* ── fixture project and plan ──────────────────────────────────────────────── */
@@ -90,7 +95,15 @@ const APP = [
   "",
 ].join("\n");
 const CLI = ['import { start } from "./app";', 'console.log(start("default"));', ""].join("\n");
-const PLAN = "docs/plans/2026-09-29-fixture.md";
+const README = "# Fixture\n\nA fixture project.\n";
+const STEM = "2026-09-29-fixture";
+const DIR = `docs/plans/${STEM}`;
+const PLAN = `${DIR}/${STEM}.md`;
+const EVIDENCE = `${DIR}/${STEM}.evidence-index.md`;
+const REVIEWS = `${DIR}/${STEM}.reviews.md`;
+const GATE = `${DIR}/${STEM}.gate-record.json`;
+const BUILD = `${DIR}/${STEM}.build.md`;
+const LINKS = `Files: [Evidence index](${STEM}.evidence-index.md) · [Reviews](${STEM}.reviews.md) · [Gate record](${STEM}.gate-record.json) · [Build](${STEM}.build.md)`;
 
 function makeProject(): string {
   const root = tempDir();
@@ -98,9 +111,10 @@ function makeProject(): string {
   mkdirSync(join(root, "src"), { recursive: true });
   writeFileSync(join(root, "src/app.ts"), APP);
   writeFileSync(join(root, "src/cli.ts"), CLI);
+  writeFileSync(join(root, "README.md"), README);
   git(root, "add", "-A");
   git(root, "commit", "-q", "-m", "baseline");
-  mkdirSync(join(root, "docs/plans"), { recursive: true });
+  mkdirSync(join(root, DIR), { recursive: true });
   return root;
 }
 
@@ -108,17 +122,19 @@ function lines(text: string, a: number, b: number): string {
   return text.split("\n").slice(a - 1, b).join("\n");
 }
 
+const read = (root: string, rel: string): string => readFileSync(join(root, rel), "utf8");
+const write = (root: string, rel: string, text: string): void => writeFileSync(join(root, rel), text);
+
 type PlanOptions = {
   status?: string;
   reviewRound?: number;
   mutateIndex?: (index: Record<string, unknown>) => void;
   mutate?: (text: string) => string;
-  review?: string;
 };
 
 function evidenceIndex(root: string): Record<string, unknown> {
-  const app = readFileSync(join(root, "src/app.ts"), "utf8");
-  const cli = readFileSync(join(root, "src/cli.ts"), "utf8");
+  const app = read(root, "src/app.ts");
+  const cli = read(root, "src/cli.ts");
   return {
     schemaVersion: 1,
     citations: [
@@ -140,9 +156,15 @@ function evidenceIndex(root: string): Record<string, unknown> {
   };
 }
 
+function evidenceText(blocks: unknown[]): string {
+  return `# Evidence index: Fixture plan\n\n${blocks.map((b) => `\`\`\`json\n${JSON.stringify(b, null, 2)}\n\`\`\`\n`).join("\n")}`;
+}
+
+/** Writes the evidence index file for the plan and returns the main plan's text. */
 function planText(root: string, options: PlanOptions = {}): string {
   const index = evidenceIndex(root);
   options.mutateIndex?.(index);
+  write(root, EVIDENCE, evidenceText([index]));
   const text = `---
 title: Fixture plan
 request: "Add a greeting to the fixture."
@@ -159,6 +181,8 @@ review_round: ${options.reviewRound ?? 0}
 
 <!-- markdownlint-disable-next-line MD025 -->
 # Fixture plan
+
+${LINKS}
 
 ## TL;DR
 
@@ -207,12 +231,6 @@ Recorded in the Evidence index.
 ### Baseline
 
 Clean fixture.
-
-### Evidence index
-
-\`\`\`json
-${JSON.stringify(index, null, 2)}
-\`\`\`
 
 ## Research
 
@@ -320,14 +338,17 @@ Every todo starts with \`- [ ] Open\`.
 | --- | --- | --- |
 | G1 | T1 | tests |
 | G2 | T2 | tests |
-
-## Review
-${options.review ?? ""}`;
+`;
   return options.mutate ? options.mutate(text) : text;
 }
 
 function writePlan(root: string, text: string): void {
-  writeFileSync(join(root, PLAN), text);
+  write(root, PLAN, text);
+}
+
+/** The current spec digest: the main plan plus the evidence index file on disk. */
+function specOf(root: string, text: string): string {
+  return canonicalSpecDigest(text, read(root, EVIDENCE));
 }
 
 /* ── gate records ──────────────────────────────────────────────────────────── */
@@ -354,10 +375,10 @@ type GateOptions = {
   renderStatus?: (o: Obligation) => string;
   renderVerdict?: string;
   history?: string;
-  /** Render only the open obligations, under '#### Open obligations', as plan-review 1.0.0 writes a round. */
-  compact?: boolean;
   /** Obligation ids to leave out of the rendered list. */
   hide?: string[];
+  /** Blocker paragraphs to render under '#### Blockers'. */
+  blockerText?: string[];
 };
 
 function gateRecord(root: string, planDigest: string, options: GateOptions = {}) {
@@ -369,10 +390,7 @@ function gateRecord(root: string, planDigest: string, options: GateOptions = {})
     round: options.round ?? 1,
     planDigest,
     repository: { revision: git(root, "rev-parse", "HEAD").toString().trim(), dirty: [PLAN] },
-    sources: [
-      { path: "src/app.ts", sha256: sha(readFileSync(join(root, "src/app.ts"))) },
-      { path: "src/cli.ts", sha256: sha(readFileSync(join(root, "src/cli.ts"))) },
-    ],
+    sources: [{ path: "README.md", sha256: sha(readFileSync(join(root, "README.md"))) }],
     evidence: options.evidence ?? [
       { id: "P1", kind: "probe", command: "bun -e 'start(\"x\")'", inputs: "fixture", exit: 0, result: "registered:x", omissions: "none" },
       { id: "Q1", kind: "planned-qa", command: "bun test" },
@@ -385,19 +403,21 @@ function gateRecord(root: string, planDigest: string, options: GateOptions = {})
   };
 }
 
-function renderRound(gate: ReturnType<typeof gateRecord>, options: GateOptions = {}): string {
+type Gate = ReturnType<typeof gateRecord>;
+
+/** One round's body as plan-review writes it: open obligations only, no gate record fence. */
+function renderRound(gate: Gate, options: GateOptions = {}): string {
   const obligations = gate.obligations as Obligation[];
   const required = obligations.filter((o) => o.required !== false);
   const verified = required.filter((o) => o.status === "verified").length;
   const flows = gate.flows.filter((f) => f.status === "verified").length;
   const blockers = (gate.blockers as unknown[]).length;
   const verdictText = options.renderVerdict ?? (gate.verdict === "REJECT" ? `REJECT (${blockers} blockers)` : gate.verdict);
-  const listed = obligations
-    .filter((o) => !options.compact || o.status !== "verified")
-    .filter((o) => !(options.hide ?? []).includes(o.id));
+  const listed = obligations.filter((o) => o.status !== "verified").filter((o) => !(options.hide ?? []).includes(o.id));
   const status = (o: Obligation) => (options.renderStatus ? options.renderStatus(o) : o.status);
-  const ledger = options.compact
-    ? listed.length === 0
+  const blockerList = options.blockerText ? `#### Blockers\n\n${options.blockerText.map((b, i) => `${i + 1}. ${b}`).join("\n")}\n\n` : "";
+  const ledger =
+    listed.length === 0
       ? ""
       : `#### Open obligations
 
@@ -405,53 +425,44 @@ function renderRound(gate: ReturnType<typeof gateRecord>, options: GateOptions =
 | --- | --- | --- | --- | --- |
 ${listed.map((o) => `| ${o.id} | ${o.targets.join(", ")} | ${o.evidenceIds.join(", ")} | ${o.observed} | ${status(o)} |`).join("\n")}
 
-`
-    : `#### Coverage and evidence
-
-| ID / obligation / owning todos | Required? | Evidence kind and location | Observed result | Planned QA | Status |
-| --- | --- | --- | --- | --- | --- |
-${listed.map((o) => `| ${o.id} targets | ${o.required === false ? "no" : "yes"} | ${o.evidenceIds.join(", ")} | ${o.observed} | ${o.plannedQa} | ${status(o)} |`).join("\n")}
-
 `;
-  return `
-### Round ${gate.round}
+  return `### Round ${gate.round}
 
 **Verdict:** PLAN-REVIEW: ${verdictText}
 
 **Scope:** whole plan; ${verified}/${required.length} required obligations verified; ${flows}/1 critical flows verified.
 
-${ledger}#### Gate record
+${blockerList}${ledger}`;
+}
 
-\`\`\`json
-${JSON.stringify(gate, null, 2)}
-\`\`\`
+function historyTable(entries: [number, string, number, string?][]): string {
+  return `| Round | Date | Verdict | Blockers | Summary |
+| --- | --- | --- | --- | --- |
+${entries.map(([n, v, b, s]) => `| ${n} | 2026-09-29 | ${v} | ${b} | ${s ?? "fixture round"} |`).join("\n")}
 `;
 }
 
-function historyTable(entries: [number, string, number][]): string {
-  return `
-| Round | Date | Verdict | Blockers |
-| --- | --- | --- | --- |
-${entries.map(([n, v, b]) => `| ${n} | 2026-09-29 | ${v} | ${b} |`).join("\n")}
-`;
+/** Writes the reviews file with the given history and round bodies, newest first. */
+function writeReviews(root: string, history: string, rounds: string[]): void {
+  write(root, REVIEWS, `# Reviews: Fixture plan\n\n## Review\n\n${history}\n${rounds.join("\n")}`);
 }
 
-/** Writes a plan with one review round and returns it. */
+function writeGate(root: string, gate: unknown): void {
+  write(root, GATE, `${JSON.stringify(gate, null, 2)}\n`);
+}
+
+/** Writes a plan with one review round and returns the main plan's text. */
 function reviewedPlan(
   root: string,
-  options: GateOptions & { status?: string; mutateGate?: (g: ReturnType<typeof gateRecord>) => void; mutatePlan?: (t: string) => string } = {},
+  options: GateOptions & { status?: string; mutateGate?: (g: Gate) => void; mutatePlan?: (t: string) => string } = {},
 ): string {
   const status = options.status ?? (options.verdict && options.verdict !== "OKAY" ? "planned" : "reviewed");
-  const draft = planText(root, { status, reviewRound: options.round ?? 1, mutate: options.mutatePlan });
-  const gate = gateRecord(root, canonicalSpecDigest(draft), options);
-  options.mutateGate?.(gate);
-  const text = planText(root, {
-    status,
-    reviewRound: options.round ?? 1,
-    mutate: options.mutatePlan,
-    review: `${options.history ?? historyTable([[gate.round, gate.verdict, (gate.blockers as unknown[]).length]])}${renderRound(gate, options)}`,
-  });
+  const text = planText(root, { status, reviewRound: options.round ?? 1, mutate: options.mutatePlan });
   writePlan(root, text);
+  const gate = gateRecord(root, specOf(root, text), options);
+  options.mutateGate?.(gate);
+  writeGate(root, gate);
+  writeReviews(root, options.history ?? historyTable([[gate.round, gate.verdict, (gate.blockers as unknown[]).length]]), [renderRound(gate, options)]);
   return text;
 }
 
@@ -504,12 +515,12 @@ function snapshot(root: string, rel: string, options: { carry?: string[]; report
     return { path, head: head.get(path) ?? { state: "absent" }, index: index.get(path) ?? { state: "absent" }, worktree };
   });
   for (const [digest, data] of objects) writeFileSync(join(out, "objects", digest), data);
-  const reports = options.reports ?? [];
+  const reports = options.reports ?? [REVIEWS, BUILD];
   const entries = paths
     .filter((p) => !reports.includes(p.path))
     .map((p) =>
       p.path === PLAN && p.worktree.state === "file"
-        ? { ...p, worktree: { state: "plan", specDigest: fixtureSpecDigest(objects.get(p.worktree.sha256 as string)?.toString("utf8") ?? "") } }
+        ? { ...p, worktree: { state: "plan", specDigest: fixtureMainDigest(objects.get(p.worktree.sha256 as string)?.toString("utf8") ?? "") } }
         : p,
     );
   const headRevision = git(root, "rev-parse", "HEAD").toString().trim();
@@ -535,27 +546,32 @@ function repoIdentity(root: string) {
   return { kind: "git", rootCommits: git(root, "rev-list", "--max-parents=0", "HEAD").toString().split(/\s+/).filter(Boolean).sort(), branch: null };
 }
 
-function saveSnapshot(s: ReturnType<typeof snapshot>, specDigest: string): { snapshot: string; manifestSha256: string; stateDigest: string } {
+function saveSnapshot(root: string, s: ReturnType<typeof snapshot>, specDigest: string): { snapshot: string; manifestSha256: string; stateDigest: string } {
   s.manifest.approvedSpecDigest = specDigest;
   const planRow = s.manifest.paths.find((p) => p.path === PLAN);
   if (planRow && planRow.worktree.state === "file") {
     const bytes = s.objects.get(planRow.worktree.sha256 as string) as Buffer;
-    s.manifest.plan = { path: PLAN, sha256: sha(bytes), specDigest: fixtureSpecDigest(bytes.toString("utf8")) };
+    s.manifest.plan = { path: PLAN, sha256: sha(bytes), specDigest: fixtureSpecDigest(bytes.toString("utf8"), read(root, EVIDENCE)) };
   }
   const raw = `${JSON.stringify(s.manifest, null, 2)}\n`;
   writeFileSync(join(s.out, "manifest.json"), raw);
-  const rel = s.out.split(`${sep()}.git${sep()}`)[1];
+  const rel = s.out.split("/.git/")[1];
   return { snapshot: rel, manifestSha256: sha(raw), stateDigest: s.manifest.stateDigest };
-}
-
-function sep(): string {
-  return "/";
 }
 
 /* ── build scenario ────────────────────────────────────────────────────────── */
 
 type Ref = { snapshot: string; manifestSha256: string; stateDigest: string };
-type ReceiptInput = { todo: string; event: string; after?: Ref | "same"; prerequisites?: unknown[]; checks?: unknown[]; commit?: unknown; note?: string };
+type ReceiptInput = {
+  todo: string;
+  event: string;
+  after?: Ref | "same";
+  prerequisites?: unknown[];
+  checks?: unknown[];
+  commit?: unknown;
+  note?: string;
+  extra?: Record<string, unknown>;
+};
 
 function receipts(baseline: Ref, inputs: ReceiptInput[]) {
   const out: Record<string, unknown>[] = [];
@@ -572,30 +588,31 @@ function receipts(baseline: Ref, inputs: ReceiptInput[]) {
       prev: prev ? sha(canon(prev)) : null,
       before: end,
       after,
-      changedPaths: [],
       checks: input.checks ?? (input.event === "pass" ? [{ id: "acceptance", command: "bun test", exit: 0, expectedExit: 0, passed: true, observed: "1 passed" }] : []),
       prerequisites: input.prerequisites ?? [],
       commit: input.commit ?? { none: "Commit: no" },
       note: input.note ?? "",
+      ...input.extra,
     });
     if (after) end = after;
   }
   return out;
 }
 
-function appendBuild(root: string, record: Record<string, unknown>): void {
-  const text = readFileSync(join(root, PLAN), "utf8");
-  const cut = text.indexOf("\n## Build\n");
-  const base = cut === -1 ? text : text.slice(0, cut + 1);
-  writeFileSync(join(root, PLAN), `${base.endsWith("\n") ? base : `${base}\n`}\n## Build\n\n### Build record\n\n\`\`\`json\n${JSON.stringify(record, null, 2)}\n\`\`\`\n`);
+/** Writes the build file: the record with no receipts, then one block per receipt. */
+function writeBuild(root: string, record: Record<string, unknown>): void {
+  const { receipts: list, ...head } = record as { receipts: unknown[] };
+  write(root, BUILD, `# Build: Fixture plan\n\n${[{ ...head, receipts: [] }, ...list.map((r) => ({ receipts: [r] }))]
+    .map((b) => `\`\`\`json\n${JSON.stringify(b, null, 2)}\n\`\`\`\n`)
+    .join("\n")}`);
 }
 
 function setBoxes(root: string, done: string[]): void {
-  let text = readFileSync(join(root, PLAN), "utf8");
+  let text = read(root, PLAN);
   for (const id of done) {
     text = text.replace(new RegExp(`(### ${id} — [^\\n]+\\n\\n)- \\[ \\] Open`), "$1- [x] Done");
   }
-  writeFileSync(join(root, PLAN), text);
+  writePlan(root, text);
 }
 
 /**
@@ -608,10 +625,9 @@ const T1_COMMIT = (t: string) =>
 function buildScenario(options: { stopAfter?: "T1-start" | "T1-checkpoint"; t1Commit?: boolean; omitCommit?: boolean; reports?: string[] } = {}) {
   const root = makeProject();
   const text = reviewedPlan(root, { mutatePlan: options.t1Commit ? T1_COMMIT : undefined });
-  const spec = canonicalSpecDigest(text);
-  const gate = /#### Gate record\n\n```json\n([\s\S]*?)\n```/.exec(text) as RegExpExecArray;
-  const gateDigest = sha(canon(JSON.parse(gate[1])));
-  const baseline = saveSnapshot(snapshot(root, "silly-skills/plan-builds/run/baseline", { reports: options.reports }), spec);
+  const spec = specOf(root, text);
+  const gateDigest = sha(canon(JSON.parse(read(root, GATE))));
+  const baseline = saveSnapshot(root, snapshot(root, "silly-skills/plan-builds/run/baseline", { reports: options.reports }), spec);
   const carry = JSON.parse(readFileSync(join(root, ".git", baseline.snapshot, "manifest.json"), "utf8")).paths.map((p: { path: string }) => p.path);
   const inputs: ReceiptInput[] = [
     { todo: "T0", event: "start" },
@@ -622,7 +638,7 @@ function buildScenario(options: { stopAfter?: "T1-start" | "T1-checkpoint"; t1Co
   if (options.stopAfter !== "T1-start") {
     writeFileSync(join(root, "src/app.ts"), APP.replace("return register(config);", "return register(`hello ${config}`);"));
     if (options.t1Commit) git(root, "commit", "-q", "-am", "T1");
-    after = saveSnapshot(snapshot(root, "silly-skills/plan-builds/run/T1", { carry, reports: options.reports }), spec);
+    after = saveSnapshot(root, snapshot(root, "silly-skills/plan-builds/run/T1", { carry, reports: options.reports }), spec);
     inputs.push({ todo: "T1", event: "checkpoint", after });
     if (options.stopAfter !== "T1-checkpoint") {
       const commit = options.t1Commit && !options.omitCommit ? { sha: git(root, "rev-parse", "HEAD").toString().trim() } : undefined;
@@ -637,13 +653,15 @@ function buildScenario(options: { stopAfter?: "T1-start" | "T1-checkpoint"; t1Co
     baseRevision: git(root, "rev-parse", "HEAD").toString().trim(),
     approval: { specDigest: spec, round: 1, verdict: "OKAY", gateRecordDigest: gateDigest },
     baseline,
-    skill: { name: "plan-builder", version: "0.1.0", sha256: "0".repeat(64) },
+    skill: { name: "plan-builder", version: "1.0.0", sha256: "0".repeat(64) },
     receipts: receipts(baseline, inputs),
   };
-  appendBuild(root, record);
+  writeBuild(root, record);
   setBoxes(root, options.stopAfter ? ["T0"] : ["T0", "T1"]);
   return { root, record, baseline, after, spec, carry, inputs };
 }
+
+const words = (n: number) => Array.from({ length: n }, (_, i) => `w${i}`).join(" ");
 
 /* ── tests ─────────────────────────────────────────────────────────────────── */
 
@@ -662,45 +680,89 @@ describe("canonical JSON", () => {
 });
 
 describe("canonical spec digest", () => {
-  test("ignores progress, status, review_round, and the Review/Build/Result review sections, but not fenced headings", () => {
-    const base = "---\ntitle: x\nstatus: planned\nreview_round: 0\n---\n\n## Todos\n\n### T0 — a\n\n- [ ] Open\n\n```text\n## Review\n```\n\n## Review\n";
+  test("ignores progress, status, and review_round, but not instructions", () => {
+    const base = "---\ntitle: x\nstatus: planned\nreview_round: 0\n---\n\n## Todos\n\n### T0 — a\n\n- [ ] Open\n";
     const progressed = base.replace("status: planned", "status: reviewed").replace("review_round: 0", "review_round: 3").replace("- [ ] Open", "- [x] Done");
-    const appended = `${progressed}\n### Round 1\n\nOKAY\n\n## Build\n\nreceipts\n\n## Result review\n\nMATCH\n`;
-    expect(canonicalSpecDigest(progressed)).toBe(canonicalSpecDigest(base));
-    expect(canonicalSpecDigest(appended)).toBe(canonicalSpecDigest(base));
-    expect(canonicalSpecDigest(base.replace("```text\n## Review\n```", "```text\n## Other\n```"))).not.toBe(canonicalSpecDigest(base));
-    expect(canonicalSpecDigest(base.replace("### T0 — a", "### T0 — b"))).not.toBe(canonicalSpecDigest(base));
-    expect(canonicalSpecDigest(base.replace(/\n/g, "\r\n"))).toBe(canonicalSpecDigest(base));
+    expect(canonicalSpecDigest(progressed, "{}")).toBe(canonicalSpecDigest(base, "{}"));
+    expect(canonicalSpecDigest(base.replace("### T0 — a", "### T0 — b"), "{}")).not.toBe(canonicalSpecDigest(base, "{}"));
+    expect(canonicalSpecDigest(base.replace(/\n/g, "\r\n"), "{}\r\n")).toBe(canonicalSpecDigest(base, "{}\n"));
+  });
+
+  test("a change to the evidence index is a change to the spec", () => {
+    const base = "---\ntitle: x\n---\n\n## Todos\n";
+    expect(canonicalSpecDigest(base, '{"flows": []}')).not.toBe(canonicalSpecDigest(base, '{"flows": [1]}'));
   });
 
   test("the independent fixture digest agrees on a generated plan", () => {
     const root = makeProject();
     const text = planText(root);
-    expect(canonicalSpecDigest(text)).toBe(fixtureSpecDigest(text));
+    expect(specOf(root, text)).toBe(fixtureSpecDigest(text, read(root, EVIDENCE)));
   });
 });
 
-describe("plan mode", () => {
-  test("a complete planned plan validates with no errors", () => {
+describe("plan files", () => {
+  test("a complete planned plan validates and reports the five files", () => {
     const root = makeProject();
     writePlan(root, planText(root));
     const result = run(root);
     expect(result.errors).toEqual([]);
+    expect(result.gaps).toEqual([]);
     expect(result.exitCode).toBe(0);
     expect(result.gateEligible).toBe(false);
     expect(result.sourceDigests["src/app.ts"]).toBe(sha(APP));
+    expect(result.files).toEqual({ plan: PLAN, evidenceIndex: EVIDENCE, reviews: REVIEWS, gateRecord: GATE, build: BUILD });
   });
 
+  test("a plan outside a directory named after it fails with PLAN_FILES", () => {
+    const root = makeProject();
+    const text = planText(root);
+    mkdirSync(join(root, "docs/plans/other"), { recursive: true });
+    writeFileSync(join(root, `docs/plans/other/${STEM}.md`), text);
+    writeFileSync(join(root, `docs/plans/other/${STEM}.evidence-index.md`), read(root, EVIDENCE));
+    const result = validatePlan(`docs/plans/other/${STEM}.md`, { root });
+    expect(result.errors.some((e) => e.code === "PLAN_FILES" && e.message.includes("directory named after it"))).toBe(true);
+  });
+
+  test("a missing evidence index file fails with PLAN_FILES", () => {
+    const root = makeProject();
+    writePlan(root, planText(root));
+    rmSync(join(root, EVIDENCE));
+    const result = run(root);
+    expect(result.errors.some((e) => e.code === "PLAN_FILES" && e.file === EVIDENCE)).toBe(true);
+  });
+
+  test("a missing or wrong links line under the H1 fails with PLAN_FILES", () => {
+    for (const mutate of [(t: string) => t.replace(`${LINKS}\n\n`, ""), (t: string) => t.replace(".build.md)", ".builds.md)")]) {
+      const root = makeProject();
+      writePlan(root, planText(root, { mutate }));
+      expect(codes(run(root))).toContain("PLAN_FILES");
+    }
+  });
+
+  test("Review, Result review, Build, and an inline Evidence index are refused in the spec", () => {
+    const root = makeProject();
+    writePlan(root, planText(root, { mutate: (t) => `${t}\n## Review\n\n## Build\n` }));
+    const errors = run(root).errors.filter((e) => e.code === "SECTION");
+    expect(errors.some((e) => e.message.includes(REVIEWS))).toBe(true);
+    expect(errors.some((e) => e.message.includes(BUILD))).toBe(true);
+    const root2 = makeProject();
+    writePlan(root2, planText(root2, { mutate: (t) => t.replace("### Baseline\n", "### Evidence index\n\nNone.\n\n### Baseline\n") }));
+    expect(run(root2).errors.some((e) => e.code === "SECTION" && e.message.includes(EVIDENCE))).toBe(true);
+  });
+});
+
+describe("plan mode", () => {
   test("CRLF line endings validate the same way", () => {
     const root = makeProject();
     writePlan(root, planText(root).replace(/\n/g, "\r\n"));
     expect(run(root).errors).toEqual([]);
   });
 
-  test("duplicate citation ids fail", () => {
+  test("duplicate citation ids fail, attributed to the evidence index file", () => {
     const root = makeProject();
     writePlan(root, planText(root, { mutateIndex: (i) => (i.citations as { id: string }[]).push({ ...(i.citations as { id: string }[])[0] }) }));
-    expect(codes(run(root))).toContain("CITATION");
+    const result = run(root);
+    expect(result.errors.some((e) => e.code === "CITATION" && e.file === EVIDENCE)).toBe(true);
   });
 
   test("a fake excerpt fails with EXCERPT", () => {
@@ -778,10 +840,11 @@ describe("plan mode", () => {
     expect(pathErrors.length).toBe(2);
   });
 
-  test("a backticked citation outside every indexed range fails", () => {
+  test("a backticked citation outside every indexed range fails, attributed to the spec", () => {
     const root = makeProject();
     writePlan(root, planText(root, { mutate: (t) => t.replace("References: `src/app.ts:1-3`.", "References: `src/app.ts:1-4`.") }));
-    expect(codes(run(root))).toContain("UNINDEXED_CITATION");
+    const result = run(root);
+    expect(result.errors.some((e) => e.code === "UNINDEXED_CITATION" && e.file === PLAN)).toBe(true);
   });
 
   test("a dependency cycle, a same-wave dependency, and a missing producer fail", () => {
@@ -826,31 +889,37 @@ describe("plan mode", () => {
     expect(codes(run(root))).toContain("PLANNED_EXISTS");
   });
 
-  test("a malformed Evidence index, a legacy plan, and wrong frontmatter keys fail", () => {
+  test("a malformed evidence index and wrong frontmatter keys fail", () => {
     const root = makeProject();
-    writePlan(root, planText(root).replace('"schemaVersion": 1,', '"schemaVersion": 1,,'));
+    writePlan(root, planText(root));
+    write(root, EVIDENCE, read(root, EVIDENCE).replace('"schemaVersion": 1,', '"schemaVersion": 1,,'));
     expect(codes(run(root))).toContain("EVIDENCE_INDEX");
-    writePlan(root, planText(root).replace(/### Evidence index\n\n```json\n[\s\S]*?\n```\n/, "### Evidence index\n\nNone.\n"));
-    expect(codes(run(root))).toContain("LEGACY_FORMAT");
     writePlan(root, planText(root).replace("review: optional\n", ""));
     expect(codes(run(root))).toContain("FRONTMATTER");
   });
 
-  test("an Evidence index split into one block per entry validates like a single block", () => {
+  test("an evidence index split into one block per entry validates like a single block", () => {
     const root = makeProject();
-    const index = evidenceIndex(root) as Record<string, unknown[]>;
-    const fence = (value: unknown) => `\`\`\`json\n${JSON.stringify(value)}\n\`\`\`\n\n`;
-    const blocks =
-      fence({ schemaVersion: 1, citations: [], coverage: [], frontier: [], flows: [], baseline: index.baseline }) +
-      (index.citations as unknown[]).map((c) => fence({ citations: [c] })).join("") +
-      (index.coverage as unknown[]).map((c) => fence({ coverage: [c] })).join("") +
-      (index.flows as unknown[]).map((f) => fence({ flows: [f] })).join("");
     const single = planText(root);
     writePlan(root, single);
     const expected = codes(run(root));
-    writePlan(root, single.replace(/### Evidence index\n\n```json\n[\s\S]*?\n```\n/, `### Evidence index\n\n${blocks}`));
+    const index = evidenceIndex(root) as Record<string, unknown[]>;
+    write(root, EVIDENCE, evidenceText([
+      { schemaVersion: 1, citations: [], coverage: [], frontier: [], flows: [], baseline: index.baseline },
+      ...(index.citations as unknown[]).map((c) => ({ citations: [c] })),
+      ...(index.coverage as unknown[]).map((c) => ({ coverage: [c] })),
+      ...(index.flows as unknown[]).map((f) => ({ flows: [f] })),
+    ]));
     expect(codes(run(root))).toEqual(expected);
     expect(codes(run(root))).not.toContain("EVIDENCE_INDEX");
+  });
+
+  test("a duplicate citation id across split evidence blocks fails", () => {
+    const root = makeProject();
+    writePlan(root, planText(root));
+    const index = evidenceIndex(root) as Record<string, unknown[]>;
+    write(root, EVIDENCE, evidenceText([index, { citations: [index.citations[0]] }]));
+    expect(codes(run(root))).toContain("CITATION");
   });
 
   test("a leftover skeleton placeholder fails in a planned plan but not in a draft", () => {
@@ -862,18 +931,65 @@ describe("plan mode", () => {
     expect(codes(run(root))).not.toContain("PLACEHOLDER");
   });
 
-  test("a duplicate citation id across split Evidence index blocks fails", () => {
-    const root = makeProject();
-    const index = evidenceIndex(root) as Record<string, unknown[]>;
-    const dup = `\`\`\`json\n${JSON.stringify({ citations: [index.citations[0]] })}\n\`\`\`\n`;
-    writePlan(root, planText(root).replace(/(### Evidence index\n\n```json\n[\s\S]*?\n```\n)/, `$1\n${dup}`));
-    expect(codes(run(root))).toContain("CITATION");
-  });
-
   test("a fenced example heading is not parsed as a todo", () => {
     const root = makeProject();
     writePlan(root, planText(root));
     expect(run(root).errors.some((e) => e.message.includes("T9"))).toBe(false);
+  });
+});
+
+describe("field caps", () => {
+  test("a field past its soft cap is a gap and the plan still validates", () => {
+    const root = makeProject();
+    writePlan(root, planText(root, { mutate: (t) => t.replace("- Do: add the flag.", `- Do: ${words(151)}.`) }));
+    const result = run(root);
+    expect(result.errors).toEqual([]);
+    expect(result.exitCode).toBe(0);
+    expect(result.gaps).toEqual([expect.stringMatching(/^soft cap: .*T2 Do is 151 words \(soft cap 150\)$/)]);
+  });
+
+  test("a field past twice its soft cap is a FIELD_CAP error", () => {
+    const root = makeProject();
+    writePlan(root, planText(root, { mutate: (t) => t.replace("- Do: add the flag.", `- Do: ${words(301)}.`) }));
+    expect(run(root).errors.some((e) => e.code === "FIELD_CAP" && e.message.includes("T2 Do is 301 words"))).toBe(true);
+  });
+
+  test("backticked commands and paths are not counted", () => {
+    const root = makeProject();
+    const command = `\`${words(400)}\``;
+    writePlan(root, planText(root, { mutate: (t) => t.replace("- Acceptance: `bun test` passes.\n- QA scenario: happy — flag", `- Acceptance: ${command} passes.\n- QA scenario: happy — flag`) }));
+    const result = run(root);
+    expect(result.errors).toEqual([]);
+    expect(result.gaps).toEqual([]);
+  });
+
+  test("each capped spec field is measured", () => {
+    const cases: [string, (t: string) => string][] = [
+      ["T1 Must not", (t) => t.replace("- Must not: break register.", `- Must not: ${words(61)}.`)],
+      ["T1 Acceptance", (t) => t.replace("- Acceptance: `bun test` passes.\n- QA scenario: happy — greets", `- Acceptance: ${words(121)}.\n- QA scenario: happy — greets`)],
+      ["T1 QA scenario", (t) => t.replace("- QA scenario: happy — greets; failure — empty name.", `- QA scenario: ${words(121)}.`)],
+      ["MH1 bullet", (t) => t.replace("- MH1: A greeting.", `- MH1: ${words(41)}.`)],
+      ["TL;DR bullet", (t) => t.replace("- Effort: S — fixture.", `- Effort: ${words(61)}.`)],
+      ["G1 ledger cell 3", (t) => t.replace("| No greeting |", `| ${words(61)} |`)],
+      ["Coverage paragraph", (t) => t.replace("Recorded in the Evidence index.", words(121))],
+      ["Verification strategy G1 cell 3", (t) => t.replace("| G1 | `bun test` | passes |", `| G1 | \`bun test\` | ${words(31)} |`)],
+      ["Success criteria G1 cell 3", (t) => t.replace("| G1 | T1 | tests |", `| G1 | T1 | ${words(31)} |`)],
+    ];
+    for (const [label, mutate] of cases) {
+      const root = makeProject();
+      writePlan(root, planText(root, { mutate }));
+      const result = run(root);
+      expect(result.errors).toEqual([]);
+      expect(result.gaps.some((g) => g.includes(label))).toBe(true);
+    }
+  });
+
+  test("a draft is not measured", () => {
+    const root = makeProject();
+    writePlan(root, planText(root, { status: "draft", mutate: (t) => t.replace("- Do: add the flag.", `- Do: ${words(301)}.`) }));
+    const result = run(root);
+    expect(result.errors).toEqual([]);
+    expect(result.gaps).toEqual([]);
   });
 });
 
@@ -887,6 +1003,16 @@ describe("review mode", () => {
     expect(result.expectedVerdict).toBe("OKAY");
     expect(result.gateEligible).toBe(true);
     expect(result.gateRecordDigest).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  test("a soft-cap gap in the spec does not change the expected verdict", () => {
+    const root = makeProject();
+    reviewedPlan(root, { mutatePlan: (t) => t.replace("- Do: add the flag.", `- Do: ${words(160)}.`) });
+    const result = run(root, ["--review"]);
+    expect(result.errors).toEqual([]);
+    expect(result.gaps.length).toBe(1);
+    expect(result.expectedVerdict).toBe("OKAY");
+    expect(result.gateEligible).toBe(true);
   });
 
   test("an honest REJECT is valid but not eligible", () => {
@@ -919,6 +1045,17 @@ describe("review mode", () => {
     expect(result.errors).toEqual([]);
     expect(result.expectedVerdict).toBe("INCOMPLETE");
     expect(result.gateEligible).toBe(false);
+  });
+
+  test("a missing reviews file or gate record file is a GATE_RECORD error", () => {
+    const root = makeProject();
+    reviewedPlan(root);
+    rmSync(join(root, GATE));
+    expect(run(root, ["--review"]).errors.some((e) => e.code === "GATE_RECORD" && e.file === GATE)).toBe(true);
+    const root2 = makeProject();
+    reviewedPlan(root2);
+    rmSync(join(root2, REVIEWS));
+    expect(run(root2, ["--review"]).errors.some((e) => e.code === "GATE_RECORD" && e.file === REVIEWS)).toBe(true);
   });
 
   test("an OKAY with a deleted required target is inconsistent and not eligible", () => {
@@ -964,13 +1101,10 @@ describe("review mode", () => {
     expect(codes(run(root, ["--review"]))).toContain("GATE_BLOCKER");
   });
 
-  test("a rendered ledger that disagrees with the gate record fails", () => {
+  test("a rendered verdict that disagrees with the gate record fails", () => {
     const root = makeProject();
-    reviewedPlan(root, { renderStatus: () => "unverified" });
-    expect(codes(run(root, ["--review"]))).toContain("RENDERED_MISMATCH");
-    const root2 = makeProject();
-    reviewedPlan(root2, { renderVerdict: "INCOMPLETE" });
-    expect(codes(run(root2, ["--review"]))).toContain("RENDERED_MISMATCH");
+    reviewedPlan(root, { renderVerdict: "INCOMPLETE" });
+    expect(run(root, ["--review"]).errors.some((e) => e.code === "RENDERED_MISMATCH" && e.file === REVIEWS)).toBe(true);
   });
 
   const REJECTED: GateOptions = {
@@ -982,11 +1116,12 @@ describe("review mode", () => {
     blockers: [{ id: "B1", obligationIds: ["O2"], location: "T2 Acceptance", failure: "cannot detect a broken flag", evidenceIds: ["P1"], fix: "assert the flag output" }],
   };
 
-  test("a compact round renders only its open obligations and validates", () => {
+  test("a round renders only its open obligations and validates", () => {
     const root = makeProject();
-    const text = reviewedPlan(root, { ...REJECTED, compact: true });
-    expect(text).toContain("#### Open obligations");
-    expect(text).not.toContain("| O1 |");
+    reviewedPlan(root, REJECTED);
+    const reviews = read(root, REVIEWS);
+    expect(reviews).toContain("#### Open obligations");
+    expect(reviews).not.toContain("| O1 |");
     const result = run(root, ["--review"]);
     expect(result.errors).toEqual([]);
     expect(result.expectedVerdict).toBe("REJECT");
@@ -994,69 +1129,98 @@ describe("review mode", () => {
 
   test("an OKAY round with no open obligation needs no rendered list", () => {
     const root = makeProject();
-    const text = reviewedPlan(root, { compact: true });
-    expect(text).not.toContain("#### Open obligations");
-    const result = run(root, ["--review"]);
-    expect(result.errors).toEqual([]);
-    expect(result.gateEligible).toBe(true);
+    reviewedPlan(root);
+    expect(read(root, REVIEWS)).not.toContain("#### Open obligations");
+    expect(run(root, ["--review"]).gateEligible).toBe(true);
   });
 
   test("an open obligation left out of the rendered list fails", () => {
     const root = makeProject();
-    reviewedPlan(root, { ...REJECTED, compact: true, hide: ["O2"] });
+    reviewedPlan(root, { ...REJECTED, hide: ["O2"] });
     expect(run(root, ["--review"]).errors.some((e) => e.code === "RENDERED_MISMATCH" && e.message.includes("O2"))).toBe(true);
     const root2 = makeProject();
     const obligations = [
       ...(REJECTED.obligations as Obligation[]),
       { id: "O3", targets: ["MH2"], evidenceIds: [], observed: "flag contract page unreachable", plannedQa: "Q1", status: "unverified" },
     ];
-    reviewedPlan(root2, { ...REJECTED, obligations, compact: true, hide: ["O3"] });
+    reviewedPlan(root2, { ...REJECTED, obligations, hide: ["O3"] });
     const errors = run(root2, ["--review"]).errors;
     expect(errors.some((e) => e.code === "RENDERED_MISMATCH" && e.message === "open obligation O3 is missing from the rendered list")).toBe(true);
   });
 
-  test("duplicate rows cannot hide a wrong status in either accepted ledger heading", () => {
-    for (const secondHeading of ["", "\n#### Coverage and evidence\n\n| ID | Status |\n| --- | --- |\n"]) {
-      const root = makeProject();
-      const text = reviewedPlan(root, { ...REJECTED, compact: true });
-      const row = text.split("\n").find((line) => line.startsWith("| O2 |")) as string;
-      writePlan(root, text.replace(row, `${row.replace("| contradicted |", "| verified |")}\n${secondHeading}${row}`));
-      const result = run(root, ["--review"]);
-      expect(result.errors.some((e) => e.message.includes("duplicate rendered obligation O2"))).toBe(true);
-      expect(result.errors.some((e) => e.message.includes("rendered status of O2 is 'verified'"))).toBe(true);
-    }
+  test("duplicate rows cannot hide a wrong status", () => {
+    const root = makeProject();
+    reviewedPlan(root, REJECTED);
+    const reviews = read(root, REVIEWS);
+    const row = reviews.split("\n").find((line) => line.startsWith("| O2 |")) as string;
+    write(root, REVIEWS, reviews.replace(row, `${row.replace("| contradicted |", "| verified |")}\n${row}`));
+    const result = run(root, ["--review"]);
+    expect(result.errors.some((e) => e.message.includes("duplicate rendered obligation O2"))).toBe(true);
+    expect(result.errors.some((e) => e.message.includes("rendered status of O2 is 'verified'"))).toBe(true);
   });
 
-  test("unknown rendered obligations and an incorrect compact status are refused", () => {
+  test("unknown rendered obligations and an incorrect status are refused", () => {
     const root = makeProject();
-    const text = reviewedPlan(root, { ...REJECTED, compact: true, renderStatus: () => "verified" });
-    writePlan(root, text.replace("#### Gate record", "| O99 | unknown |\n\n#### Gate record"));
+    reviewedPlan(root, { ...REJECTED, renderStatus: () => "verified" });
+    write(root, REVIEWS, read(root, REVIEWS).replace(/(\| O2 \|[^\n]*\n)/, "$1| O99 | x | P1 | unknown | unknown |\n"));
     const result = run(root, ["--review"]);
     expect(result.errors.some((e) => e.message.includes("rendered status of O2"))).toBe(true);
     expect(result.errors.some((e) => e.message.includes("rendered row O99 is not in the gate record"))).toBe(true);
   });
 
-  test("only the latest round is read, so earlier round bodies may live in the review history file", () => {
+  test("rounds are newest first and the highest number is the latest", () => {
     const root = makeProject();
-    const draft = planText(root, { status: "reviewed", reviewRound: 2 });
-    const gate = gateRecord(root, canonicalSpecDigest(draft), { round: 2 });
-    const history = `
-| Round | Date | Verdict | Blockers | Summary |
-| --- | --- | --- | --- | --- |
-| 1 | 2026-09-29 | REJECT | 1 | B1 T2 flag test cannot fail |
-| 2 | 2026-09-29 | OKAY | 0 | B1 fixed |
-`;
-    writePlan(root, planText(root, { status: "reviewed", reviewRound: 2, review: `${history}${renderRound(gate, { compact: true })}` }));
+    const text = planText(root, { status: "reviewed", reviewRound: 2 });
+    writePlan(root, text);
+    const r1 = gateRecord(root, specOf(root, text), { ...REJECTED, round: 1 });
+    const r2 = gateRecord(root, specOf(root, text), { round: 2 });
+    writeGate(root, r2);
+    const history = historyTable([[1, "REJECT", 1, "B1 T2 flag test cannot fail"], [2, "OKAY", 0, "B1 fixed"]]);
+    writeReviews(root, history, [renderRound(r2), renderRound(r1, REJECTED)]);
     const result = run(root, ["--review"]);
     expect(result.errors).toEqual([]);
     expect(result.gateEligible).toBe(true);
+    // The gate record file holds the latest round only.
+    writeGate(root, r1);
+    expect(run(root, ["--review"]).errors.some((e) => e.code === "GATE_RECORD" && e.message.includes("does not match the latest round"))).toBe(true);
   });
 
-  test("editing the plan after review makes the review stale", () => {
+  test("the history row for the latest round needs a Summary", () => {
+    const root = makeProject();
+    reviewedPlan(root, { history: historyTable([[1, "OKAY", 0, ""]]) });
+    expect(run(root, ["--review"]).errors.some((e) => e.code === "RENDERED_MISMATCH" && e.message.includes("Summary"))).toBe(true);
+  });
+
+  test("a gate source the evidence index already cites is refused", () => {
+    const root = makeProject();
+    reviewedPlan(root, { mutateGate: (g) => (g.sources as unknown[]).push({ path: "src/app.ts", sha256: sha(APP) }) });
+    expect(run(root, ["--review"]).errors.some((e) => e.code === "GATE_RECORD" && e.file === GATE && e.message.includes("src/app.ts"))).toBe(true);
+  });
+
+  test("gate record prose and blocker paragraphs are capped", () => {
+    const root = makeProject();
+    reviewedPlan(root, { mutateGate: (g) => ((g.obligations as Obligation[])[0].observed = "x".repeat(250)) });
+    const soft = run(root, ["--review"]);
+    expect(soft.errors).toEqual([]);
+    expect(soft.gaps.some((g) => g.includes("obligation O1 observed is 250 characters"))).toBe(true);
+    expect(soft.expectedVerdict).toBe("OKAY");
+    const root2 = makeProject();
+    reviewedPlan(root2, { mutateGate: (g) => ((g.checks as Record<string, { observed: string }>).A.observed = "x".repeat(401)) });
+    expect(codes(run(root2, ["--review"]))).toContain("FIELD_CAP");
+    const root3 = makeProject();
+    reviewedPlan(root3, { ...REJECTED, blockerText: [`**B1 — T2 — ${words(241)}.**`] });
+    expect(run(root3, ["--review"]).errors.some((e) => e.code === "FIELD_CAP" && e.file === REVIEWS)).toBe(true);
+  });
+
+  test("editing the plan or its evidence index after review makes the review stale", () => {
     const root = makeProject();
     const text = reviewedPlan(root);
     writePlan(root, text.replace("- Do: add the flag.", "- Do: add two flags."));
-    const result = run(root, ["--review"]);
+    expect(codes(run(root, ["--review"]))).toContain("STALE_REVIEW");
+    const root2 = makeProject();
+    reviewedPlan(root2);
+    write(root2, EVIDENCE, read(root2, EVIDENCE).replace('"counterexample": "empty config name"', '"counterexample": "a null config"'));
+    const result = run(root2, ["--review"]);
     expect(codes(result)).toContain("STALE_REVIEW");
     expect(result.gateEligible).toBe(false);
   });
@@ -1065,10 +1229,12 @@ describe("review mode", () => {
     const root = makeProject();
     reviewedPlan(root);
     const head = git(root, "rev-parse", "HEAD").toString();
+    writeFileSync(join(root, "README.md"), `${README}drift\n`);
     writeFileSync(join(root, "src/app.ts"), `${APP}// drift\n`);
     const result = run(root, ["--review"]);
     expect(git(root, "rev-parse", "HEAD").toString()).toBe(head);
     expect(codes(result)).toContain("SOURCE_DRIFT");
+    expect(codes(result)).toContain("CITATION_DRIFT");
     expect(result.gateEligible).toBe(false);
   });
 
@@ -1083,7 +1249,7 @@ describe("resume mode", () => {
   test("after T1 changes a cited file, normal review reports drift while resume selects T2", () => {
     const { root } = buildScenario();
     const review = run(root, ["--review"]);
-    expect(codes(review)).toContain("SOURCE_DRIFT");
+    expect(codes(review)).toContain("CITATION_DRIFT");
     expect(review.gateEligible).toBe(false);
     const resume = run(root, ["--review", "--resume"]);
     expect(resume.errors).toEqual([]);
@@ -1095,7 +1261,7 @@ describe("resume mode", () => {
 
   test("an extra unrecorded byte blocks advancement and asks for recovery", () => {
     const { root } = buildScenario();
-    writeFileSync(join(root, "src/app.ts"), `${readFileSync(join(root, "src/app.ts"), "utf8")} `);
+    writeFileSync(join(root, "src/app.ts"), `${read(root, "src/app.ts")} `);
     const result = run(root, ["--review", "--resume"]);
     expect(codes(result)).toContain("STATE_DRIFT");
     expect(result.resumeEligible).toBe(false);
@@ -1104,43 +1270,37 @@ describe("resume mode", () => {
     expect(result.unresolvedAction).toContain("src/app.ts");
   });
 
-  test("receipt and report appends keep the state identity; an instruction change does not", () => {
+  test("receipt and review appends keep the state identity; an instruction change does not", () => {
     const { root } = buildScenario();
-    const path = join(root, PLAN);
-    writeFileSync(path, `${readFileSync(path, "utf8")}\n### Build notes\n\n- A progress note.\n`);
+    write(root, REVIEWS, `${read(root, REVIEWS)}\n## Result review\n\n### Result round 1\n\nMATCH\n`);
+    write(root, BUILD, `${read(root, BUILD)}\nA build note.\n`);
     expect(run(root, ["--review", "--resume"]).resumeEligible).toBe(true);
-    writeFileSync(path, readFileSync(path, "utf8").replace("- Do: add the flag.", "- Do: add the flag and a logger."));
+    writePlan(root, read(root, PLAN).replace("- Do: add the flag.", "- Do: add the flag and a logger."));
     const changed = run(root, ["--review", "--resume"]);
     expect(codes(changed)).toContain("SPEC_CHANGED");
     expect(changed.resumeEligible).toBe(false);
   });
 
-  test("only the declared history path can change without blocking resume", () => {
-    const history = PLAN.replace(/\.md$/, ".review-history.md");
-    for (const declared of [false, true]) {
-      const { root } = buildScenario({ reports: declared ? [history] : [] });
-      writeFileSync(join(root, history), "# Review history: Fixture plan\n\n### Result round 1\n\nArchived result.\n");
-      const result = run(root, ["--review", "--resume"]);
-      expect(result.resumeEligible).toBe(declared);
-      if (declared) {
-        expect(result.errors).toEqual([]);
-        writeFileSync(join(root, "docs/plans/unrelated.review-history.md"), "unrecorded work\n");
-        const unrelated = run(root, ["--review", "--resume"]);
-        expect(unrelated.resumeEligible).toBe(false);
-        expect(unrelated.drift).toContain("docs/plans/unrelated.review-history.md [worktree]");
-      } else {
-        expect(result.drift).toContain(`${history} [worktree]`);
-      }
-    }
+  test("an unrelated new file in the plan directory is drift", () => {
+    const { root } = buildScenario();
+    write(root, `${DIR}/notes.md`, "unrecorded work\n");
+    const result = run(root, ["--review", "--resume"]);
+    expect(result.resumeEligible).toBe(false);
+    expect(result.drift).toContain(`${DIR}/notes.md [worktree]`);
+  });
+
+  test("a baseline captured without the sibling reports is refused", () => {
+    const { root } = buildScenario({ reports: [] });
+    const result = run(root, ["--review", "--resume"]);
+    expect(result.errors.some((e) => e.code === "BUILD_RECORD" && e.message.includes("as reports"))).toBe(true);
+    expect(result.resumeEligible).toBe(false);
   });
 
   test("a later rejection revokes the approval the build started from", () => {
     const { root } = buildScenario();
-    const path = join(root, PLAN);
-    const text = readFileSync(path, "utf8");
-    const withStatus = text.replace("status: reviewed", "status: planned").replace("review_round: 1", "review_round: 2");
-    const draft = withStatus.split("\n## Build\n")[0];
-    const gate = gateRecord(root, canonicalSpecDigest(withStatus), {
+    const text = read(root, PLAN).replace("status: reviewed", "status: planned").replace("review_round: 1", "review_round: 2");
+    writePlan(root, text);
+    const gate = gateRecord(root, specOf(root, text), {
       round: 2,
       verdict: "REJECT",
       obligations: [
@@ -1149,9 +1309,9 @@ describe("resume mode", () => {
       ],
       blockers: [{ id: "B1", obligationIds: ["O2"], location: "T2", failure: "no failure path", evidenceIds: ["P1"], fix: "add one" }],
     });
-    const build = withStatus.slice(draft.length);
-    const history = draft.replace("| 1 | 2026-09-29 | OKAY | 0 |", "| 1 | 2026-09-29 | OKAY | 0 |\n| 2 | 2026-09-29 | REJECT | 1 |");
-    writeFileSync(path, `${history}${renderRound(gate)}${build}`);
+    writeGate(root, gate);
+    const old = read(root, REVIEWS).split("### Round 1")[1];
+    writeReviews(root, historyTable([[1, "OKAY", 0], [2, "REJECT", 1]]), [renderRound(gate), `### Round 1${old}`]);
     const result = run(root, ["--review", "--resume"]);
     expect(codes(result)).toContain("APPROVAL_CHANGED");
     expect(result.resumeEligible).toBe(false);
@@ -1160,13 +1320,13 @@ describe("resume mode", () => {
   test("a Done box without a passed receipt is forged", () => {
     const { root } = buildScenario();
     setBoxes(root, ["T2"]);
-    expect(codes(run(root, ["--review", "--resume"]))).toContain("DONE_WITHOUT_RECEIPT");
+    const result = run(root, ["--review", "--resume"]);
+    expect(result.errors.some((e) => e.code === "DONE_WITHOUT_RECEIPT" && e.file === PLAN)).toBe(true);
   });
 
   test("a passed receipt with an Open box is reconciled, not repeated", () => {
     const { root } = buildScenario();
-    const path = join(root, PLAN);
-    writeFileSync(path, readFileSync(path, "utf8").replace("### T1 — Add the greeting\n\n- [x] Done", "### T1 — Add the greeting\n\n- [ ] Open"));
+    writePlan(root, read(root, PLAN).replace("### T1 — Add the greeting\n\n- [x] Done", "### T1 — Add the greeting\n\n- [ ] Open"));
     const result = run(root, ["--review", "--resume"]);
     expect(result.resumeEligible).toBe(true);
     expect(result.reconcileBoxes).toEqual(["T1"]);
@@ -1180,7 +1340,7 @@ describe("resume mode", () => {
       { todo: "T0", event: "pass", after: "same" },
       { todo: "T2", event: "start" },
     ]);
-    appendBuild(root, record);
+    writeBuild(root, record);
     expect(codes(run(root, ["--review", "--resume"]))).toContain("DEPENDENCY_ORDER");
   });
 
@@ -1192,25 +1352,61 @@ describe("resume mode", () => {
     expect(codes(run(root, ["--review", "--resume"]))).toContain("SNAPSHOT_CORRUPT");
 
     const second = buildScenario();
-    const path = join(second.root, PLAN);
-    writeFileSync(path, readFileSync(path, "utf8").replace('"note": ""', '"note": "edited later"'));
+    write(second.root, BUILD, read(second.root, BUILD).replace('"note": ""', '"note": "edited later"'));
     expect(codes(run(second.root, ["--review", "--resume"]))).toContain("RECEIPT_CHAIN");
+  });
+
+  test("a receipt key outside the schema, such as changedPaths, is refused", () => {
+    const { root, record, baseline } = buildScenario({ stopAfter: "T1-start" });
+    record.receipts = receipts(baseline, [
+      { todo: "T0", event: "start", extra: { changedPaths: [] } },
+      { todo: "T0", event: "pass", after: "same" },
+      { todo: "T1", event: "start", extra: { log: "silly-skills/plan-builds/run/logs/t1.log" } },
+    ]);
+    writeBuild(root, record);
+    const errors = run(root, ["--review", "--resume"]).errors.filter((e) => e.code === "RECEIPT_FIELD");
+    expect(errors.length).toBe(1);
+    expect(errors[0].message).toContain("changedPaths");
+    expect(errors[0].file).toBe(BUILD);
+  });
+
+  test("receipt prose is capped: a long observed is a gap, a very long one an error", () => {
+    for (const [size, expectError] of [[250, false], [401, true]] as const) {
+      const { root, record, baseline } = buildScenario({ stopAfter: "T1-start" });
+      record.receipts = receipts(baseline, [
+        { todo: "T0", event: "start" },
+        { todo: "T0", event: "pass", after: "same", checks: [{ id: "acceptance", command: "bun test", exit: 0, expectedExit: 0, passed: true, observed: "x".repeat(size) }] },
+        { todo: "T1", event: "start" },
+      ]);
+      writeBuild(root, record);
+      const result = run(root, ["--review", "--resume"]);
+      expect(codes(result).includes("FIELD_CAP")).toBe(expectError);
+      if (!expectError) {
+        expect(result.resumeEligible).toBe(true);
+        expect(result.gaps.some((g) => g.includes("observed is 250 characters"))).toBe(true);
+      }
+    }
   });
 
   test("a Build record from another repository fails", () => {
     const { root, record } = buildScenario();
     record.repository = { kind: "git", rootCommits: ["f".repeat(40)], branch: null };
-    appendBuild(root, record);
+    writeBuild(root, record);
     expect(codes(run(root, ["--review", "--resume"]))).toContain("REPOSITORY_MISMATCH");
   });
 
-  test("a missing snapshot is an unreadable input", () => {
+  test("a missing snapshot or a missing build file is an unreadable input", () => {
     const { root, after } = buildScenario();
     rmSync(join(root, ".git", (after as Ref).snapshot), { recursive: true });
     const result = run(root, ["--review", "--resume"]);
     expect(codes(result)).toContain("SNAPSHOT_MISSING");
     expect(result.exitCode).toBe(2);
     expect(result.resumeEligible).toBe(false);
+    const second = buildScenario();
+    rmSync(join(second.root, BUILD));
+    const noBuild = run(second.root, ["--review", "--resume"]);
+    expect(noBuild.exitCode).toBe(2);
+    expect(noBuild.errors.some((e) => e.code === "BUILD_RECORD" && e.file === BUILD)).toBe(true);
   });
 
   test("an active checkpoint that matches the workspace resumes only that todo", () => {
@@ -1239,7 +1435,7 @@ describe("resume mode", () => {
       { todo: "T0", event: "pass", after: "same" },
       { todo: "T1", event: "start" },
     ]);
-    appendBuild(root, record);
+    writeBuild(root, record);
     writeFileSync(join(root, "src/app.ts"), `${APP}// committed\n`);
     git(root, "commit", "-q", "-am", "unrecorded");
     const result = run(root, ["--review", "--resume"]);
@@ -1271,7 +1467,7 @@ describe("resume mode", () => {
         { todo: "T1", event: "pass", after: "same" },
         { todo: "T2", event: "start", prerequisites: [{ targets: ["T2.start"], sources: [{ path: "src/app.ts", sha256: sha(readFileSync(join(root, "src/app.ts"))) }], status, observed: "register signature" }] },
       ]);
-      appendBuild(root, record);
+      writeBuild(root, record);
       const result = run(root, ["--review", "--resume"]);
       if (status === "fails") {
         expect(codes(result)).toContain("PREREQUISITE_FAILED");
@@ -1292,7 +1488,7 @@ describe("resume mode", () => {
       { todo: "T1", event: "start" },
       { todo: "T1", event: "block", after: "same", note: "needs a credential" },
     ]);
-    appendBuild(root, record);
+    writeBuild(root, record);
     const result = run(root, ["--review", "--resume"]);
     expect(result.errors).toEqual([]);
     expect(result.exitCode).toBe(0);
@@ -1331,7 +1527,7 @@ describe("CLI", () => {
     writePlan(root, planText(root, { mutateIndex: (i) => ((i.citations as Record<string, unknown>[])[0].excerpt = "nope") }));
     const result = cli(rootCli, [PLAN, "--root", root]);
     expect(result.code).toBe(1);
-    expect(result.out).toMatch(new RegExp(`ERROR\\[EXCERPT\\] ${PLAN.replace(/\//g, "\\/")}:\\d+ `));
+    expect(result.out).toMatch(new RegExp(`ERROR\\[EXCERPT\\] ${EVIDENCE.replace(/\//g, "\\/")}:\\d+ `));
   });
 
   test("a detached copy of the bundled script reports the same JSON as the root entry point", () => {
@@ -1347,5 +1543,6 @@ describe("CLI", () => {
     expect(JSON.parse(a.out).gateEligible).toBe(true);
     expect(readFileSync(detached, "utf8")).not.toContain("../../../../scripts");
     expect(dirname(detached)).not.toContain(repo);
+    expect(existsSync(detached)).toBe(true);
   });
 });

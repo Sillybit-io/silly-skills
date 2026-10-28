@@ -18,6 +18,11 @@ findings in its reply instead of the plan. The with-skill run loaded version
 its findings to the plan's `## Result review` section, which is the only
 change either run made.
 
+Since 1.0.0, receipts no longer carry `changedPaths`: the before and after
+snapshots alone attribute each change, so this seeded defect can no longer
+occur, and a round renders only differences rather than full requirement and
+commitment tables. The transcript below is kept as recorded.
+
 ## Without skill
 
 The no-skill reviewer independently reconstructed the build's history and

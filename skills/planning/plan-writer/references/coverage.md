@@ -9,6 +9,7 @@ Start from everything the request touches:
 - The requested behavior and the files the request names.
 - Entry points that reach that behavior: commands, routes, hooks, jobs, installers, and exported functions.
 - Artifacts the change will create, move, or delete.
+- Invariants the change alters: inventory membership, counts, identifiers, and generated lists.
 - The tests and fixtures that pin the current behavior.
 
 ## Follow every edge
@@ -23,11 +24,12 @@ For each seed, find what it depends on (producers) and what depends on it (consu
 | Data formats | Search for the key, file, or wire format the change alters, and for every reader of it |
 | Configuration | Files and environment variables that set the behavior |
 | Generated and installed files | Build outputs, templates, installers, update and migration paths |
+| Inventory invariants | Code that enumerates the affected collection, registrations, derived counts and lists, and assertions or snapshots of them |
 | Documentation commands | Commands and flags quoted in READMEs and runbooks |
 | Failure and recovery | Error handlers, retries, rollbacks, and cleanup that run when the change fails |
 | Tests | Tests that pin current behavior, including snapshot and fixture files |
 
-Search beyond the files the request names. Use synonyms and the old and new names. Record each search: the command or query, its scope, and what it found.
+Search beyond the files the request names. Use synonyms and the old and new names. Also search for the changed invariant and the code that derives or asserts it: a new item's name cannot find existing consumers of the whole collection. Record each search: the command or query, its scope, and what it found.
 
 An empty or failed search is not proof of absence. Record its scope and the synonyms tried. When a search tool is unavailable, record that and use another way to read the same scope.
 
@@ -36,9 +38,11 @@ An empty or failed search is not proof of absence. Record its scope and the syno
 Every relevant edge ends in one of two states:
 
 - **inspected** — you opened the code at that location and recorded a citation with a literal excerpt of the lines you rely on: the whole range when it is three lines or fewer, otherwise a one-to-three-line anchor from inside it.
-- **excluded** — you name the boundary reason it cannot affect the change, such as "owner data copied byte for byte and never parsed", and cite the evidence for that reason.
+- **excluded** — you read the code that consumes or asserts the changed value, name why that behavior cannot be affected, and cite those lines. A filename, directory, or unrelated feature boundary is not evidence. A mixed-purpose file can contain an affected aggregate check even when its main feature stays unchanged; keep that part inspected rather than excluding the whole file.
 
 "Probably fine" is not a reason. An edge still unread stays `pending`, and `pending` rows block the planned state.
+
+When an inspected consumer needs a change, name that change in its owning todo. A citation or a generic instruction to fix failing tests does not supply it. Use the existing coverage entries and todos; no separate inventory report is needed.
 
 ## Frontier and closure
 

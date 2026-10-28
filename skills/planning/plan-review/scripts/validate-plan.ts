@@ -11,6 +11,10 @@
  * Usage:
  *   bun validate-plan.ts <plan> [--review [--resume]] [--root <project>] [--json]
  *
+ * A plan is a directory, docs/plans/<stem>/, holding <stem>.md (the spec) and
+ * four siblings: <stem>.evidence-index.md, <stem>.reviews.md,
+ * <stem>.gate-record.json, and <stem>.build.md. <plan> names <stem>.md.
+ *
  * Exit codes: 0 — the requested record is structurally consistent (this is not
  * approval; read gateEligible or resumeEligible); 1 — invalid structure,
  * inconsistent evidence, or unexpected drift; 2 — invalid arguments or an
@@ -51,11 +55,7 @@ export const SECTIONS = [
   "Todos",
   "Final verification wave",
   "Success criteria",
-  "Review",
 ] as const;
-
-const TRAILING_SECTIONS = ["Build", "Result review"] as const;
-const EXCLUDED_FROM_SPEC = new Set(["Review", "Build", "Result review"]);
 
 export const SCOPE_SUBSECTIONS = [
   "Affected users",
@@ -67,8 +67,76 @@ export const SCOPE_SUBSECTIONS = [
   "Coverage",
   "Critical flows",
   "Baseline",
-  "Evidence index",
 ] as const;
+
+/** The four files beside the spec, by suffix, in the order the links line names them. */
+export const SIBLINGS = {
+  evidenceIndex: ".evidence-index.md",
+  reviews: ".reviews.md",
+  gateRecord: ".gate-record.json",
+  build: ".build.md",
+} as const;
+
+export type PlanFiles = {
+  dir: string;
+  stem: string;
+  plan: string;
+  evidenceIndex: string;
+  reviews: string;
+  gateRecord: string;
+  build: string;
+};
+
+/** Derives the five plan files from the spec's path: `<dir>/<stem>/<stem>.md`. */
+export function planFiles(planPath: string): PlanFiles {
+  const norm = planPath.split(sep).join("/");
+  const slash = norm.lastIndexOf("/");
+  const dir = slash === -1 ? "" : norm.slice(0, slash);
+  const stem = norm.slice(slash + 1).replace(/\.md$/, "");
+  const at = (suffix: string) => (dir === "" ? `${stem}${suffix}` : `${dir}/${stem}${suffix}`);
+  return {
+    dir,
+    stem,
+    plan: norm,
+    evidenceIndex: at(SIBLINGS.evidenceIndex),
+    reviews: at(SIBLINGS.reviews),
+    gateRecord: at(SIBLINGS.gateRecord),
+    build: at(SIBLINGS.build),
+  };
+}
+
+/**
+ * Length caps. Past `soft` a field is listed under `gaps` with a "soft cap:"
+ * prefix and the plan still validates; past `hard` (twice the soft cap) it is
+ * a FIELD_CAP error. Words are counted outside backticked spans, so commands
+ * and paths cost nothing; characters are counted for machine-record prose.
+ */
+export const CAPS = {
+  todoDo: { soft: 150, hard: 300, unit: "words" },
+  todoAcceptance: { soft: 120, hard: 240, unit: "words" },
+  todoQa: { soft: 120, hard: 240, unit: "words" },
+  todoMustNot: { soft: 60, hard: 120, unit: "words" },
+  requirement: { soft: 40, hard: 80, unit: "words" },
+  tldrBullet: { soft: 60, hard: 120, unit: "words" },
+  ledgerCell: { soft: 60, hard: 120, unit: "words" },
+  coverage: { soft: 120, hard: 240, unit: "words" },
+  proofCell: { soft: 30, hard: 60, unit: "words" },
+  blocker: { soft: 120, hard: 240, unit: "words" },
+  recordProse: { soft: 200, hard: 400, unit: "characters" },
+} as const;
+
+type Cap = (typeof CAPS)[keyof typeof CAPS];
+
+/** Words outside backticked spans: tokens that contain a letter or a digit. */
+export function proseWords(text: string): number {
+  return text
+    .replace(/`[^`]*`/g, " ")
+    .split(/\s+/)
+    .filter((t) => /[\p{L}\p{N}]/u.test(t)).length;
+}
+
+/** Keys a receipt may carry. Anything else is an error: a receipt is a record, not a notebook. */
+export const RECEIPT_KEYS = ["seq", "todo", "event", "state", "prev", "before", "after", "checks", "prerequisites", "commit", "note", "log"] as const;
 
 export const TODO_FIELDS = [
   "Do",
@@ -96,6 +164,7 @@ export type ValidationResult = {
   schemaVersion: 1;
   validationMode: Mode;
   plan: string;
+  files: Omit<PlanFiles, "dir" | "stem">;
   errors: Finding[];
   gaps: string[];
   planDigest: string | null;
@@ -190,16 +259,24 @@ export function scanLines(text: string): Line[] {
 }
 
 /**
- * Canonical spec digest: excludes the frontmatter `status` and `review_round`
- * lines and the top-level Review, Build, and Result review sections, and
- * normalizes CRLF plus todo/gate checkbox progress. Headings inside code fences
- * never start or end a section.
+ * Canonical spec digest. The main plan's canonical text drops the frontmatter
+ * `status` and `review_round` lines and normalizes CRLF plus todo/gate
+ * checkbox progress. Given the evidence index's text too, the digest is the
+ * SHA-256 of both digests in hex, main first, one per line, so a changed
+ * citation or flow is a changed spec. Without it, the digest covers the main
+ * plan alone, which is what a build snapshot normalizes the plan file to.
  */
-export function canonicalSpecDigest(text: string): string {
+export function canonicalSpecDigest(text: string, evidenceText?: string): string {
+  const main = mainSpecDigest(text);
+  if (evidenceText === undefined) return main;
+  const ev = evidenceText.replace(/\r\n?/g, "\n").replace(/\n$/, "");
+  return sha256(`${main}\n${sha256(`${ev}\n`)}\n`);
+}
+
+function mainSpecDigest(text: string): string {
   const lines = scanLines(text);
   const out: string[] = [];
   let inFrontmatter = false;
-  let skip = false;
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     if (i === 0 && line.text.trimEnd() === "---") {
@@ -213,11 +290,6 @@ export function canonicalSpecDigest(text: string): string {
       out.push(line.text);
       continue;
     }
-    if (!line.fenced && !line.fenceMarker) {
-      const h = /^## (.+?)\s*$/.exec(line.text);
-      if (h) skip = EXCLUDED_FROM_SPEC.has(h[1]);
-    }
-    if (skip) continue;
     if (!line.fenced && !line.fenceMarker && /^- \[[ xX]\] (Open|Done)\s*$/.test(line.text)) {
       out.push("- [ ] Open");
       continue;
@@ -338,7 +410,7 @@ function fencedJsonBlocks(
   if (blocks.length === 1) return { value: blocks[0], no: first };
   const merged: Record<string, unknown> = {};
   for (const block of blocks) {
-    if (!isObject(block)) return { error: "every Evidence index block must be a JSON object", no: first };
+    if (!isObject(block)) return { error: "every fenced json block must be a JSON object", no: first };
     for (const [key, next] of Object.entries(block)) {
       const prev = merged[key];
       if (Array.isArray(prev) && Array.isArray(next)) merged[key] = [...prev, ...next];
@@ -382,15 +454,22 @@ export type ParsedPlan = {
   mustHave: { id: string; line: number }[];
   mustNotHave: { id: string; line: number }[];
   success: { gaps: string[]; todos: string[]; line: number }[];
+  /** The merged json blocks of the evidence index file; null when the file is missing or holds none. */
   evidenceIndex: { value: unknown; no: number } | { error: string; no: number } | null;
   citations: { path: string; start: number; end: number; line: number }[];
 };
+
+/** Merged fenced json blocks of a whole sibling file, such as the evidence index or the build file. */
+export function jsonBlocksOf(text: string): { value: unknown; no: number } | { error: string; no: number } | null {
+  const lines = scanLines(text);
+  return fencedJsonBlocks(lines, 0, lines.length);
+}
 
 function section(plan: ParsedPlan, title: string): Section | undefined {
   return plan.sections.find((s) => s.title === title);
 }
 
-export function parsePlan(text: string): ParsedPlan {
+export function parsePlan(text: string, evidenceText?: string): ParsedPlan {
   const lines = scanLines(text);
   const frontmatter: Record<string, string> = {};
   const frontmatterLine: Record<string, number> = {};
@@ -429,7 +508,7 @@ export function parsePlan(text: string): ParsedPlan {
     mustHave: [],
     mustNotHave: [],
     success: [],
-    evidenceIndex: null,
+    evidenceIndex: evidenceText === undefined ? null : jsonBlocksOf(evidenceText),
     citations: [],
   };
 
@@ -457,8 +536,6 @@ export function parsePlan(text: string): ParsedPlan {
     };
     plan.mustHave = ids("Must have", "MH");
     plan.mustNotHave = ids("Must NOT have", "MN");
-    const index = subs.find((s) => s.title === "Evidence index");
-    if (index) plan.evidenceIndex = fencedJsonBlocks(lines, index.start, index.end);
   }
 
   const todos = section(plan, "Todos");
@@ -539,10 +616,8 @@ export function parsePlan(text: string): ParsedPlan {
     }
   }
 
-  // Backticked `path:line[-line]` citations in the spec, outside fences and
-  // outside the Review, Build, and Result review sections.
+  // Backticked `path:line[-line]` citations in the spec, outside fences.
   for (const s of sections) {
-    if (EXCLUDED_FROM_SPEC.has(s.title)) continue;
     for (let i = s.start - 1; i < s.end; i++) {
       const line = lines[i];
       if (!line || line.fenced || line.fenceMarker) continue;
@@ -911,12 +986,99 @@ export function diffStates(a: StateBody, b: StateBody, ignore: string[] = []): s
 type Context = {
   file: string;
   root: string;
+  files: PlanFiles;
   errors: Finding[];
+  /** Review gaps: they decide the expected verdict. */
   gaps: string[];
+  /** Soft-cap findings, reported under `gaps` but never part of a verdict. */
+  capGaps: string[];
 };
 
 function err(ctx: Context, code: string, line: number, message: string): void {
   ctx.errors.push({ code, file: ctx.file, line, message });
+}
+
+/** The same context, attributing findings to another plan file. */
+function inFile(ctx: Context, file: string): Context {
+  return { ...ctx, file };
+}
+
+/** Applies a two-tier cap: a soft-cap gap past `soft`, a FIELD_CAP error past `hard`. */
+function capCheck(ctx: Context, line: number, label: string, text: string, cap: Cap): void {
+  const size = cap.unit === "words" ? proseWords(text) : text.length;
+  if (size > cap.hard) {
+    err(ctx, "FIELD_CAP", line, `${label} is ${size} ${cap.unit}; the hard cap is ${cap.hard} (aim for ${cap.soft})`);
+  } else if (size > cap.soft) {
+    ctx.capGaps.push(`soft cap: ${ctx.file}:${line} ${label} is ${size} ${cap.unit} (soft cap ${cap.soft})`);
+  }
+}
+
+/** The links line directly under the H1 that names the four sibling files. */
+function validateLinksLine(ctx: Context, plan: ParsedPlan): void {
+  const lines = plan.lines;
+  const h1 = lines.findIndex((l, i) => i >= plan.frontmatterEnd && !l.fenced && !l.fenceMarker && /^# /.test(l.text));
+  const want = `Files: [Evidence index](${ctx.files.stem}${SIBLINGS.evidenceIndex}) · [Reviews](${ctx.files.stem}${SIBLINGS.reviews}) · [Gate record](${ctx.files.stem}${SIBLINGS.gateRecord}) · [Build](${ctx.files.stem}${SIBLINGS.build})`;
+  if (h1 === -1) {
+    err(ctx, "PLAN_FILES", 1, "the plan has no '# <title>' heading");
+    return;
+  }
+  const next = lines.slice(h1 + 1).find((l) => l.text.trim() !== "");
+  if (!next || next.text.trim() !== want) {
+    err(ctx, "PLAN_FILES", next?.no ?? lines[h1].no, `the line under the H1 must be exactly: ${want}`);
+  }
+}
+
+/** The two-tier caps on the spec's own prose. Drafts are exempt: they are still being written. */
+function validateCaps(ctx: Context, plan: ParsedPlan): void {
+  const lines = plan.lines;
+  for (const todo of plan.todos) {
+    const fieldLine = (name: string) =>
+      lines.find((l, i) => i >= todo.line && !l.fenced && l.text.startsWith(`- ${name}: `))?.no ?? todo.line;
+    for (const [field, cap] of [
+      ["Do", CAPS.todoDo],
+      ["Must not", CAPS.todoMustNot],
+      ["Acceptance", CAPS.todoAcceptance],
+      ["QA scenario", CAPS.todoQa],
+    ] as const) {
+      const value = todo.fields[field];
+      if (value) capCheck(ctx, fieldLine(field), `${todo.id} ${field}`, value, cap);
+    }
+  }
+  const bullets = (from: number, to: number) => lines.slice(from, to).filter((l) => !l.fenced && !l.fenceMarker && l.text.startsWith("- "));
+  const tldr = section(plan, "TL;DR");
+  if (tldr) for (const b of bullets(tldr.start, tldr.end)) capCheck(ctx, b.no, "TL;DR bullet", b.text.slice(2), CAPS.tldrBullet);
+  const scope = section(plan, "Scope");
+  if (scope) {
+    const subs = sectionsOf(lines, 3, scope.start, scope.end);
+    for (const title of ["Must have", "Must NOT have"]) {
+      const sub = subs.find((s) => s.title === title);
+      if (!sub) continue;
+      for (const b of bullets(sub.start, sub.end)) {
+        capCheck(ctx, b.no, `${/^- (M[HN]\d+)/.exec(b.text)?.[1] ?? title} bullet`, b.text.replace(/^- M[HN]\d+(:| —)\s*/, ""), CAPS.requirement);
+      }
+    }
+    const ledger = subs.find((s) => s.title === "IS / GAP ledger");
+    if (ledger) {
+      for (const row of tableBodyRows(lines, ledger.start, ledger.end)) {
+        for (const i of [1, 2]) if (row.cells[i]) capCheck(ctx, row.no, `${row.cells[0]} ledger cell ${i + 1}`, row.cells[i], CAPS.ledgerCell);
+      }
+    }
+    const coverage = subs.find((s) => s.title === "Coverage");
+    if (coverage) {
+      const body = lines.slice(coverage.start, coverage.end).filter((l) => !l.fenced && !l.fenceMarker);
+      capCheck(ctx, coverage.headingLine, "Coverage paragraph", body.map((l) => l.text).join(" "), CAPS.coverage);
+    }
+  }
+  for (const [title, columns] of [
+    ["Verification strategy", [1, 2]],
+    ["Success criteria", [2]],
+  ] as const) {
+    const s = section(plan, title);
+    if (!s) continue;
+    for (const row of tableBodyRows(lines, s.start, s.end)) {
+      for (const i of columns) if (row.cells[i]) capCheck(ctx, row.no, `${title} ${row.cells[0]} cell ${i + 1}`, row.cells[i], CAPS.proofCell);
+    }
+  }
 }
 
 function validateStructure(ctx: Context, plan: ParsedPlan): void {
@@ -925,6 +1087,7 @@ function validateStructure(ctx: Context, plan: ParsedPlan): void {
     err(ctx, "FRONTMATTER", 1, "plan must start with a '---' frontmatter block");
     return;
   }
+  validateLinksLine(ctx, plan);
   for (const key of Object.keys(plan.frontmatterLine)) {
     if (key.startsWith("duplicate:")) err(ctx, "FRONTMATTER", plan.frontmatterLine[key], `duplicate key '${key.slice(10)}'`);
   }
@@ -954,9 +1117,9 @@ function validateStructure(ctx: Context, plan: ParsedPlan): void {
   const expected = [...SECTIONS];
   let at = 0;
   for (const s of plan.sections) {
-    if ((TRAILING_SECTIONS as readonly string[]).includes(s.title)) continue;
     if (!(SECTIONS as readonly string[]).includes(s.title)) {
-      err(ctx, "SECTION", s.headingLine, `unknown top-level section '${s.title}'`);
+      const moved: Record<string, string> = { Review: ctx.files.reviews, "Result review": ctx.files.reviews, Build: ctx.files.build };
+      err(ctx, "SECTION", s.headingLine, moved[s.title] ? `'## ${s.title}' belongs in ${moved[s.title]}, not in the spec` : `unknown top-level section '${s.title}'`);
       continue;
     }
     const idx = expected.indexOf(s.title as (typeof SECTIONS)[number]);
@@ -974,6 +1137,8 @@ function validateStructure(ctx: Context, plan: ParsedPlan): void {
     for (const title of SCOPE_SUBSECTIONS) {
       if (!subs.includes(title)) err(ctx, "SECTION", scope.headingLine, `Scope is missing '### ${title}'`);
     }
+    const inline = sectionsOf(plan.lines, 3, scope.start, scope.end).find((s) => s.title === "Evidence index");
+    if (inline) err(ctx, "SECTION", inline.headingLine, `'### Evidence index' belongs in ${ctx.files.evidenceIndex}, not in the spec`);
   }
   const status = fm.status;
   const seen = new Set<string>();
@@ -1008,6 +1173,7 @@ function validateStructure(ctx: Context, plan: ParsedPlan): void {
   }
 
   if (status === "draft") return;
+  validateCaps(ctx, plan);
 
   for (const line of plan.lines) {
     if (!line.fenced && !line.fenceMarker && /^<!-- todo: .* -->\s*$/.test(line.text)) {
@@ -1158,7 +1324,7 @@ type SourceReader = (path: string) => Buffer | null;
 /** Checks the Evidence index. `reader` supplies the bytes the citations must
  * match: the current files, or the baseline snapshot on resume. */
 function validateEvidenceIndex(
-  ctx: Context,
+  mainCtx: Context,
   plan: ParsedPlan,
   reader: SourceReader,
   options: { planned: "strict" | "lenient" },
@@ -1166,8 +1332,11 @@ function validateEvidenceIndex(
   const citations = new Map<string, Citation>();
   const index = plan.evidenceIndex;
   const status = plan.frontmatter.status;
+  // Findings about the index itself point into the evidence file; a backticked
+  // citation that no entry covers points into the spec.
+  const ctx = inFile(mainCtx, mainCtx.files.evidenceIndex);
   if (index === null) {
-    err(ctx, "LEGACY_FORMAT", 1, "no fenced json under '### Evidence index'; upgrade the plan with plan-writer 0.5.0 and review it again");
+    err(ctx, "PLAN_FILES", 1, `${mainCtx.files.evidenceIndex} is missing or holds no fenced json block`);
     return citations;
   }
   if ("error" in index) {
@@ -1253,7 +1422,7 @@ function validateEvidenceIndex(
         str(c.path) === ref.path &&
         (c.kind === "planned" || (Number(c.startLine) <= ref.start && ref.end <= Number(c.endLine))),
     );
-    if (!covered) err(ctx, "UNINDEXED_CITATION", ref.line, `\`${ref.path}:${ref.start}${ref.end !== ref.start ? `-${ref.end}` : ""}\` has no Evidence index citation covering it`);
+    if (!covered) err(mainCtx, "UNINDEXED_CITATION", ref.line, `\`${ref.path}:${ref.start}${ref.end !== ref.start ? `-${ref.end}` : ""}\` has no Evidence index citation covering it`);
   }
 
   for (const raw of Array.isArray(value.coverage) ? value.coverage : []) {
@@ -1347,33 +1516,46 @@ export function requiredTargets(plan: ParsedPlan, citations: Map<string, Citatio
 
 type Round = { number: number; start: number; end: number; headingLine: number };
 
-function reviewRounds(plan: ParsedPlan): Round[] {
-  const review = section(plan, "Review");
-  if (!review) return [];
-  return sectionsOf(plan.lines, 3, review.start, review.end)
-    .map((s) => {
-      const m = /^Round (\d+)$/.exec(s.title);
-      return m ? { number: Number(m[1]), start: s.start, end: s.end, headingLine: s.headingLine } : null;
-    })
-    .filter((r): r is Round => r !== null);
-}
-
-export function latestGateRecord(plan: ParsedPlan): {
-  round: Round;
+/**
+ * The review record of a plan: the reviews file's `## Review` section, its
+ * rounds (newest first by convention; the highest number is the latest,
+ * wherever it sits), and the gate record file, which holds the latest round's
+ * gate record alone.
+ */
+export type ReviewBundle = {
+  lines: Line[];
+  review: Section | undefined;
+  rounds: Round[];
+  latest: Round | null;
   record: Record<string, unknown> | null;
-  error: string | null;
-  line: number;
-} | null {
-  const rounds = reviewRounds(plan);
-  if (rounds.length === 0) return null;
-  const round = rounds[rounds.length - 1];
-  const gate = sectionsOf(plan.lines, 4, round.start, round.end).find((s) => s.title === "Gate record");
-  if (!gate) return { round, record: null, error: "the latest round has no '#### Gate record'", line: round.headingLine };
-  const json = fencedJson(plan.lines, gate.start, gate.end);
-  if (!json) return { round, record: null, error: "'#### Gate record' has no fenced json object", line: gate.headingLine };
-  if ("error" in json) return { round, record: null, error: `gate record is not valid JSON: ${json.error}`, line: json.no };
-  if (!isObject(json.value)) return { round, record: null, error: "gate record must be a JSON object", line: json.no };
-  return { round, record: json.value, error: null, line: json.no };
+  recordError: string | null;
+};
+
+export function loadReview(reviewsText: string | null, gateText: string | null): ReviewBundle {
+  const lines = reviewsText === null ? [] : scanLines(reviewsText);
+  const review = sectionsOf(lines, 2).find((s) => s.title === "Review");
+  const rounds = review
+    ? sectionsOf(lines, 3, review.start, review.end)
+        .map((s) => {
+          const m = /^Round (\d+)$/.exec(s.title);
+          return m ? { number: Number(m[1]), start: s.start, end: s.end, headingLine: s.headingLine } : null;
+        })
+        .filter((r): r is Round => r !== null)
+    : [];
+  const latest = rounds.reduce<Round | null>((best, r) => (best === null || r.number > best.number ? r : best), null);
+  let record: Record<string, unknown> | null = null;
+  let recordError: string | null = null;
+  if (gateText === null) recordError = "the gate record file is missing";
+  else {
+    try {
+      const value = JSON.parse(gateText);
+      if (isObject(value)) record = value;
+      else recordError = "the gate record must be a JSON object";
+    } catch (error) {
+      recordError = `the gate record is not valid JSON: ${(error as Error).message}`;
+    }
+  }
+  return { lines, review, rounds, latest, record, recordError };
 }
 
 type ReviewOutcome = {
@@ -1385,32 +1567,36 @@ type ReviewOutcome = {
 };
 
 function validateReview(
-  ctx: Context,
+  mainCtx: Context,
   plan: ParsedPlan,
+  bundle: ReviewBundle,
   citations: Map<string, Citation>,
   currentDigest: string,
   reader: SourceReader,
 ): ReviewOutcome {
   const outcome: ReviewOutcome = { expected: null, recorded: null, digest: null, sources: {}, eligible: false };
-  const latest = latestGateRecord(plan);
-  if (!latest) {
-    err(ctx, "GATE_RECORD", section(plan, "Review")?.headingLine ?? 1, "no '### Round <n>' in '## Review'");
+  // Gate record findings point into the gate record file; rendered-round findings into the reviews file.
+  const ctx = inFile(mainCtx, mainCtx.files.gateRecord);
+  const rctx = inFile(mainCtx, mainCtx.files.reviews);
+  const latest = bundle.latest;
+  if (!bundle.review || !latest) {
+    err(rctx, "GATE_RECORD", bundle.review?.headingLine ?? 1, `no '### Round <n>' under '## Review' in ${mainCtx.files.reviews}`);
     return outcome;
   }
-  if (!latest.record) {
-    err(ctx, "GATE_RECORD", latest.line, latest.error ?? "missing gate record");
+  if (!bundle.record) {
+    err(ctx, "GATE_RECORD", 1, bundle.recordError ?? "missing gate record");
     return outcome;
   }
-  const g = latest.record;
-  const line = latest.line;
+  const g = bundle.record;
+  const line = 1;
   outcome.digest = sha256(canonicalJson(g));
   for (const key of ["schemaVersion", "round", "planDigest", "repository", "sources", "obligations", "flows", "checks", "blockers", "verdict"]) {
     if (!(key in g)) err(ctx, "GATE_RECORD", line, `gate record is missing '${key}'`);
   }
   if (g.schemaVersion !== SCHEMA_VERSION) err(ctx, "GATE_RECORD", line, `unknown gate record schemaVersion ${String(g.schemaVersion)}`);
-  if (g.round !== latest.round.number) err(ctx, "GATE_RECORD", line, `gate record round ${String(g.round)} does not match heading Round ${latest.round.number}`);
+  if (g.round !== latest.number) err(ctx, "GATE_RECORD", line, `gate record round ${String(g.round)} does not match the latest round, Round ${latest.number}`);
   if (String(g.round) !== plan.frontmatter.review_round) {
-    err(ctx, "GATE_RECORD", plan.frontmatterLine.review_round ?? 1, `review_round ${plan.frontmatter.review_round} does not match the latest round ${String(g.round)}`);
+    err(mainCtx, "GATE_RECORD", plan.frontmatterLine.review_round ?? 1, `review_round ${plan.frontmatter.review_round} does not match the latest round ${String(g.round)}`);
   }
   if (g.planDigest !== currentDigest) {
     err(ctx, "STALE_REVIEW", line, `gate record planDigest ${str(g.planDigest).slice(0, 12)} does not match the current spec ${currentDigest.slice(0, 12)}`);
@@ -1419,10 +1605,15 @@ function validateReview(
   if (!recorded) err(ctx, "GATE_RECORD", line, `verdict must be one of ${VERDICTS.join(", ")}`);
   outcome.recorded = recorded;
 
+  // A file the Evidence index already cites has its digest recorded once already.
+  const indexed = new Set([...citations.values()].filter((c) => c.kind === "source").map((c) => str(c.path)));
   for (const s of Array.isArray(g.sources) ? g.sources : []) {
     if (!isObject(s) || !str(s.path) || !/^[0-9a-f]{64}$/.test(str(s.sha256))) {
       err(ctx, "GATE_RECORD", line, "each gate source needs a path and sha256");
       continue;
+    }
+    if (indexed.has(str(s.path))) {
+      err(ctx, "GATE_RECORD", line, `gate source ${str(s.path)} is already cited by the Evidence index; list only files inspected outside it`);
     }
     const bytes = "error" in safeResolve(ctx.root, str(s.path)) ? null : reader(str(s.path));
     const current = bytes === null ? null : sha256(bytes);
@@ -1452,6 +1643,7 @@ function validateReview(
       if (!str(e[key])) err(ctx, "GATE_EVIDENCE", line, `${str(e.kind)} evidence ${str(e.id)} is missing '${key}'`);
     }
     if (e.kind === "probe" && typeof e.exit !== "number") err(ctx, "GATE_EVIDENCE", line, `probe evidence ${str(e.id)} needs a numeric exit`);
+    if (str(e.result)) capCheck(ctx, line, `evidence ${str(e.id)} result`, str(e.result), CAPS.recordProse);
   }
   const kindOf = (id: string): string | null => {
     const e = evidence.get(id);
@@ -1481,6 +1673,7 @@ function validateReview(
     const isRequired = o.required !== false;
     if (strArray(o.targets).length === 0) err(ctx, "GATE_RECORD", line, `obligation ${id} names no targets`);
     if (!str(o.observed)) err(ctx, "GATE_RECORD", line, `obligation ${id} has no observed result`);
+    else capCheck(ctx, line, `obligation ${id} observed`, str(o.observed), CAPS.recordProse);
     if (!isRequired) continue;
     required++;
     for (const t of strArray(o.targets)) covered.add(t);
@@ -1536,6 +1729,7 @@ function validateReview(
     if (c.status === "contradicted") checksContradicted++;
     else if (c.status !== "verified") ctx.gaps.push(`check ${letter} is ${str(c.status) || "unset"}`);
     if (!str(c.observed)) err(ctx, "GATE_RECORD", line, `check ${letter} has no observed result`);
+    else capCheck(ctx, line, `check ${letter} observed`, str(c.observed), CAPS.recordProse);
   }
   if (unverified > 0) ctx.gaps.push(`${unverified} required obligation(s) unverified`);
 
@@ -1574,62 +1768,67 @@ function validateReview(
   if (recorded === "REJECT" && blockers.length === 0) err(ctx, "GATE_BLOCKER", line, "REJECT needs at least one blocker");
   if (recorded !== "REJECT" && blockers.length > 0) err(ctx, "GATE_BLOCKER", line, `${recorded ?? "this"} verdict must not list blockers`);
   const status = plan.frontmatter.status;
-  if (recorded === "OKAY" && status !== "reviewed") err(ctx, "STATUS", plan.frontmatterLine.status ?? 1, "an OKAY round must set status: reviewed");
-  if (recorded && recorded !== "OKAY" && status !== "planned") err(ctx, "STATUS", plan.frontmatterLine.status ?? 1, `a ${recorded} round must set status: planned`);
+  if (recorded === "OKAY" && status !== "reviewed") err(mainCtx, "STATUS", plan.frontmatterLine.status ?? 1, "an OKAY round must set status: reviewed");
+  if (recorded && recorded !== "OKAY" && status !== "planned") err(mainCtx, "STATUS", plan.frontmatterLine.status ?? 1, `a ${recorded} round must set status: planned`);
 
-  // Rendered verdict, scope counts, history, and ledger.
-  const body = plan.lines.slice(latest.round.start, latest.round.end).filter((l) => !l.fenced && !l.fenceMarker);
+  // Rendered verdict, scope counts, history row, blockers, and open obligations,
+  // all in the latest round of the reviews file.
+  const lines = bundle.lines;
+  const body = lines.slice(latest.start, latest.end).filter((l) => !l.fenced && !l.fenceMarker);
   const verdictLine = body.find((l) => l.text.startsWith("**Verdict:**"));
   const rendered = verdictLine ? /PLAN-REVIEW: (OKAY|INCOMPLETE|REJECT \((\d+) blockers?\))/.exec(verdictLine.text) : null;
-  if (!rendered) err(ctx, "RENDERED_MISMATCH", latest.round.headingLine, "round has no '**Verdict:** PLAN-REVIEW: ...' line");
+  if (!rendered) err(rctx, "RENDERED_MISMATCH", latest.headingLine, "round has no '**Verdict:** PLAN-REVIEW: ...' line");
   else {
     const v = rendered[1].startsWith("REJECT") ? "REJECT" : rendered[1];
-    if (v !== recorded) err(ctx, "RENDERED_MISMATCH", verdictLine?.no ?? 1, `rendered verdict ${v} differs from gate record ${recorded ?? "none"}`);
+    if (v !== recorded) err(rctx, "RENDERED_MISMATCH", verdictLine?.no ?? 1, `rendered verdict ${v} differs from gate record ${recorded ?? "none"}`);
     if (rendered[2] && Number(rendered[2]) !== blockers.length) {
-      err(ctx, "RENDERED_MISMATCH", verdictLine?.no ?? 1, `rendered blocker count ${rendered[2]} differs from ${blockers.length} gate blockers`);
+      err(rctx, "RENDERED_MISMATCH", verdictLine?.no ?? 1, `rendered blocker count ${rendered[2]} differs from ${blockers.length} gate blockers`);
     }
   }
   const scopeLine = body.find((l) => l.text.startsWith("**Scope:**"));
   const obligationsCount = scopeLine ? /(\d+)\/(\d+) required obligations verified/.exec(scopeLine.text) : null;
   const flowsCount = scopeLine ? /(\d+)\/(\d+) critical flows verified/.exec(scopeLine.text) : null;
   if (!obligationsCount || Number(obligationsCount[1]) !== verified || Number(obligationsCount[2]) !== required) {
-    err(ctx, "RENDERED_MISMATCH", scopeLine?.no ?? latest.round.headingLine, `Scope must state ${verified}/${required} required obligations verified`);
+    err(rctx, "RENDERED_MISMATCH", scopeLine?.no ?? latest.headingLine, `Scope must state ${verified}/${required} required obligations verified`);
   }
   if (!flowsCount || Number(flowsCount[1]) !== flowsVerified || Number(flowsCount[2]) !== planFlows.length) {
-    err(ctx, "RENDERED_MISMATCH", scopeLine?.no ?? latest.round.headingLine, `Scope must state ${flowsVerified}/${planFlows.length} critical flows verified`);
+    err(rctx, "RENDERED_MISMATCH", scopeLine?.no ?? latest.headingLine, `Scope must state ${flowsVerified}/${planFlows.length} critical flows verified`);
   }
-  const review = section(plan, "Review") as Section;
-  const firstRound = reviewRounds(plan)[0];
-  const history = tableRows(plan.lines, review.start, firstRound ? firstRound.start - 1 : review.end).filter((r) => /^\d+$/.test(r.cells[0] ?? ""));
-  const last = history[history.length - 1];
-  if (!last || Number(last.cells[0]) !== latest.round.number || !(last.cells[2] ?? "").startsWith(recorded ?? "?")) {
-    err(ctx, "RENDERED_MISMATCH", last?.no ?? review.headingLine, `history table's last round must be ${latest.round.number} with verdict ${recorded ?? "?"}`);
+  const review = bundle.review as Section;
+  const firstRound = bundle.rounds[0];
+  const history = tableBodyRows(lines, review.start, firstRound ? firstRound.headingLine - 1 : review.end).filter((r) => /^\d+$/.test(r.cells[0] ?? ""));
+  const row = history.find((r) => Number(r.cells[0]) === latest.number);
+  if (!row || !(row.cells[2] ?? "").startsWith(recorded ?? "?")) {
+    err(rctx, "RENDERED_MISMATCH", row?.no ?? review.headingLine, `the history table needs a row for round ${latest.number} with verdict ${recorded ?? "?"}`);
+  } else if (row.cells.length < 5 || row.cells[4] === "") {
+    err(rctx, "RENDERED_MISMATCH", row.no, `the history row for round ${latest.number} needs a Summary cell`);
   }
-  // Every obligation that is not verified is rendered with its status; verified
-  // ones live in the gate record alone. A legacy full '#### Coverage and evidence'
-  // table still passes, as long as every row it renders agrees.
-  const ledgers = sectionsOf(plan.lines, 4, latest.round.start, latest.round.end).filter(
-    (s) => s.title === "Open obligations" || s.title === "Coverage and evidence",
-  );
-  const open = [...obligationStatus].filter(([, s]) => s !== "verified");
-  const ledgerLine = ledgers[0]?.headingLine ?? latest.round.headingLine;
-  if (ledgers.length === 0 && open.length > 0) {
-    err(ctx, "RENDERED_MISMATCH", ledgerLine, `round has no '#### Open obligations' list for ${open.map(([id]) => id).join(", ")}`);
-  }
-  const renderedIds = new Set<string>();
-  for (const ledger of ledgers) {
-    for (const r of tableBodyRows(plan.lines, ledger.start, ledger.end)) {
-      const id = r.cells[0].split(/\s+/)[0];
-      const status = r.cells.length >= 2 ? r.cells[r.cells.length - 1] : "";
-      if (renderedIds.has(id)) err(ctx, "RENDERED_MISMATCH", r.no, `duplicate rendered obligation ${id}`);
-      renderedIds.add(id);
-      if (!obligationStatus.has(id)) err(ctx, "RENDERED_MISMATCH", r.no, `rendered row ${id} is not in the gate record`);
-      else if (obligationStatus.get(id) !== status) err(ctx, "RENDERED_MISMATCH", r.no, `rendered status of ${id} is '${status}', gate record says '${obligationStatus.get(id)}'`);
+  const blockerSection = sectionsOf(lines, 4, latest.start, latest.end).find((s) => s.title === "Blockers");
+  if (blockerSection) {
+    for (const l of lines.slice(blockerSection.start, blockerSection.end)) {
+      if (!l.fenced && !l.fenceMarker && /^\d+\. /.test(l.text)) capCheck(rctx, l.no, "blocker paragraph", l.text.replace(/^\d+\. /, ""), CAPS.blocker);
     }
   }
-  if (ledgers.length > 0) {
+  // Every obligation that is not verified is rendered with its status; verified
+  // ones live in the gate record alone.
+  const ledger = sectionsOf(lines, 4, latest.start, latest.end).find((s) => s.title === "Open obligations");
+  const open = [...obligationStatus].filter(([, s]) => s !== "verified");
+  const ledgerLine = ledger?.headingLine ?? latest.headingLine;
+  if (!ledger && open.length > 0) {
+    err(rctx, "RENDERED_MISMATCH", ledgerLine, `round has no '#### Open obligations' list for ${open.map(([id]) => id).join(", ")}`);
+  }
+  if (ledger) {
+    const renderedIds = new Set<string>();
+    for (const r of tableBodyRows(lines, ledger.start, ledger.end)) {
+      const id = r.cells[0].split(/\s+/)[0];
+      const renderedStatus = r.cells.length >= 2 ? r.cells[r.cells.length - 1] : "";
+      if (renderedIds.has(id)) err(rctx, "RENDERED_MISMATCH", r.no, `duplicate rendered obligation ${id}`);
+      renderedIds.add(id);
+      if (!obligationStatus.has(id)) err(rctx, "RENDERED_MISMATCH", r.no, `rendered row ${id} is not in the gate record`);
+      else if (obligationStatus.get(id) !== renderedStatus) err(rctx, "RENDERED_MISMATCH", r.no, `rendered status of ${id} is '${renderedStatus}', gate record says '${obligationStatus.get(id)}'`);
+    }
     for (const [id] of open) {
-      if (!renderedIds.has(id)) err(ctx, "RENDERED_MISMATCH", ledgerLine, `open obligation ${id} is missing from the rendered list`);
+      if (!renderedIds.has(id)) err(rctx, "RENDERED_MISMATCH", ledgerLine, `open obligation ${id} is missing from the rendered list`);
     }
   }
   outcome.eligible = expected === "OKAY" && recorded === "OKAY";
@@ -1648,12 +1847,14 @@ type Receipt = Record<string, unknown> & {
   after: { snapshot: string; manifestSha256: string; stateDigest: string } | null;
 };
 
-export function buildRecord(plan: ParsedPlan): { value: unknown; no: number } | { error: string; no: number } | null {
-  const build = section(plan, "Build");
-  if (!build) return null;
-  const sub = sectionsOf(plan.lines, 3, build.start, build.end).find((s) => s.title === "Build record");
-  if (!sub) return { error: "'## Build' has no '### Build record'", no: build.headingLine };
-  return fencedJson(plan.lines, sub.start, sub.end) ?? { error: "'### Build record' has no fenced json", no: sub.headingLine };
+/**
+ * The build file's record: its fenced json blocks merged, so the first block
+ * holds the record with `receipts: []` and each later block appends
+ * `{"receipts": [<one receipt>]}`. Null when there is no build file.
+ */
+export function buildRecord(buildText: string | null): { value: unknown; no: number } | { error: string; no: number } | null {
+  if (buildText === null) return null;
+  return jsonBlocksOf(buildText) ?? { error: "the build file holds no fenced json block", no: 1 };
 }
 
 type ResumeOutcome = {
@@ -1677,7 +1878,18 @@ function executionOrder(plan: ParsedPlan): string[] {
   return order;
 }
 
-function validateResume(ctx: Context, plan: ParsedPlan, planRel: string, currentDigest: string, inGit: boolean): ResumeOutcome {
+function validateResume(
+  mainCtx: Context,
+  plan: ParsedPlan,
+  bundle: ReviewBundle,
+  buildText: string | null,
+  currentDigest: string,
+  inGit: boolean,
+): ResumeOutcome {
+  const ctx = inFile(mainCtx, mainCtx.files.build);
+  const planRel = mainCtx.files.plan;
+  // The reviews and build files change during a build by design; a capture declares them as reports.
+  const siblingReports = [mainCtx.files.reviews, mainCtx.files.build];
   const out: ResumeOutcome = {
     eligible: false,
     nextTodo: null,
@@ -1689,9 +1901,9 @@ function validateResume(ctx: Context, plan: ParsedPlan, planRel: string, current
     drift: [],
     exit2: false,
   };
-  const record = buildRecord(plan);
+  const record = buildRecord(buildText);
   if (!record) {
-    err(ctx, "BUILD_RECORD", 1, "--resume needs a '## Build' section with a Build record");
+    err(ctx, "BUILD_RECORD", 1, `--resume needs the build file ${mainCtx.files.build}`);
     out.exit2 = true;
     return out;
   }
@@ -1715,9 +1927,9 @@ function validateResume(ctx: Context, plan: ParsedPlan, planRel: string, current
     err(ctx, "SPEC_CHANGED", line, "the plan's canonical spec differs from the approved spec; start a new review and a new build run");
     blocked = true;
   }
-  const latest = latestGateRecord(plan);
-  const liveDigest = latest?.record ? sha256(canonicalJson(latest.record)) : null;
-  if (plan.frontmatter.status !== "reviewed" || !latest?.record || latest.round.number !== approval.round || liveDigest !== approval.gateRecordDigest || latest.record.verdict !== "OKAY") {
+  const latest = bundle.latest && bundle.record ? { round: bundle.latest, record: bundle.record } : null;
+  const liveDigest = latest ? sha256(canonicalJson(latest.record)) : null;
+  if (plan.frontmatter.status !== "reviewed" || !latest || latest.round.number !== approval.round || latest.record.round !== approval.round || liveDigest !== approval.gateRecordDigest || latest.record.verdict !== "OKAY") {
     err(ctx, "APPROVAL_CHANGED", line, "the live review no longer matches the approval this build started from; get an explicit re-reviewed handoff before continuing");
     blocked = true;
   }
@@ -1756,6 +1968,12 @@ function validateResume(ctx: Context, plan: ParsedPlan, planRel: string, current
   };
   const baseline = load(baselineRef, "baseline");
   if (!baseline) return out;
+  const declared = baseline.manifest.administrative?.reports ?? [];
+  const undeclared = siblingReports.filter((p) => !declared.includes(p));
+  if (undeclared.length > 0) {
+    err(ctx, "BUILD_RECORD", line, `the baseline snapshot does not declare ${undeclared.join(" and ")} as reports; capture it with capture-build-state.ts, which declares them`);
+    blocked = true;
+  }
   if (canonicalJson(baseline.manifest.repository) !== canonicalJson(b.repository)) {
     err(ctx, "REPOSITORY_MISMATCH", line, "baseline snapshot belongs to a different repository than the Build record");
     blocked = true;
@@ -1790,10 +2008,10 @@ function validateResume(ctx: Context, plan: ParsedPlan, planRel: string, current
       }
     }
   }
-  const baseCtx: Context = { ...ctx, errors: [], gaps: [] };
+  const baseCtx: Context = { ...mainCtx, errors: [], gaps: [], capGaps: [] };
   validateEvidenceIndex(baseCtx, plan, baselineReader, { planned: "lenient" });
   for (const e of baseCtx.errors) {
-    if (["CITATION", "EXCERPT", "CITATION_DRIFT"].includes(e.code)) err(ctx, e.code, e.line, `against the baseline: ${e.message}`);
+    if (["CITATION", "EXCERPT", "CITATION_DRIFT"].includes(e.code)) err(inFile(ctx, e.file), e.code, e.line, `against the baseline: ${e.message}`);
   }
 
   // Receipt chain.
@@ -1815,6 +2033,18 @@ function validateResume(ctx: Context, plan: ParsedPlan, planRel: string, current
       continue;
     }
     if (r.seq !== i + 1) err(ctx, "RECEIPT_CHAIN", line, `${label} has seq ${String(r.seq)}`);
+    for (const key of Object.keys(r)) {
+      if (!(RECEIPT_KEYS as readonly string[]).includes(key)) {
+        err(ctx, "RECEIPT_FIELD", line, `${label} has unknown key '${key}'; the snapshots record what changed, and long output belongs in a log file named by 'log'`);
+      }
+    }
+    if (str(r.note)) capCheck(ctx, line, `${label} note`, str(r.note), CAPS.recordProse);
+    for (const c of Array.isArray(r.checks) ? r.checks : []) {
+      if (isObject(c) && str(c.observed)) capCheck(ctx, line, `${label} check ${str(c.id) || str(c.command)} observed`, str(c.observed), CAPS.recordProse);
+    }
+    for (const p of Array.isArray(r.prerequisites) ? r.prerequisites : []) {
+      if (isObject(p) && str(p.observed)) capCheck(ctx, line, `${label} prerequisite observed`, str(p.observed), CAPS.recordProse);
+    }
     if (r.prev !== prevDigest) err(ctx, "RECEIPT_CHAIN", line, `${label} does not chain to the previous receipt (tampered or reordered)`);
     prevDigest = sha256(canonicalJson(r));
     if (!(RECEIPT_EVENTS as readonly string[]).includes(r.event)) err(ctx, "RECEIPT_CHAIN", line, `${label} has unknown event '${String(r.event)}'`);
@@ -1841,7 +2071,7 @@ function validateResume(ctx: Context, plan: ParsedPlan, planRel: string, current
     }
     const end = afterSnap ?? beforeSnap;
     if (end && afterSnap) {
-      for (const d of diffStates(prevManifest, afterSnap.manifest, [planRel, ...(afterSnap.manifest.administrative?.reports ?? [])])) {
+      for (const d of diffStates(prevManifest, afterSnap.manifest, [planRel, ...siblingReports, ...(afterSnap.manifest.administrative?.reports ?? [])])) {
         const path = d.replace(/ \[(head|index|worktree)\]$/, "");
         changedByDone.set(path, r.seq);
       }
@@ -1878,7 +2108,7 @@ function validateResume(ctx: Context, plan: ParsedPlan, planRel: string, current
 
   // Boxes.
   for (const todo of plan.todos) {
-    if (todo.box === "Done" && !passed.has(todo.id)) err(ctx, "DONE_WITHOUT_RECEIPT", todo.line, `${todo.id} is marked Done without a passed receipt`);
+    if (todo.box === "Done" && !passed.has(todo.id)) err(mainCtx, "DONE_WITHOUT_RECEIPT", todo.line, `${todo.id} is marked Done without a passed receipt`);
     if (todo.box === "Open" && passed.has(todo.id)) out.reconcileBoxes.push(todo.id);
   }
 
@@ -1894,7 +2124,7 @@ function validateResume(ctx: Context, plan: ParsedPlan, planRel: string, current
     const inv = inventoryState(ctx.root, { carry: [...carry], include: [...includes] });
     const digest = stateDigest(inv.body, planRel, (d) => inv.blobs.get(d) as Buffer, reports);
     if (digest !== prevEnd.stateDigest) {
-      out.drift = diffStates(prevManifest, inv.body, [planRel, ...reports]);
+      out.drift = diffStates(prevManifest, inv.body, [planRel, ...siblingReports, ...reports]);
       if (out.drift.length === 0) out.drift = [`${planRel} [spec]`];
       out.recoveryRequired = true;
       out.unresolvedAction = `investigate unrecorded changes (${out.drift.slice(0, 5).join(", ")}${out.drift.length > 5 ? ", …" : ""}); rerun affected checks, then record a recovery receipt before advancing`;
@@ -1945,10 +2175,12 @@ export function validatePlan(planPath: string, options: Options = {}): Validatio
   const mode: Mode = options.resume ? "resume" : options.review ? "review" : "plan";
   const absPlan = resolve(root, planPath);
   const planRel = absPlan.startsWith(root + sep) ? absPlan.slice(root.length + 1).split(sep).join("/") : planPath;
+  const files = planFiles(planRel);
   const result: ValidationResult = {
     schemaVersion: 1,
     validationMode: mode,
     plan: planRel,
+    files: { plan: files.plan, evidenceIndex: files.evidenceIndex, reviews: files.reviews, gateRecord: files.gateRecord, build: files.build },
     errors: [],
     gaps: [],
     planDigest: null,
@@ -1967,16 +2199,25 @@ export function validatePlan(planPath: string, options: Options = {}): Validatio
     drift: [],
     exitCode: 0,
   };
-  const ctx: Context = { file: planRel, root, errors: result.errors, gaps: result.gaps };
+  const ctx: Context = { file: planRel, root, files, errors: result.errors, gaps: result.gaps, capGaps: [] };
   const bytes = readBytes(absPlan);
   if (bytes === null) {
     err(ctx, "UNREADABLE", 0, `cannot read plan ${planPath}`);
     result.exitCode = 2;
     return result;
   }
+  const sibling = (rel: string): string | null => {
+    const b = readBytes(resolve(root, rel));
+    return b === null ? null : b.toString("utf8");
+  };
+  const dirName = files.dir.split("/").pop() ?? "";
+  if (dirName !== files.stem) {
+    err(ctx, "PLAN_FILES", 1, `a plan lives in a directory named after it: expected .../${files.stem}/${files.stem}.md, got ${planRel}`);
+  }
   const text = bytes.toString("utf8");
-  const plan = parsePlan(text);
-  const digest = canonicalSpecDigest(text);
+  const evidenceText = sibling(files.evidenceIndex);
+  const plan = parsePlan(text, evidenceText ?? undefined);
+  const digest = canonicalSpecDigest(text, evidenceText ?? "");
   result.planDigest = digest;
   validateStructure(ctx, plan);
 
@@ -1984,11 +2225,11 @@ export function validatePlan(planPath: string, options: Options = {}): Validatio
     const safe = safeResolve(root, path);
     return "error" in safe ? null : readBytes(safe.abs);
   };
-  const hasBuild = section(plan, "Build") !== undefined;
+  const buildText = sibling(files.build);
   const citations =
     mode === "resume"
       ? validateEvidenceIndexQuiet(ctx, plan)
-      : validateEvidenceIndex(ctx, plan, currentReader, { planned: hasBuild ? "lenient" : "strict" });
+      : validateEvidenceIndex(ctx, plan, currentReader, { planned: buildText !== null ? "lenient" : "strict" });
   for (const c of citations.values()) {
     if (c.kind === "source") result.sourceDigests[str(c.path)] = (() => {
       const b = currentReader(str(c.path));
@@ -1996,9 +2237,10 @@ export function validatePlan(planPath: string, options: Options = {}): Validatio
     })();
   }
 
-  if (mode === "review" || mode === "resume") {
+  const bundle = mode === "plan" ? null : loadReview(sibling(files.reviews), sibling(files.gateRecord));
+  if (bundle) {
     const reviewCtx = mode === "resume" ? { ...ctx, errors: [] as Finding[] } : ctx;
-    const review = validateReview(reviewCtx, plan, citations, digest, currentReader);
+    const review = validateReview(reviewCtx, plan, bundle, citations, digest, currentReader);
     if (mode === "resume") {
       // Current-source drift is expected during a build; keep only record-shape errors.
       for (const e of reviewCtx.errors) {
@@ -2011,9 +2253,9 @@ export function validatePlan(planPath: string, options: Options = {}): Validatio
     Object.assign(result.sourceDigests, review.sources);
     if (mode === "review") result.gateEligible = review.eligible && result.errors.length === 0;
   }
-  if (mode === "resume") {
+  if (mode === "resume" && bundle) {
     const inGit = isGitRoot(root);
-    const resume = validateResume(ctx, plan, planRel, digest, inGit);
+    const resume = validateResume(ctx, plan, bundle, buildText, digest, inGit);
     result.resumeEligible = resume.eligible && result.errors.length === 0;
     result.nextTodo = resume.nextTodo;
     result.activeTodo = resume.activeTodo;
@@ -2023,10 +2265,13 @@ export function validatePlan(planPath: string, options: Options = {}): Validatio
     result.reconcileBoxes = resume.reconcileBoxes;
     result.drift = resume.drift;
     if (resume.exit2) {
+      result.gaps.push(...ctx.capGaps);
       result.exitCode = 2;
       return result;
     }
   }
+  // Soft caps never decide a verdict, so they join the gaps list only now.
+  result.gaps.push(...ctx.capGaps);
   result.exitCode = result.errors.length > 0 ? 1 : 0;
   return result;
 }
@@ -2034,7 +2279,7 @@ export function validatePlan(planPath: string, options: Options = {}): Validatio
 /** Structure-only index check used on resume, where citations are checked
  * against the baseline snapshot instead of the current files. */
 function validateEvidenceIndexQuiet(ctx: Context, plan: ParsedPlan): Map<string, Citation> {
-  const quiet: Context = { ...ctx, errors: [], gaps: [] };
+  const quiet: Context = { ...ctx, errors: [], gaps: [], capGaps: [] };
   const citations = validateEvidenceIndex(quiet, plan, () => Buffer.alloc(0), { planned: "lenient" });
   for (const e of quiet.errors) {
     if (!["CITATION", "EXCERPT", "CITATION_DRIFT"].includes(e.code)) ctx.errors.push(e);
@@ -2045,13 +2290,15 @@ function validateEvidenceIndexQuiet(ctx: Context, plan: ParsedPlan): Map<string,
 export const USAGE = `Usage: validate-plan <plan> [--review [--resume]] [--root <project>] [--json]
 
 Checks a plan-writer plan (default), its latest plan-review gate record
-(--review), or a plan-builder resume state (--review --resume).
+(--review), or a plan-builder resume state (--review --resume). <plan> is
+docs/plans/<stem>/<stem>.md; the four sibling files are found beside it.
 
-  --review        Also check the latest '### Round <n>' gate record and report
-                  gateEligible. Exit 0 is not approval: read gateEligible.
-  --resume        With --review: verify the archived approval against the
-                  build baseline and the receipt chain against the current
-                  project, and report resumeEligible and nextTodo.
+  --review        Also check the latest '### Round <n>' in <stem>.reviews.md
+                  against <stem>.gate-record.json and report gateEligible.
+                  Exit 0 is not approval: read gateEligible.
+  --resume        With --review: verify the approval against the build
+                  baseline and the receipt chain in <stem>.build.md against
+                  the current project, and report resumeEligible and nextTodo.
   --root <dir>    Project root for citations and snapshots. Default: cwd.
   --json          Print one JSON object instead of text findings.
   --help          Show this message.

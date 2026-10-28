@@ -4,7 +4,7 @@ Read this file when building the coverage ledger and before deciding a verdict. 
 
 ## Build the ledger
 
-Give each obligation a stable `O<n>` id. Cover every required target validator-contract.md names: each `MH<n>` and `MN<n>`; every todo's `.start`, `.acceptance`, and `.qa`; every `dep:T<a>:T<b>`; every `F<n>.acceptance`; every Evidence index flow's `flow:<id>`; every external citation's `contract:<id>`; and `check:A` through `check:J`. Group targets into one obligation only when the same evidence supports all of them. Map each row to its owning todos and planned QA. Also account for Checks A–J.
+Give each obligation a stable `O<n>` id. Cover every required target validator-contract.md names: each `MH<n>` and `MN<n>`; every todo's `.start`, `.acceptance`, and `.qa`; every `dep:T<a>:T<b>`; every `F<n>.acceptance`; every evidence index flow's `flow:<id>`; every external citation's `contract:<id>`; and `check:A` through `check:J`. Group targets into one obligation only when the same evidence supports all of them. Map each row to its owning todos and planned QA. Also account for Checks A–J.
 
 Record three things separately:
 
@@ -15,6 +15,8 @@ Record three things separately:
 Versioned documentation can verify an external contract. Plan inspection can verify a decision, dependency, or writer-contract requirement. Neither proves runtime behavior by itself. General guidance, analogies, and unversioned examples cannot establish an exact callback signature or lifecycle guarantee.
 
 For each behavioral guarantee, identify the existing behavior and the specific planned change that makes the guarantee true. A future assertion such as "existing backups stay unchanged" is not that change. If the source violates the guarantee and the plan leaves the controlling behavior unchanged, mark the obligation contradicted. A generic "fix checks until they pass" instruction cannot supply a missing implementation decision.
+
+For an addition, removal, or rename, independently search consumers of the changed inventory: enumeration, registrations, counts, generated lists, and assertions or snapshots. Challenge the writer's exclusions by reading the consuming code, including aggregate checks inside files with another main purpose. A filename or an unchanged neighboring feature does not justify exclusion. Confirm that each affected consumer has an explicit planned change. Record the evidence under Check A; use the existing verdict rules and report fields.
 
 Assign each required row one status:
 
@@ -66,6 +68,16 @@ Newly demonstrated failures remain reportable even when an earlier round passed 
 - Zero blockers with required unverified rows is INCOMPLETE. Only zero blockers plus complete required coverage can produce OKAY.
 - Owner waivers and acceptance of risk remain separate from technical verification. If the owner actually changes the requirement, review the revised scope and record that change; do not relabel the original failure as a pass.
 - Structural validation can check report shape and arithmetic. It cannot prove that the reviewer read the cited code or that a flow works. Never use a passing validator as the sole approval evidence.
+
+## Not a blocker
+
+These are recorded as Notes, if at all. None of them stops a capable developer:
+
+- Two todos in different waves edit the same file without declaring it. Waves run in order, so the later todo sees the earlier one's result. Two todos in the same wave editing one file is a blocker, because they run independently.
+- A commit subject whose wording differs from what the reviewer would write. Check the type, the scope, and that it says what the todo changes; the builder may shorten a subject.
+- A todo that does not predict the exact compiler or linter diagnostic code a failure will print. A plan names the failing command and the expected outcome; the code is the builder's observation.
+- A field past its soft cap. The validator lists it as a gap; it is a writing note, not an execution defect.
+- Anything the validator already accepts as structurally correct, raised again as a matter of form.
 
 Before saving OKAY, reconcile the ledger, critical-flow records, Checks A–J, blocker count, and frontmatter. After saving, re-read the review and confirm that its verdict and identity still match the evidence. If writing is unavailable, return the review with the limitation and do not claim that the plan file was updated.
 

@@ -1,6 +1,6 @@
 ---
 name: plan-writer
-description: Writes an implementation plan after investigating the codebase to closure. Classifies the request, follows producers and consumers until no relevant edge is unread, verifies external contracts at the target version, and asks product questions before technical ones. Writes docs/plans/<date>-<slug>.md with quoted citations, critical flows, a baseline, todos tested one at a time, and a final verification wave, then validates it. Resumes a draft from its open frontier. Use when writing a plan, planning a feature or refactor, making an implementation plan, breaking work into tasks, resuming a draft plan, or fixing a rejected plan.
+description: Writes an implementation plan after investigating the codebase to closure. Classifies the request, follows producers and consumers until no relevant edge is unread, verifies external contracts at the target version, and asks product questions before technical ones. Writes a plan directory, docs/plans/<date>-<slug>/, with quoted citations, critical flows, a baseline, todos tested one at a time, and a final verification wave, then validates it. Resumes a draft from its open frontier. Use when writing a plan, planning a feature or refactor, making an implementation plan, breaking work into tasks, resuming a draft plan, or fixing a rejected plan.
 license: CC-BY-ND-4.0
 metadata:
   version: "1.0.0"
@@ -13,7 +13,9 @@ metadata:
 
 ## Purpose
 
-A plan is a record of decisions a capable developer can execute without asking anyone, backed by evidence a reviewer can check. plan-writer investigates the codebase until every relevant producer and consumer is read or excluded with a reason, researches the external contracts the change relies on, and asks the owner only what the owner can answer: product questions first, technical questions second. It writes one file that survives across turns. The file is a `draft` while investigation or questions are open, `planned` when the task breakdown is complete and validates, and `reviewed` once `plan-review` approves it. Every citation carries a short quoted excerpt and a file digest in an Evidence index, so a stale or invented citation fails a mechanical check. There is no file, search, or page budget: the owner chose completeness over investigation cost, which overrides `skill-writer`'s work-budget rule for this skill. Completeness applies to the investigation, not to what the plan stores. The plan says each thing once, in the place an implementer reads it, and always reads as the current truth, never as a history of its fixes. An interruption leaves a resumable draft, never a planned file. plan-writer never writes code and never reviews its own plan. Say "build this plan" to your normal coding agent to build it with `plan-builder`. If your session is in a read-only planning mode, such as Claude Code's Plan Mode or Cursor's Plan mode, exploration and questions run as described, and the file write waits for that mode's own approval step. This skill's persona never sets a plan-only permission mode of its own. The `suggested-model` hint is advisory; the skill runs on any model.
+A plan is a record of decisions a capable developer can execute without asking anyone, backed by evidence a reviewer can check. plan-writer investigates the codebase until every relevant producer and consumer is read or excluded with a reason, researches the external contracts the change relies on, and asks the owner only what the owner can answer: product questions first, technical questions second. It writes a plan directory that survives across turns: the spec and its evidence index, beside the files review and build fill in later. The file is a `draft` while investigation or questions are open, `planned` when the task breakdown is complete and validates, and `reviewed` once `plan-review` approves it. Every citation carries a short quoted excerpt and a file digest in the evidence index, so a stale or invented citation fails a mechanical check. There is no file, search, or page budget: the owner chose completeness over investigation cost, which overrides `skill-writer`'s work-budget rule for this skill. Completeness applies to the investigation, not to what the plan stores. The plan says each thing once, in the place an implementer reads it, and always reads as the current truth, never as a history of its fixes.
+
+**Balance rule.** A record earns its bytes only by changing what the next agent does. Write a row only for a status other than the default, never restate a machine record such as the evidence index as prose, and never re-render a table that did not change. The validator enforces field caps ([plan-review's validator-contract.md](../plan-review/references/validator-contract.md), Field caps): past a soft cap is a gap, past twice it an error. An interruption leaves a resumable draft, never a planned file. plan-writer never writes code and never reviews its own plan. Say "build this plan" to your normal coding agent to build it with `plan-builder`. If your session is in a read-only planning mode, such as Claude Code's Plan Mode or Cursor's Plan mode, exploration and questions run as described, and the file write waits for that mode's own approval step. This skill's persona never sets a plan-only permission mode of its own. The `suggested-model` hint is advisory; the skill runs on any model.
 
 ## When to use / when NOT to use
 
@@ -35,42 +37,42 @@ Do NOT use plan-writer when you:
 ## Workflow
 
 1. Restate the request in one line. Classify its **intent** as `refactor`, `build` (from scratch), `change` (a mid-sized feature or fix), `architecture`, or `research`. Classify its **tier** as `trivial`, `standard`, or `architecture`. A `trivial` tier ends the run: in an interactive session, say why in one sentence and offer to do the change directly; in a non-interactive run, reply `trivial: <reason>` and stop. A `standard` tier sets `review: optional`; an `architecture` tier sets `review: required`.
-2. Resume check, in this order, stopping at the first hit: (a) the caller gave a plan path; (b) the request names a ticket id and a file under `docs/plans/` has `source: ticket:<id>`; (c) the slug computed from the request (lowercase, hyphenated, 3 to 6 words) matches an existing `docs/plans/*-<slug>.md`; (d) otherwise, list every `docs/plans/*.md` with `status: draft` and a `date` in the last 14 days, with its `title` and `request`, and ask which to resume, or none. In a non-interactive run, skip (d) and start fresh. A `draft` whose first TL;DR line starts with `Blocked:` is still blocked: say so and stop. Any other `draft` resumes at step 5 with its Evidence index: recheck cited sources and work the open frontier first, then take answers from the conversation or from `## Questions`, then continue with the first unfinished step. A `draft` with no Evidence index was not written by this version: say so, and upgrade it only when asked. A `planned` or `reviewed` match is not resumed: say so and stop unless a new plan or a fix was asked for.
+2. Resume check, in this order, stopping at the first hit: (a) the caller gave a plan path; (b) the request names a ticket id and a file under `docs/plans/` has `source: ticket:<id>`; (c) the slug computed from the request (lowercase, hyphenated, 3 to 6 words) matches an existing `docs/plans/*-<slug>/*-<slug>.md`; (d) otherwise, list every `docs/plans/*/*.md` spec with `status: draft` and a `date` in the last 14 days, with its `title` and `request`, and ask which to resume, or none. In a non-interactive run, skip (d) and start fresh. A `draft` whose first TL;DR line starts with `Blocked:` is still blocked: say so and stop. Any other `draft` resumes at step 5 with its evidence index: recheck cited sources and work the open frontier first, then take answers from the conversation or from `## Questions`, then continue with the first unfinished step. A plan that is a single file rather than a directory was not written by this version: say so, and upgrade it only when asked. A `planned` or `reviewed` match is not resumed: say so and stop unless a new plan or a fix was asked for.
 3. Idea refinement. Runs only on a fresh plan whose `source` is `chat`; a tracked ticket goes through `issue-refiner` at step 7. When the request names no concrete deliverable, reads as a wish or a problem area, or leaves who benefits and what success looks like unclear, ask up to three sharpening questions in one message: who it serves and what problem it solves, what success looks like, and any real constraint or non-goal. Fold the answers into the restated request. In a non-interactive run, or when the user has nothing to add, proceed and record each assumption under "Decisions made". When the request is concrete, skip this step and say so in one line.
-4. Determine the branch name, on a fresh plan only. Use a convention the repository states in `CONTRIBUTING.md`, `AGENTS.md`, or a pull request template. Otherwise sample the repository's recent branches (`git branch -a --sort=-committerdate`) for a real pattern and match it. When there are no branches to sample, use `<type>/<slug>`: `feat` for `build` or `change`, `fix` for a bug-shaped `change`, `refactor` for `refactor`, `chore` for `research`, with the ticket id ahead of the slug when `source: ticket:<id>`. Record it as `branch:` and in the TL;DR. Then write the skeleton, as "Writing discipline" below describes: the plan file now exists, with `status: draft`, and every later step edits it in small pieces.
-5. Record the baseline: the repository revision and dirty files, or `nonGit`, and the result of each test, lint, validate, or build command the project defines. Record failures as they are. Append the result to the Evidence index as soon as each command finishes.
-6. Investigate to closure. Read [references/coverage.md](references/coverage.md). Start from the request's behavior, entry points, affected artifacts, and tests. Follow producers and consumers recursively across every edge kind in that reference, beyond the files the request names. Record each source you rely on as a citation with a literal excerpt and the file SHA-256, each area as a coverage row, and each open item on the frontier. Append each one to the file's Evidence index the moment you have it, one entry per edit, not at the end. Continue until coverage is closed. When the session may end first, write the draft with the frontier and its next action, keep `status: draft`, and stop. An unread file never becomes an owner question.
+4. Determine the branch name, on a fresh plan only. Use a convention the repository states in `CONTRIBUTING.md`, `AGENTS.md`, or a pull request template. Otherwise sample the repository's recent branches (`git branch -a --sort=-committerdate`) for a real pattern and match it. When there are no branches to sample, use `<type>/<slug>`: `feat` for `build` or `change`, `fix` for a bug-shaped `change`, `refactor` for `refactor`, `chore` for `research`, with the ticket id ahead of the slug when `source: ticket:<id>`. Record it as `branch:` and in the TL;DR. Then write the skeleton, as "Writing discipline" below describes: the spec and its evidence index now exist, with `status: draft`, and every later step edits them in small pieces.
+5. Record the baseline: the repository revision and dirty files, or `nonGit`, and the result of each test, lint, validate, or build command the project defines. Record failures as they are. Append the result to the evidence index as soon as each command finishes.
+6. Investigate to closure. Read [references/coverage.md](references/coverage.md). Start from the request's behavior, entry points, affected artifacts, and tests. Follow producers and consumers recursively across every edge kind in that reference, beyond the files the request names. Record each source you rely on as a citation with a literal excerpt and the file SHA-256, each area as a coverage row, and each open item on the frontier. Append each one to the evidence index the moment you have it, one entry per edit, not at the end. Continue until coverage is closed. When the session may end first, write the draft with the frontier and its next action, keep `status: draft`, and stop. An unread file never becomes an owner question.
 7. Ticket vagueness, only for a tracked ticket: after investigating, when there is still no stated outcome, no acceptance criterion can be written from the ticket or the code, and the scope is unbounded. In an interactive session with `issue-refiner` available, say in two lines that the ticket is too vague to plan and ask yes or no; on yes, run `issue-refiner` to completion and continue from step 8 with the refined brief. Otherwise write the draft with its first TL;DR line `Blocked: ticket <id> is too vague to plan. Run issue-refiner on it, then re-run plan-writer.`, list what is missing, and stop.
 8. Research. Read [references/external-research.md](references/external-research.md). Verify every external contract a todo relies on at the version the project uses, and record each as an `external` citation. Research ends when those contracts are verified, not at a count. An unreachable required contract stays on the frontier.
-9. Deep analysis, before any later question. Write the IS/GAP ledger: `G1`, `G2`, and so on, each IS cell citing `path:line`. Trace each flow whose failure loses data, strands a user after a state change, or breaks a required integration: record its entry point, starting state, ordered effects, recovery, and one counterexample once, as an Evidence index flow. `### Critical flows` gets one line per flow that names it and its counterexample. Write the risks. Run the slop check and move each hit into "Must NOT have" as `MN<n>`: scope inflation, premature abstraction, over-validation, documentation bloat. Number the Must Have items `MH<n>`. A todo that closes no gap is scope inflation.
+9. Deep analysis, before any later question. Write the IS/GAP ledger: `G1`, `G2`, and so on, each IS cell citing `path:line`. Trace each flow whose failure loses data, strands a user after a state change, or breaks a required integration: record its entry point, starting state, ordered effects, recovery, and one counterexample once, as an evidence index flow. `### Critical flows` gets one line per flow that names it and its counterexample. Write the risks. Run the slop check and move each hit into "Must NOT have" as `MN<n>`: scope inflation, premature abstraction, over-validation, documentation bloat. Number the Must Have items `MH<n>`. A todo that closes no gap is scope inflation.
 10. Ask the later round. Read [references/owner-questions.md](references/owner-questions.md). One message: product questions first, then technical, at most four of each, each with a reason and a default. Record `## Questions` with `### Product` before `### Technical`. In a non-interactive run, record each default and continue. As a child session another agent launched, return the open questions to that parent in the reply instead of asking.
-11. Fill the draft at `docs/plans/<YYYY-MM-DD>-<slug>.md` (the path the skeleton chose; it appended `-2` on a collision): the TL;DR, the Scope subsections, `## Research`, and `## Questions`, each by replacing its placeholder, one subsection at a time. The remaining headings keep their placeholders. In an interactive session, reply with the draft-gate block and stop when a later-round question is open or the tier is `architecture`. Otherwise continue.
-12. After answers, research again when an answer adds a new point, and investigate again when new evidence adds seeds. Update the ledger, the flows, and the risks one row or bullet at a time. Change the Evidence index one entry at a time: append a block for a new entry, and edit an existing entry in place when new evidence changes it. Never regenerate the index.
+11. Fill the draft at `docs/plans/<stem>/<stem>.md`, where `<stem>` is `<YYYY-MM-DD>-<slug>` (the path the skeleton chose; it appended `-2` to both directory and stem on a collision): the TL;DR, the Scope subsections, `## Research`, and `## Questions`, each by replacing its placeholder, one subsection at a time. The remaining headings keep their placeholders. In an interactive session, reply with the draft-gate block and stop when a later-round question is open or the tier is `architecture`. Otherwise continue.
+12. After answers, research again when an answer adds a new point, and investigate again when new evidence adds seeds. Update the ledger, the flows, and the risks one row or bullet at a time. Change the evidence index one entry at a time: append a block for a new entry, and edit an existing entry in place when new evidence changes it. Never regenerate the index.
 13. Write `## Design`. Read [references/diagram.md](references/diagram.md). Add the mermaid block when the request is a flow or a design; otherwise write `Diagram: omitted — <reason>`.
 14. Write the verification strategy: for every gap, the exact command or check that proves it closed, and the output it should produce.
-15. Write the todos with the fields in Output format, one todo per edit. T0 is always first: copy this plan and any sibling review history into the project's `docs/plans/` if they are not already there. Every todo and every final-wave gate starts with `- [ ] Open`. The `## Todos` introduction tells the builder to run each todo's Acceptance and QA scenario, pass them, commit when the todo says `Commit: yes`, record the evidence, and only then mark `- [x] Done` and start the next todo. That rule does not apply to the final-wave gates. Every acceptance criterion is something an agent can run: a command with its expected output, or a selector with its expected state, with concrete data. For a prose deliverable, acceptance is structural: a validator passes, a section exists, a command printed in the document runs. Never a grep for a sentence.
-16. Group the implementation todos into waves by dependency: todos that share no file and have no dependency between them go in one wave. T0 runs alone before wave 1. Above the wave list, tell the builder to finish T0, then each wave in list order, then the final wave, without stopping to ask for a continue, and to fix a failing todo and rerun its checks until they pass. After the Todos test paragraph, add its own paragraph: when a wave is done, start the next wave, including the final wave, without asking for a continue.
+15. Write the todos with the fields in Output format, one todo per edit. T0 is always first: copy the plan directory into the project's `docs/plans/` if it is not already there, then commit it. Every todo and every final-wave gate starts with `- [ ] Open`. The `## Todos` introduction tells the builder to run each todo's Acceptance and QA scenario, pass them, commit when the todo says `Commit: yes`, record the evidence, and only then mark `- [x] Done` and start the next todo. That rule does not apply to the final-wave gates. Every acceptance criterion is something an agent can run: a command with its expected output, or a selector with its expected state, with concrete data. For a prose deliverable, acceptance is structural: a validator passes, a section exists, a command printed in the document runs. Never a grep for a sentence. Name the failing command and its observable outcome, never a predicted compiler or linter diagnostic code; the builder observes the code.
+16. Group the implementation todos into waves by dependency: todos that share no file and have no dependency between them go in one wave. Two todos in different waves may edit the same file; the later one builds on the earlier one's result. T0 runs alone before wave 1. Above the wave list, tell the builder to finish T0, then each wave in list order, then the final wave, without stopping to ask for a continue, and to fix a failing todo and rerun its checks until they pass. After the Todos test paragraph, add its own paragraph: when a wave is done, start the next wave, including the final wave, without asking for a continue.
 17. Add the final verification wave. Read [references/final-wave.md](references/final-wave.md). Title the gates `F1`, `F2`, `F3`, and `F4`, in that order. When `ui: yes`, the last todo is the automated UI QA task.
-18. Apply the transcript test to every todo: it may hold a signature, a path, or a command, and nothing longer. Replace implementation code with the decision it encodes and the reference it came from. Evidence may be as long as the investigation needs; todo bodies stay short. A todo's `Do` holds about 150 words at most; split a todo that needs more, and move its rationale to `## Questions`.
-19. Validate. Read [references/evidence-index.md](references/evidence-index.md). Confirm no `<!-- todo: ... -->` placeholder is left. Measure the file without `## Review`. Above 150 KB, look for repetition before anything else: a decision argued in the TL;DR, in `## Questions`, and again in a todo; a flow traced in prose and in the index; an excerpt that quotes a long range whole; a coverage paragraph that lists every file the rows already list. Remove what you find. Run the validator bundled with `plan-review` on the plan with `--root <project>` and fix every error. The frontier must be empty and no coverage row pending. When Bun or `plan-review` is unavailable, keep `status: draft` and name the missing dependency in the TL;DR.
-20. Set `status: planned`, keep `review_round: 0`, and leave `## Review` empty.
+18. Apply the transcript test to every todo: it may hold a signature, a path, or a command, and nothing longer. Replace implementation code with the decision it encodes and the reference it came from. Evidence may be as long as the investigation needs; todo bodies stay short. A todo's `Do` holds about 150 words at most, and `Acceptance` and `QA scenario` about 120 each; split a todo that needs more, and move its rationale to `## Questions`.
+19. Validate. Read [references/evidence-index.md](references/evidence-index.md). Confirm no `<!-- todo: ... -->` placeholder is left. Measure the spec and the evidence index together. Above 150 KB, look for repetition before anything else: a decision argued in the TL;DR, in `## Questions`, and again in a todo; a flow traced in prose and in the index; an excerpt that quotes a long range whole; a coverage paragraph that lists every file the rows already list. Remove what you find. Run the validator bundled with `plan-review` on the plan with `--root <project>` and fix every error. Shorten each field its `soft cap:` gaps name, unless the words carry a decision the builder needs. The frontier must be empty and no coverage row pending. When Bun or `plan-review` is unavailable, keep `status: draft` and name the missing dependency in the TL;DR.
+20. Set `status: planned` and keep `review_round: 0`. Create no reviews, gate record, or build file; their writers do.
 21. Reply with the path and the TL;DR, then: "Next: (a) run plan-review on `<path>` on a different model family — required, tier is architecture / recommended otherwise; (b) say 'build this plan' to your coding agent. Which?" In a non-interactive run, state the recommendation instead of asking, and stop.
-22. Fix-only follow-up after a rejection or an INCOMPLETE round. This is the step `plan-review` and `plan-loop` run. Re-read the plan from disk. From the latest `### Round <n>`, read every blocker, `#### Unverified` item, and gate-record obligation whose status is not `verified`. Read both `#### Open obligations` and the legacy `#### Coverage and evidence` when present; absence of the newer heading never means there are no gaps. Earlier rounds normally stay unread in the archive. For each item, follow its affected paths as [references/coverage.md](references/coverage.md) describes, and fix the plan: coverage, citations, flows, todos, and the QA that proves the fix. Edit the affected text into its corrected state. Never narrate the fix inside the spec. Rewrite no section a blocker or gap does not touch. Re-run the validator. Keep `review_round` at that round's number and `status: planned`; append one line per fixed item under `#### Fixed`, using its blocker or obligation id and naming what changed and where. Do not rewrite the reviewer's original evidence or verdict. Reply with the path and a one-line summary; name anything still open.
+22. Fix-only follow-up after a rejection or an INCOMPLETE round. This is the step `plan-review` and `plan-loop` run. Re-read the spec and evidence index from disk. From the highest-numbered `### Round <n>` in `<stem>.reviews.md` (rounds run newest first), read every blocker, `#### Open obligations` row, and `#### Unverified` item; the gate record file holds the same obligations as JSON. Leave older rounds unread. For each item, follow its affected paths as [references/coverage.md](references/coverage.md) describes, and fix the plan: coverage, citations, flows, todos, and the QA that proves the fix. Edit the affected text into its corrected state. Never narrate the fix inside the spec. Rewrite no section a blocker or gap does not touch. Re-run the validator. Keep `review_round` at that round's number and `status: planned`. In the reviews file, under that round, append one line per fixed item under `#### Fixed`, using its blocker or obligation id and naming what changed and where. Do not rewrite the reviewer's original evidence or verdict, or the gate record. Reply with the path and a one-line summary; name anything still open.
 
 ### Writing discipline
 
-The plan is one file, built in small independent edits. A large write or a large replacement fails more often and costs more to retry than many small ones, and a file that is always current is already a resumable draft.
+The spec and its evidence index are built in small independent edits. A large write or a large replacement fails more often and costs more to retry than many small ones, and files that are always current are already a resumable draft.
 
-- **Skeleton first.** Write the file once, right after step 4, with the Write tool. It holds the frontmatter with `status: draft`, all eleven top-level headings in order, the ten Scope subsections, `### Product` and `### Technical` under Questions, and one empty Evidence index block (the Shape in [references/evidence-index.md](references/evidence-index.md)). Every empty slot holds one line, `<!-- todo: <slot> -->`, which never parses as a bullet, a row, or an identifier. This is the only time you use Write on the plan. About 2 KB.
-- **Edit, never rewrite.** After the skeleton, change the file only with the Edit tool. One edit replaces one placeholder, one subsection, one table row, one list item, one todo, or adds or changes one Evidence index entry. No edit rewrites a whole top-level section that has more than one subsection, and none rewrites the file. When an edit fails, re-read the few lines around it and retry with a smaller anchor. Do not fall back to Write.
+- **Skeleton first.** Right after step 4, create `docs/plans/<stem>/` and write two files once each with the Write tool. `<stem>.md` holds the frontmatter with `status: draft`, the H1 and the links line under it, all ten top-level headings in order, the nine Scope subsections, and `### Product` and `### Technical` under Questions. `<stem>.evidence-index.md` holds `# Evidence index: <title>` and one empty block (the Shape in [references/evidence-index.md](references/evidence-index.md)). Every empty slot holds one line, `<!-- todo: <slot> -->`, which never parses as a bullet, a row, or an identifier. These are the only times you use Write on the plan. About 2 KB.
+- **Edit, never rewrite.** After the skeleton, change the file only with the Edit tool. One edit replaces one placeholder, one subsection, one table row, one list item, one todo, or adds or changes one evidence index entry. No edit rewrites a whole top-level section that has more than one subsection, and none rewrites the file. When an edit fails, re-read the few lines around it and retry with a smaller anchor. Do not fall back to Write.
 - **Anchors.** Replace the placeholder line itself, or insert before the next heading. Keep the placeholder until you fill that slot, so the anchor stays unique. Name each todo and each gate in its heading, so `### T3 —` is a unique anchor.
-- **Append a new Evidence index entry as a block.** Each new citation, coverage row, frontier item, flow, or baseline check is one new fenced `json` block directly under the first one, holding only that key, for example `{"citations": [{...}]}`. The validator merges the blocks and concatenates their arrays, so an appended entry never replaces an earlier entry with the same id.
+- **Append a new evidence index entry as a block.** Each new citation, coverage row, frontier item, flow, or baseline check is one new fenced `json` block at the end of the evidence index file, holding only that key, for example `{"citations": [{...}]}`. The validator merges the blocks and concatenates their arrays, so an appended entry never replaces an earlier entry with the same id.
 - **Change an existing entry in place.** Resolving a pending coverage row, clearing a frontier item, refreshing a citation on resume, recording an owner's answer, and fixing a review finding all change an entry that already exists. Edit that entry where it sits, touching only the fields that changed, or delete it when it is resolved. Never regenerate a block or rewrite the whole index to do it.
 - **Validator fixes are one entry each.** Fix a reported citation by replacing that entry, not by touching its neighbors.
 - **Run the validator only when a step says to**: at step 19, and before a draft-gate reply. A skeleton is not validator-clean; its Questions lists are empty until step 10.
-- **Say each thing once.** Every agent that builds or reviews the plan reads all of it on every turn, so a repeat costs time without adding a check. Argue a decision once, in `## Questions`; the TL;DR names it in a clause. Trace a flow once, in its Evidence index entry. Keep each TL;DR bullet to two sentences and the `### Coverage` paragraph to five; the coverage rows hold the file lists.
+- **Say each thing once.** Every agent that builds or reviews the plan reads all of it on every turn, so a repeat costs time without adding a check. Argue a decision once, in `## Questions`; the TL;DR names it in a clause. Trace a flow once, in its evidence index entry. Keep each TL;DR bullet to two sentences and the `### Coverage` paragraph to five; the coverage rows hold the file lists.
 - **Short excerpts.** Quote a cited range of three lines or fewer whole. For a longer range, quote one to three consecutive lines from inside it that identify it, at least ten non-blank characters. The file SHA-256 still detects any drift.
-- **The spec is the current truth.** A fix or an owner's later answer edits the affected text into its corrected state. Review history lives in `## Review` and the review history file, never in the spec.
+- **The spec is the current truth.** A fix or an owner's later answer edits the affected text into its corrected state. Review history lives in the reviews file, never in the spec.
 
 ### Handling feedback
 
@@ -78,7 +80,7 @@ A hedged or uncertain remark from the user — "I'm not sure", "I think", "maybe
 
 ## Output format
 
-The plan file, written at `docs/plans/<YYYY-MM-DD>-<slug>.md`. The frontmatter has exactly these eleven keys:
+The plan directory `docs/plans/<stem>/`, where `<stem>` is `<YYYY-MM-DD>-<slug>`. plan-writer writes two of its files: the spec `<stem>.md` and `<stem>.evidence-index.md`. The spec's frontmatter has exactly these eleven keys:
 
 ````markdown
 ---
@@ -97,6 +99,8 @@ review_round: 0
 
 <!-- markdownlint-disable-next-line MD025 -->
 # <title>
+
+Files: [Evidence index](<stem>.evidence-index.md) · [Reviews](<stem>.reviews.md) · [Gate record](<stem>.gate-record.json) · [Build](<stem>.build.md)
 
 ## TL;DR
 
@@ -139,21 +143,15 @@ review_round: 0
 
 ### Coverage
 
-<At most five sentences: what was searched and read, and what was excluded and why. The rows live in the Evidence index.>
+<At most five sentences: what was searched and read, and what was excluded and why. The rows live in the evidence index.>
 
 ### Critical flows
 
-- FL1: <name>; counterexample: <one line>. The trace is Evidence index flow FL1.
+- FL1: <name>; counterexample: <one line>. The trace is evidence index flow FL1.
 
 ### Baseline
 
 <Revision and dirty files, and each project check with its result.>
-
-### Evidence index
-
-```json
-{ "schemaVersion": 1, "citations": [], "coverage": [], "frontier": [], "flows": [], "baseline": {} }
-```
 
 ## Research
 
@@ -194,21 +192,21 @@ Finish T0, then each wave in the order this list gives, then the final wave. Tod
 
 ## Todos
 
-Every todo starts with `- [ ] Open`. When you build this plan, run that todo's Acceptance and its QA scenario — the happy path, and the failure path unless it is n/a. Only after those checks pass, make this todo's commit when it says `Commit: yes`, record the evidence, then change that line to `- [x] Done` in the project copy. Do not start the next todo until that is done. If T0 copied the file, keep editing that copy. Do not run this test on a final-wave gate.
+Every todo starts with `- [ ] Open`. When you build this plan, run that todo's Acceptance and its QA scenario — the happy path, and the failure path unless it is n/a. Only after those checks pass, make this todo's commit when it says `Commit: yes`, record the evidence, then change that line to `- [x] Done` in the project copy. Do not start the next todo until that is done. If T0 copied the plan directory, keep editing that copy. Do not run this test on a final-wave gate.
 
 When the wave is done, start the next wave, including the final wave. Do not ask for a continue. If a todo's checks fail, fix that todo and run the checks again until they pass, then continue.
 
 ### T0 — Copy the plan into the project
 
 - [ ] Open
-- Do: if this file is not already under the project's `docs/plans/`, copy it there under its current name, together with `<plan-stem>.review-history.md` if present, and build in that copy. Verify copied bytes. Keep originals intact; reuse an identical destination and stop on a conflicting one. If already there, do not copy.
-- Must not: change any other part of the plan while copying, overwrite conflicting destination content, or make a second copy
+- Do: if this plan directory is not already under the project's `docs/plans/`, copy the whole directory there under its current name and build in that copy. Verify copied bytes. Keep originals intact; reuse an identical destination and stop on a conflicting one. If already there, do not copy. Commit the plan directory.
+- Must not: change any part of the plan while copying, overwrite conflicting destination content, or make a second copy
 - Closes gap: none
 - Depends on: none
 - References: this file
-- Acceptance: `test -f docs/plans/<name>.md` exits 0
-- QA scenario: happy — the file is already under `docs/plans/` and no copy is made; relocation — plan and existing history arrive byte-identical and originals are unchanged; failure — a conflicting destination stops the copy without overwriting it
-- Commit: no
+- Acceptance: `test -f docs/plans/<stem>/<stem>.md` exits 0, and `git log -1 --format=%s` prints the commit subject below
+- QA scenario: happy — the directory is already under `docs/plans/` and no copy is made; relocation — every file arrives byte-identical and originals are unchanged; failure — a conflicting destination stops the copy without overwriting it
+- Commit: yes — `docs(plans): add <slug> plan`
 
 ### T1 — <verb phrase>
 
@@ -268,10 +266,16 @@ When `ui: no`, omit that heading and say why in one line.
 | Gap | Closed by | Proof |
 | --- | --- | --- |
 | G1 | T1 | `<command>` → `<expected>` |
+````
 
-## Review
+The evidence index file:
 
-<Empty. plan-review writes here.>
+````markdown
+# Evidence index: <title>
+
+```json
+{ "schemaVersion": 1, "citations": [], "coverage": [], "frontier": [], "flows": [], "baseline": {} }
+```
 ````
 
 Two reply shapes, depending on where the run stopped:
@@ -279,7 +283,7 @@ Two reply shapes, depending on where the run stopped:
 Draft-gate reply, used when step 11 stops for an open question or an `architecture` tier, or when investigation stops at a checkpoint. List open product questions before open technical ones:
 
 ```markdown
-Plan drafted: `docs/plans/<date>-<slug>.md` — tier <tier>.
+Plan drafted: `docs/plans/<stem>/<stem>.md` — tier <tier>.
 <the TL;DR block verbatim>
 Investigation: closed | open — <n> frontier items, next action: <action>
 Owner decisions needed before this plan can be filled in:
@@ -290,7 +294,7 @@ Owner decisions needed before this plan can be filled in:
 Planned reply, used when step 21 completes the plan:
 
 ```markdown
-Plan written: `docs/plans/<date>-<slug>.md` — tier <tier>, review <required | optional>, <n> todos in <m> waves. Validator: 0 errors.
+Plan written: `docs/plans/<stem>/<stem>.md` — tier <tier>, review <required | optional>, <n> todos in <m> waves. Validator: 0 errors.
 <the TL;DR block verbatim>
 Next: (a) run plan-review on this path on a different model family — <required | recommended>; (b) say "build this plan" to your coding agent. Which?
 ```
@@ -301,8 +305,9 @@ MUST:
 
 - MUST run idea refinement before exploring when a fresh, chat-sourced request is idea-level vague, and cap that early round at three questions in one message.
 - MUST investigate until coverage is closed: every relevant edge inspected or excluded with a cited reason, every required contract verified at its version, and an empty frontier.
-- MUST quote every source citation's lines, whole for a range of three lines or fewer and as a one-to-three-line anchor for a longer one, record the file SHA-256, and cover every backticked `path:line` in the plan with an Evidence index citation.
-- MUST say each thing once: a flow traced in the Evidence index only, a decision argued in `## Questions` only.
+- MUST quote every source citation's lines, whole for a range of three lines or fewer and as a one-to-three-line anchor for a longer one, record the file SHA-256, and cover every backticked `path:line` in the plan with an evidence index citation.
+- MUST say each thing once: a flow traced in the evidence index only, a decision argued in `## Questions` only.
+- MUST keep every capped field under its hard cap, and shorten one past its soft cap unless the words carry a decision.
 - MUST keep the spec current: a fix edits the affected text into its corrected state, and its history goes only under `#### Fixed`.
 - MUST record the baseline commands and their actual results.
 - MUST trace each critical flow from its entry point through its effects to recovery, with a counterexample.
@@ -315,10 +320,10 @@ MUST:
 - MUST end the plan with `F1`, `F2`, `F3`, and `F4` in that order, and end the file with the automated UI QA todo whenever `ui: yes`.
 - MUST write `## Design` with either a mermaid block or `Diagram: omitted — <reason>`.
 - MUST run the bundled validator and fix every error before setting `status: planned`.
-- MUST write to `docs/plans/<date>-<slug>.md` and set `status: draft` before `status: planned`.
+- MUST write the spec to `docs/plans/<stem>/<stem>.md` with its evidence index beside it, and set `status: draft` before `status: planned`.
 - MUST re-read the plan from disk, recheck cited sources, and work the open frontier on every resume or follow-up.
-- MUST write the skeleton right after the branch name, and build the rest with small Edit calls: one placeholder, subsection, row, item, todo, or Evidence index block per edit.
-- MUST append each citation, coverage row, frontier item, flow, and baseline check to the file as it is produced.
+- MUST write the skeleton right after the branch name, and build the rest with small Edit calls: one placeholder, subsection, row, item, todo, or evidence index block per edit.
+- MUST append each citation, coverage row, frontier item, flow, and baseline check to the evidence index as it is produced.
 - MUST answer a hedged remark with reasoning and a question before changing the plan.
 
 NEVER:
@@ -332,16 +337,17 @@ NEVER:
 - NEVER ask a second batch of idea-refinement questions. The later product-then-technical round is required and is not that second batch.
 - NEVER invent a branch pattern the repository does not show any evidence of using.
 - NEVER put implementation code in a todo beyond a signature, a path, or a command — the transcript test.
-- NEVER narrate review history in the spec: no "round-2 fix", "the reviewer found", or "previously" outside `## Review`.
-- NEVER routinely load the review history to fix a plan; the latest round names everything a fix needs. A missing or interrupted live round requires recovery from the archive before fixing, not an assumption that nothing is open.
+- NEVER narrate review history in the spec: no "round-2 fix", "the reviewer found", or "previously"; that belongs in the reviews file.
+- NEVER read older review rounds to fix a plan; the latest round names everything a fix needs.
+- NEVER predict a compiler or linter diagnostic code in a todo.
 - NEVER write "user tests manually", "verify it works", "manual read", or "check visually" as an acceptance criterion or a proof.
 - NEVER write a grep-for-a-sentence acceptance criterion for a prose deliverable.
 - NEVER answer an owner decision silently. It is either a recorded default with its reason, or a listed question.
 - NEVER plan a change classified `trivial`.
 - NEVER paste the whole plan into the chat reply; reply with the path and the TL;DR only.
 - NEVER include a secret, personal data, an internal hostname, or an absolute local path in the plan file.
-- NEVER commit the plan file. The user commits it.
-- NEVER call Write on a plan file that already exists, rewrite a whole top-level section that has several subsections, or regenerate the Evidence index. When an Edit fails, retry it smaller.
+- NEVER commit the plan. T0 of the build commits it.
+- NEVER call Write on a plan file that already exists, rewrite a whole top-level section that has several subsections, or regenerate the evidence index. When an Edit fails, retry it smaller.
 
 ## QA checklist
 
@@ -349,15 +355,15 @@ NEVER:
 - [ ] Idea refinement ran, was explicitly skipped as already-concrete, or does not apply — and that early round never asked more than three questions in one message.
 - [ ] Every relevant edge is inspected or excluded with a cited reason; the frontier is empty on a planned file, or the draft names the next action.
 - [ ] Every source citation has a literal excerpt, whole or a one-to-three-line anchor, and a file SHA-256; every backticked `path:line` falls inside one.
-- [ ] Each critical flow is traced once, in the Evidence index, with a counterexample, and `### Critical flows` names it in one line; or the index states why there is none.
-- [ ] The spec names no review round, and every todo's `Do` holds about 150 words at most.
-- [ ] Without `## Review`, the file is under 150 KB, or the repetition search at step 19 ran and removed what it found.
+- [ ] Each critical flow is traced once, in the evidence index, with a counterexample, and `### Critical flows` names it in one line; or the index states why there is none.
+- [ ] The spec names no review round, and the validator reports no `FIELD_CAP` error; each `soft cap:` gap was shortened or carries a decision.
+- [ ] The spec and evidence index together are under 150 KB, or the repetition search at step 19 ran and removed what it found.
 - [ ] `### Baseline` records the project's commands and their actual results.
 - [ ] `## Research` records sources at their versions and what the plan follows, or an explicit line that no useful public source was found; every contract a todo relies on is verified.
 - [ ] `## Questions` has `### Product` before `### Technical`, and neither group is empty. No question asks the owner to read code.
 - [ ] The branch name traces to a stated convention, an observed one, or the documented default, and appears in both the frontmatter and the TL;DR.
 - [ ] Every gap is closed by at least one implementation todo, and every implementation todo closes at least one gap. T0, F1–F4, and the UI QA todo do not need a gap.
-- [ ] T0 is first. It copies the plan and existing sibling history into `docs/plans/` only when needed, verifies bytes, and preserves conflicting destinations.
+- [ ] T0 is first. It copies the plan directory into `docs/plans/` only when needed, verifies bytes, preserves conflicting destinations, and commits the directory as `docs(plans): add <slug> plan`.
 - [ ] Every todo and every final-wave gate starts with `- [ ] Open`. The `## Todos` introduction states the test-before-next rule, and the final wave does not use it.
 - [ ] "Must NOT have" is present, numbered, and lists anything the slop check removed.
 - [ ] `## Design` is a mermaid block or `Diagram: omitted — <reason>`.
@@ -366,11 +372,11 @@ NEVER:
 - [ ] The execution strategy's waves respect every "Depends on" field, and the continue-through-waves instruction is above the wave list.
 - [ ] The final verification wave has `F1` through `F4` in order, and ends with the automated UI QA task whenever `ui: yes`.
 - [ ] The frontmatter has all eleven keys, with `status` matching where the run stopped.
-- [ ] The MD025 comment sits directly above the H1.
+- [ ] The MD025 comment sits directly above the H1, and the links line sits directly below it.
 - [ ] The bundled validator reports 0 errors on a planned file.
-- [ ] `## Review` is present and empty on a freshly planned file.
+- [ ] A freshly planned directory holds only the spec and the evidence index.
 - [ ] The reply is the draft-gate block or the planned block, never the full plan file.
-- [ ] The plan was created once, as a skeleton, and every later change was an Edit of one placeholder, subsection, row, item, todo, or Evidence index block.
+- [ ] The spec and evidence index were each created once, as a skeleton, and every later change was an Edit of one placeholder, subsection, row, item, todo, or evidence index block.
 - [ ] No `<!-- todo: ... -->` placeholder remains in a `planned` file.
 - [ ] Nothing outside `docs/plans/` was created or changed.
 

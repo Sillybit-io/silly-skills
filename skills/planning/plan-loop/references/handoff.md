@@ -45,11 +45,10 @@ than reinterpreting or absorbing it.
 
 ## Resume
 
-This loop keeps no state outside the plan file itself: `status`,
-`review_round`, and the `## Review` history table with its latest round
-already record where a plan stands. Earlier round bodies sit in the review
-history file beside the plan; the table keeps a row for each of them. A loop resumed after a handback, a host restart, or a fresh session
-re-reads the plan and continues from exactly that recorded state — it does
+This loop keeps no state outside the plan's own files: the spec's `status`
+and `review_round`, and the history table and rounds under `## Review` in
+`<stem>.reviews.md`, newest first, already record where a plan stands. A loop resumed after a handback, a host restart, or a fresh session
+re-reads those files and continues from exactly that recorded state — it does
 not need to know how many rounds ran before, only what the file currently
 says. Re-derive the round count and the five-round consent boundary from the
 plan's own history table on every resume; do not trust a count remembered

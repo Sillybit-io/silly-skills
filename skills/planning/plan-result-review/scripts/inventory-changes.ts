@@ -28,7 +28,8 @@ const VALIDATOR = resolve(dirname(import.meta.path), "../../plan-review/scripts/
 export const USAGE = `Usage: inventory-changes <plan> [--root <project>] [--baseline <snapshot>] [--base <revision>] [--json]
 
 Lists every path whose HEAD, index, or working-tree layer changed since the
-build baseline recorded in the plan's Build record, or since --baseline.
+build baseline recorded in the plan's build file, or since --baseline.
+The plan's own directory is left out: the build commits it by design.
 With only --base, lists committed and current changes without owner-work
 attribution. Read-only; needs the plan-review skill installed beside this one.`;
 
@@ -111,12 +112,13 @@ export function main(argv: string[], write: (s: string) => void = (s) => console
   }
   const v = require(VALIDATOR);
   const planRel = planAbs.slice(root.length + 1);
-  const parsed = v.parsePlan(readFileSync(planAbs, "utf8"));
-  const record = v.buildRecord(parsed);
+  const files = v.planFiles(planRel);
+  const buildAbs = resolve(root, files.build);
+  const record = v.buildRecord(existsSync(buildAbs) ? readFileSync(buildAbs, "utf8") : null);
   const recordValue = record && !("error" in record) ? (record.value as Record<string, unknown>) : null;
   const inGit = v.isGitRoot(root);
 
-  const report: Record<string, unknown> = { schemaVersion: 1, plan: planRel, root: ".", baseline: null, ownerWorkCertifiable: false };
+  const report: Record<string, unknown> = { schemaVersion: 1, plan: planRel, planDir: files.dir, root: ".", baseline: null, ownerWorkCertifiable: false };
   let baselineManifest: { paths: Row[]; baseRevision: string | null; headRevision: string | null; includes?: string[] } | null = null;
   let baselineDir = "";
   const snapshotRef = baselineArg ?? ((recordValue?.baseline as Record<string, string> | undefined)?.snapshot ?? null);
@@ -126,7 +128,7 @@ export function main(argv: string[], write: (s: string) => void = (s) => console
       const verified = v.verifySnapshot(baselineDir);
       const expected = (recordValue?.baseline as Record<string, string> | undefined)?.manifestSha256;
       if (!baselineArg && expected && verified.manifestSha256 !== expected) {
-        write(`error: baseline manifest ${snapshotRef} does not match the Build record's digest`);
+        write(`error: baseline manifest ${snapshotRef} does not match the build record's digest`);
         return 1;
       }
       baselineManifest = verified.manifest;
@@ -139,7 +141,7 @@ export function main(argv: string[], write: (s: string) => void = (s) => console
       return missing ? 2 : 1;
     }
   } else if (!base) {
-    write("error: no Build record baseline and no --base; pass an explicit comparison base rather than guessing");
+    write("error: no build record baseline and no --base; pass an explicit comparison base rather than guessing");
     return 2;
   }
   const baseRevision = base ?? baselineManifest?.baseRevision ?? null;
@@ -173,7 +175,7 @@ export function main(argv: string[], write: (s: string) => void = (s) => console
   const readBase = (sha: string | undefined): Buffer | null => (sha && baselineDir ? v.readSnapshotBlob(baselineDir, sha) : null);
   const changes: Record<string, unknown>[] = [];
   for (const row of current.body.paths as Row[]) {
-    if (row.path === planRel) continue;
+    if (row.path === planRel || (files.dir !== "" && row.path.startsWith(`${files.dir}/`))) continue;
     const b = baseRows.get(row.path);
     // With a baseline, a layer changed when it differs from the baseline's layer.
     // In revision-only mode, only uncommitted index and working-tree changes
@@ -240,7 +242,7 @@ export function main(argv: string[], write: (s: string) => void = (s) => console
 
   if (json) write(JSON.stringify(report, null, 2));
   else {
-    write(`plan ${planRel}; baseline ${report.baseline ? (report.baseline as Record<string, string>).snapshot : "none (revision-only)"}; base ${baseRevision ?? "none"}; HEAD ${report.headRevision ?? "none"}`);
+    write(`plan ${planRel} (plan directory ${files.dir}/ not listed); baseline ${report.baseline ? (report.baseline as Record<string, string>).snapshot : "none (revision-only)"}; base ${baseRevision ?? "none"}; HEAD ${report.headRevision ?? "none"}`);
     write(`owner work certifiable: ${report.ownerWorkCertifiable}`);
     write(`${changes.length} changed paths:`);
     for (const c of changes) {

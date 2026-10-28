@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- Planning documents stay focused on execution. A real architecture-tier plan reached 462 KB after three review rounds: 164 KB of `## Review`, where the validator reads only the latest round, and a 143 KB Evidence index whose excerpts quoted 7.6 lines on average; another reached 1.21 MB. Every agent that builds or reviews the plan reads all of it on every turn.
+- A plan is now a directory, `docs/plans/<stem>/`: the spec `<stem>.md`, plus `<stem>.evidence-index.md`, `<stem>.reviews.md`, `<stem>.gate-record.json`, and `<stem>.build.md`. A links line under the spec's H1 names the four. The spec digest covers the spec and the evidence index together. Single-file plans are not read.
+- `plan-review` 1.0.0: each round is added to `<stem>.reviews.md`, newest first, after a history table with a Summary column, and its gate record replaces `<stem>.gate-record.json`. Only blockers, open obligations, and missing evidence are rendered. Gate `sources` may not repeat a file the evidence index cites. Fewer meta-blockers: same-file edits block only within one wave, commit subjects are checked by type, scope, and meaning, and documentation evidence is reused while `## Research` is unchanged. For additions, removals, and renames, Check A independently searches inventory consumers and challenges the writer's exclusion evidence. The validator gains two-tier field caps (past the soft cap is a gap that never changes the verdict, past twice it a `FIELD_CAP` error) and the `PLAN_FILES`, `FIELD_CAP`, and `RECEIPT_FIELD` codes, and its JSON output names the five files.
+- `plan-writer` 1.0.0: writes the spec and evidence index as two skeletons, then edits them in small pieces. Long citations use one-to-three-line anchors with file hashes. Decisions and flow traces are recorded once. Discovery follows changed inventory invariants, including counts and generated lists; exclusions need evidence from the consuming code, and affected consumers need explicit todo changes. Todo fields stay under their caps, and a todo never predicts a compiler diagnostic code. T0 copies the plan directory when needed and commits it as `docs(plans): add <slug> plan`.
+- `plan-builder` 1.0.0: writes the build record and one appended block per receipt to `<stem>.build.md`. Every `Commit: yes` commit includes the plan directory, and a plan-only `docs(plans): complete <slug> build` commit follows F4's MATCH; a checkpoint makes no commit. Receipts drop `changedPaths`, refuse unknown keys, cap their prose, and point at a log file for long output. `capture-build-state.ts` always declares the reviews and build files as reports.
+- `plan-result-review` 1.0.0: renders only differences: a counts line, then unapproved differences, one-line approved deviations with their source, unverified items, extras, changed owner work, and the commands checked. An environment-blocked review is a short checkpoint round. `inventory-changes.ts` leaves the plan directory out of the change list.
+- `plan-loop` 0.2.0: reads the verdict and the previous round from the plan's reviews file.
+- `agents/plan-writer/`, `agents/plan-reviewer/`, and `agents/plan-result-reviewer/`: the prompts that limit writes name the plan directory's files.
+- Workflow and output-contract changes take major skill versions, as required by the contribution policy.
+
 ## [0.10.0] - 2026-10-25
 
 ### Changed

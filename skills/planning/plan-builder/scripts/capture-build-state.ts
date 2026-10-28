@@ -20,8 +20,9 @@
  * temporary storage. Each `--carry <snapshot>` names an earlier snapshot
  * (same location form) whose paths and `includes` are inherited into this
  * capture's inventory, and whose matching blobs are hard-linked instead of
- * copied. `--report <path>` repeats to name a declared report/progress output
- * excluded from `stateDigest`, matching the Build record's
+ * copied. The plan's `<stem>.reviews.md` and `<stem>.build.md` are always
+ * declared reports, excluded from `stateDigest`; `--report <path>` repeats to
+ * name any further report/progress output. All of them are recorded in
  * `administrative.reports`. `--run-id`, `--base-revision`, and
  * `--approved-spec` are recorded as given; the builder is responsible for
  * their correctness.
@@ -167,8 +168,12 @@ export function run(argv: string[], write: (text: string) => void = (t) => conso
     return 1;
   }
 
-  const reports = args.report as string[];
+  // The reviews and build files change during a build by design, so they are always reports.
+  const files = v.planFiles(planRel);
+  const reports = [...new Set([files.reviews, files.build, ...(args.report as string[])])];
   const planBytes = readFileSync(planAbs);
+  const evidenceAbs = resolve(root, files.evidenceIndex);
+  const evidenceText = existsSync(evidenceAbs) ? readFileSync(evidenceAbs, "utf8") : "";
   const repository: Manifest["repository"] = inGit
     ? { kind: "git", rootCommits: v.gitRepositoryIdentity(root).rootCommits, branch: gitOut(root, ["symbolic-ref", "-q", "--short", "HEAD"]) }
     : { kind: "none" };
@@ -182,7 +187,7 @@ export function run(argv: string[], write: (text: string) => void = (t) => conso
     baseRevision: (args.baseRevision as string | undefined) ?? null,
     headRevision: inv.body.headRevision,
     approvedSpecDigest: String(args.approvedSpec ?? ""),
-    plan: { path: planRel, sha256: v.sha256(planBytes), specDigest: v.canonicalSpecDigest(planBytes.toString("utf8")) },
+    plan: { path: planRel, sha256: v.sha256(planBytes), specDigest: v.canonicalSpecDigest(planBytes.toString("utf8"), evidenceText) },
     administrative: { plan: planRel, reports },
     includes: [...includes].sort(),
     stateDigest: "",

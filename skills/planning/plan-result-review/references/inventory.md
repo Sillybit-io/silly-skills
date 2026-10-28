@@ -6,7 +6,7 @@ Read this file when you build the change inventory. The inventory lists every ar
 
 Use the first that applies:
 
-1. The plan's `## Build` record names a baseline snapshot. This is the only baseline that separates the owner's pre-build work from the build's changes.
+1. The plan's build file, `<stem>.build.md`, names a baseline snapshot. This is the only baseline that separates the owner's pre-build work from the build's changes.
 2. The caller names a snapshot directory, or a base revision or range.
 3. Nothing is named: stop and ask for an explicit base. Never guess `HEAD~1` or compare only the last commit.
 
@@ -28,6 +28,8 @@ It verifies the baseline snapshot, reads the current HEAD, index, and working tr
 - a line diff for text, `binary` for binary files, the old and new target for a symlink, and a mode-only change;
 - the commits since the base with their files, git's own staged, unstaged, and untracked lists, and the receipts.
 
+It leaves out every path in the plan's own directory and reports that directory as `planDir`: the build commits the plan by design, so those files are not implementation changes. The commit list still shows them.
+
 Exit 0 means the inventory is complete. Exit 1 means the baseline is corrupt or the state is unsupported. Exit 2 means an argument, the plan, the baseline, or the `plan-review` dependency is missing. A missing or corrupt baseline object makes owner-work preservation uncertifiable: record INCOMPLETE with the snapshot path and the object named in the error.
 
 ## Without the helper
@@ -45,11 +47,6 @@ Use NUL-separated output so paths with spaces and newlines survive. Read content
 
 ## Read what you inventoried
 
-For every changed path, read the diff and enough of the file to judge its behavior. For every requirement, read the code that should satisfy it, including callers and consumers the plan's Evidence index names. Checks that execute code run in a disposable copy of the project, never in the project itself.
+For every changed path, read the diff and enough of the file to judge its behavior. For every requirement, read the code that should satisfy it, including callers and consumers the plan's evidence index names. Checks that execute code run in a disposable copy of the project, never in the project itself.
 
-The helper keeps the sibling review history in the inventory even when the
-builder declared it through `--report` for resume. Inspect that exact file's
-diff: byte-preserving copies and verbatim archived rounds are review bookkeeping,
-not implementation changes. Keep a row for them. An unrelated addition,
-rewritten old round, deletion, or lost owner content is still a difference;
-the report declaration never waives owner-work preservation.
+A file inside the plan directory that is not one of its five files is not hidden by the exclusion: check `docs/plans/<stem>/` for anything else, and treat it as an extra.

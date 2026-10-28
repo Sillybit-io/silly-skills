@@ -7,12 +7,12 @@ Read this file when you record a difference and before you decide the verdict.
 | Kind | Meaning |
 | --- | --- |
 | missing | A requirement, todo, or acceptance criterion has no change and no existing code that satisfies it |
-| partial | A change addresses the requirement but not all of it, its acceptance fails, or an execution commitment is not followed, such as the planned branch or a commit's message or files |
+| partial | A change addresses the requirement but not all of it, its acceptance fails, or an execution commitment is not followed, such as the planned branch, a commit's files, or a commit subject whose type, scope, or meaning differs |
 | extra | A changed artifact belongs to no todo |
 | changed-behavior | A change alters behavior the plan did not ask to alter, or breaks a Must NOT Have |
 | obsolete-or-renamed | An artifact the plan names was renamed, moved, or deleted, or a new one replaced it |
 | owner-work-changed | Work present at the baseline, staged, unstaged, or untracked, was changed, restored to HEAD, or removed |
-| unverified | Evidence needed to judge a requirement or an artifact is unavailable, including a planned Acceptance or QA check that no pass receipt records, or a receipt whose changed paths disagree with its snapshots |
+| unverified | Evidence needed to judge a requirement or an artifact is unavailable, including a planned Acceptance or QA check that no pass receipt records |
 
 ## Fields
 
@@ -21,14 +21,16 @@ Every difference records:
 - **Clause:** the plan text it is judged against, as `T3 Acceptance`, `MH2`, or `D4`, with a short quote.
 - **Changed part:** `path:line`, a diff hunk, or `path (deleted)`, `path (binary)`, `path (symlink a → b)`, `path (mode 100755 → 100644)`.
 - **Expected** and **actual**, as observable facts.
-- **Reason** and its **source**: `approved` when the owner's recorded decision authorizes it, with where it is recorded; `inferred` when the reason comes from evidence such as a commit message or a Build note, with that evidence; `unknown` when nothing states it. Never invent a builder's intention.
+- **Reason** and its **source**: `approved` when the owner's recorded decision authorizes it, with where it is recorded; `inferred` when the reason comes from evidence such as a commit message or a receipt note, with that evidence; `unknown` when nothing states it. Never invent a builder's intention.
 - **Impact:** what breaks or could break.
 - **Disposition:** `accepted-approved`, `fix-required`, `needs-owner`, or `needs-evidence`.
 - **Next:** the check or fix that closes it.
 
 A check you run during review shows the current state. It does not show that the builder tested a todo before starting the next one. When a receipt does not record a planned check, report it as `unverified` with disposition `needs-evidence`, even when your own run passes.
 
-A reason does not make a violation acceptable. Only an owner's recorded approval does, and the difference stays listed.
+A reason does not make a violation acceptable. Only an owner's recorded approval does, and the difference stays listed, as one line under Approved deviations.
+
+These are not differences: a commit subject the builder shortened but kept in type, scope, and meaning; a todo that edits a file an earlier wave also edited, within its own `Do`; the plan directory in a todo commit.
 
 ## Verdict
 
