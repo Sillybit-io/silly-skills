@@ -1195,6 +1195,7 @@ function validateStructure(ctx: Context, plan: ParsedPlan): void {
       err(ctx, "DESIGN", design.headingLine, "Design needs a mermaid block or 'Diagram: omitted — <reason>'");
     }
   }
+  validateOpenDesign(ctx, plan);
 
   // Todos.
   const todoIds = new Set<string>();
@@ -1289,6 +1290,44 @@ function validateStructure(ctx: Context, plan: ParsedPlan): void {
   }
   for (const gap of gapIds) {
     if (!listed.has(gap)) err(ctx, "SUCCESS_MAP", section(plan, "Success criteria")?.headingLine ?? 1, `gap ${gap} has no success criteria row`);
+  }
+}
+
+/**
+ * A spec that mentions OpenDesign outside a fence names its project in
+ * `## Design` → `### OpenDesign`: the id, a home-relative folder, and a
+ * `/projects/<id>` link with no session-only part.
+ */
+function validateOpenDesign(ctx: Context, plan: ParsedPlan): void {
+  const mention = plan.lines.find((l) => !l.fenced && !l.fenceMarker && /\bopen-?design\b/i.test(l.text));
+  if (!mention) return;
+  const design = section(plan, "Design");
+  const block = design && sectionsOf(plan.lines, 3, design.start, design.end).find((s) => s.title === "OpenDesign");
+  if (!block) {
+    err(ctx, "OPENDESIGN", design?.headingLine ?? mention.no, "the plan mentions OpenDesign, so '## Design' needs a '### OpenDesign' block");
+    return;
+  }
+  const field = (name: string) =>
+    plan.lines.slice(block.start, block.end).find((l) => !l.fenced && l.text.startsWith(`- ${name}:`));
+  const project = field("Project");
+  const folder = field("Folder");
+  const link = field("Link");
+  for (const [name, line] of [["Project", project], ["Folder", folder], ["Link", link]] as const) {
+    if (!line) err(ctx, "OPENDESIGN", block.headingLine, `'### OpenDesign' is missing '- ${name}:'`);
+  }
+  const id = project && /`([^`\s]+)`/.exec(project.text)?.[1];
+  if (project && !id) err(ctx, "OPENDESIGN", project.no, "'- Project:' needs the OpenDesign project id in backticks");
+  if (folder) {
+    const path = folder.text.slice("- Folder:".length).trim().replace(/^`|`$/g, "");
+    if (!path.startsWith("~/")) err(ctx, "OPENDESIGN", folder.no, "'- Folder:' must be relative to the home directory and start with '~/'");
+  }
+  if (link) {
+    const url = /https?:\/\/[^\s<>`]+/.exec(link.text)?.[0];
+    if (!url) err(ctx, "OPENDESIGN", link.no, "'- Link:' needs an http or https URL");
+    else if (/\/conversations\//.test(url)) err(ctx, "OPENDESIGN", link.no, "'- Link:' must not carry a session-only '/conversations/' part");
+    else if (id && !url.replace(/\/$/, "").endsWith(`/projects/${id}`)) {
+      err(ctx, "OPENDESIGN", link.no, `'- Link:' must end in '/projects/${id}'`);
+    }
   }
 }
 

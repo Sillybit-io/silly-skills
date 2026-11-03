@@ -31,6 +31,8 @@ When a diagram is required, the section contains a fenced `mermaid` block whose 
 
 A missing section, a required diagram that is absent, or a required diagram that is not one of those three types is a blocker. An extra diagram on a file-edit plan is not. Do not reject a diagram for node-id style.
 
+When the plan, its request, or its ticket shows the work uses OpenDesign, `## Design` has a `### OpenDesign` block with three lines: `- Project:` with the project id in backticks, `- Folder:` starting with `~/`, and `- Link:` ending in `/projects/<id>`. Each of these is a blocker: a missing block or line, an absolute folder path, a link with `/conversations/` or another session-only part, an id that differs from the one OpenDesign reports, or a todo that builds a screen the design covers without `OpenDesign <id>` under `References`. Confirm the id and folder against OpenDesign when it is reachable; when it is not, record that under Unverified. A plan with no sign of OpenDesign needs no block.
+
 ## Check I — Final wave
 
 The wave contains todos titled `F1`, `F2`, `F3`, and `F4`, in that order:

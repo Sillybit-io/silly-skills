@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- `plan-writer` 1.1.0: when the work uses OpenDesign, `## Design` gets a `### OpenDesign` block with the project name and id, its folder relative to the home directory, and its `/projects/<id>` link, read from OpenDesign itself. Todos that build a screen the design covers reference the project. The rule against absolute paths and internal hostnames still holds outside this block, and a session-only OpenDesign URL is never written.
+- `plan-review` 1.1.0: Check H blocks a plan that uses OpenDesign without a complete `### OpenDesign` block. The validator's new `OPENDESIGN` error checks the block whenever the spec mentions OpenDesign: the project id, a `~/` folder, and a link ending in `/projects/<id>` without a `/conversations/` part. Plans that never mention OpenDesign are not affected.
+
 ## [0.11.0] - 2026-10-28
 
 ### Changed

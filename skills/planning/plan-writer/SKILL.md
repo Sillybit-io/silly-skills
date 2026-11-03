@@ -3,7 +3,7 @@ name: plan-writer
 description: Writes an implementation plan after investigating the codebase to closure. Classifies the request, follows producers and consumers until no relevant edge is unread, verifies external contracts at the target version, and asks product questions before technical ones. Writes a plan directory, docs/plans/<date>-<slug>/, with quoted citations, critical flows, a baseline, todos tested one at a time, and a final verification wave, then validates it. Resumes a draft from its open frontier. Use when writing a plan, planning a feature or refactor, making an implementation plan, breaking work into tasks, resuming a draft plan, or fixing a rejected plan.
 license: CC-BY-ND-4.0
 metadata:
-  version: "1.0.0"
+  version: "1.1.0"
   category: planning
   suggested-model: anthropic/claude-fable-5-1
   suggested-effort: max
@@ -48,9 +48,9 @@ Do NOT use plan-writer when you:
 10. Ask the later round. Read [references/owner-questions.md](references/owner-questions.md). One message: product questions first, then technical, at most four of each, each with a reason and a default. Record `## Questions` with `### Product` before `### Technical`. In a non-interactive run, record each default and continue. As a child session another agent launched, return the open questions to that parent in the reply instead of asking.
 11. Fill the draft at `docs/plans/<stem>/<stem>.md`, where `<stem>` is `<YYYY-MM-DD>-<slug>` (the path the skeleton chose; it appended `-2` to both directory and stem on a collision): the TL;DR, the Scope subsections, `## Research`, and `## Questions`, each by replacing its placeholder, one subsection at a time. The remaining headings keep their placeholders. In an interactive session, reply with the draft-gate block and stop when a later-round question is open or the tier is `architecture`. Otherwise continue.
 12. After answers, research again when an answer adds a new point, and investigate again when new evidence adds seeds. Update the ledger, the flows, and the risks one row or bullet at a time. Change the evidence index one entry at a time: append a block for a new entry, and edit an existing entry in place when new evidence changes it. Never regenerate the index.
-13. Write `## Design`. Read [references/diagram.md](references/diagram.md). Add the mermaid block when the request is a flow or a design; otherwise write `Diagram: omitted — <reason>`.
+13. Write `## Design`. Read [references/diagram.md](references/diagram.md). Add the mermaid block when the request is a flow or a design; otherwise write `Diagram: omitted — <reason>`. When the work uses OpenDesign, read [references/open-design.md](references/open-design.md) and add its `### OpenDesign` block: the project name and id, its folder relative to the home directory, and its link. A missing value is a frontier item.
 14. Write the verification strategy: for every gap, the exact command or check that proves it closed, and the output it should produce.
-15. Write the todos with the fields in Output format, one todo per edit. T0 is always first: copy the plan directory into the project's `docs/plans/` if it is not already there, then commit it. Every todo and every final-wave gate starts with `- [ ] Open`. The `## Todos` introduction tells the builder to run each todo's Acceptance and QA scenario, pass them, commit when the todo says `Commit: yes`, record the evidence, and only then mark `- [x] Done` and start the next todo. That rule does not apply to the final-wave gates. Every acceptance criterion is something an agent can run: a command with its expected output, or a selector with its expected state, with concrete data. For a prose deliverable, acceptance is structural: a validator passes, a section exists, a command printed in the document runs. Never a grep for a sentence. Name the failing command and its observable outcome, never a predicted compiler or linter diagnostic code; the builder observes the code.
+15. Write the todos with the fields in Output format, one todo per edit. T0 is always first: copy the plan directory into the project's `docs/plans/` if it is not already there, then commit it. Every todo and every final-wave gate starts with `- [ ] Open`. The `## Todos` introduction tells the builder to run each todo's Acceptance and QA scenario, pass them, commit when the todo says `Commit: yes`, record the evidence, and only then mark `- [x] Done` and start the next todo. That rule does not apply to the final-wave gates. Every acceptance criterion is something an agent can run: a command with its expected output, or a selector with its expected state, with concrete data. For a prose deliverable, acceptance is structural: a validator passes, a section exists, a command printed in the document runs. Never a grep for a sentence. Name the failing command and its observable outcome, never a predicted compiler or linter diagnostic code; the builder observes the code. With a `### OpenDesign` block, every todo that builds or changes a screen the design covers lists `OpenDesign <id>` under `References`, and its Acceptance checks a selector or state taken from that design.
 16. Group the implementation todos into waves by dependency: todos that share no file and have no dependency between them go in one wave. Two todos in different waves may edit the same file; the later one builds on the earlier one's result. T0 runs alone before wave 1. Above the wave list, tell the builder to finish T0, then each wave in list order, then the final wave, without stopping to ask for a continue, and to fix a failing todo and rerun its checks until they pass. After the Todos test paragraph, add its own paragraph: when a wave is done, start the next wave, including the final wave, without asking for a continue.
 17. Add the final verification wave. Read [references/final-wave.md](references/final-wave.md). Title the gates `F1`, `F2`, `F3`, and `F4`, in that order. When `ui: yes`, the last todo is the automated UI QA task.
 18. Apply the transcript test to every todo: it may hold a signature, a path, or a command, and nothing longer. Replace implementation code with the decision it encodes and the reference it came from. Evidence may be as long as the investigation needs; todo bodies stay short. A todo's `Do` holds about 150 words at most, and `Acceptance` and `QA scenario` about 120 each; split a todo that needs more, and move its rationale to `## Questions`.
@@ -175,6 +175,14 @@ Files: [Evidence index](<stem>.evidence-index.md) · [Reviews](<stem>.reviews.md
 ## Design
 
 <A fenced mermaid block, or one line: Diagram: omitted — <reason>>
+
+### OpenDesign
+
+<Only when the work uses OpenDesign; otherwise omit this heading.>
+
+- Project: <name> (`<id>`)
+- Folder: `~/<path under the home directory>`
+- Link: <http://127.0.0.1:<port>/projects/<id>> — local; opens while OpenDesign runs
 
 ## Verification strategy
 
@@ -319,6 +327,7 @@ MUST:
 - MUST write, above the execution-strategy wave list, that the builder finishes T0, then each wave in list order, then the final wave, without stopping to ask for a continue, and fixes a failing todo and reruns its checks until they pass.
 - MUST end the plan with `F1`, `F2`, `F3`, and `F4` in that order, and end the file with the automated UI QA todo whenever `ui: yes`.
 - MUST write `## Design` with either a mermaid block or `Diagram: omitted — <reason>`.
+- MUST add the `### OpenDesign` block under `## Design` whenever the work uses OpenDesign, read from OpenDesign itself, and reference it from every todo that builds a screen the design covers.
 - MUST run the bundled validator and fix every error before setting `status: planned`.
 - MUST write the spec to `docs/plans/<stem>/<stem>.md` with its evidence index beside it, and set `status: draft` before `status: planned`.
 - MUST re-read the plan from disk, recheck cited sources, and work the open frontier on every resume or follow-up.
@@ -345,7 +354,7 @@ NEVER:
 - NEVER answer an owner decision silently. It is either a recorded default with its reason, or a listed question.
 - NEVER plan a change classified `trivial`.
 - NEVER paste the whole plan into the chat reply; reply with the path and the TL;DR only.
-- NEVER include a secret, personal data, an internal hostname, or an absolute local path in the plan file.
+- NEVER include a secret, personal data, an internal hostname, or an absolute local path in the plan file. The one exception is the `### OpenDesign` block: its `~/` folder and its local `/projects/<id>` link. Never a session-only OpenDesign URL there either.
 - NEVER commit the plan. T0 of the build commits it.
 - NEVER call Write on a plan file that already exists, rewrite a whole top-level section that has several subsections, or regenerate the evidence index. When an Edit fails, retry it smaller.
 
@@ -367,6 +376,7 @@ NEVER:
 - [ ] Every todo and every final-wave gate starts with `- [ ] Open`. The `## Todos` introduction states the test-before-next rule, and the final wave does not use it.
 - [ ] "Must NOT have" is present, numbered, and lists anything the slop check removed.
 - [ ] `## Design` is a mermaid block or `Diagram: omitted — <reason>`.
+- [ ] When the work uses OpenDesign, `## Design` has a complete `### OpenDesign` block (project id, `~/` folder, `/projects/<id>` link), and every todo that builds a screen the design covers references it; otherwise the plan never mentions OpenDesign.
 - [ ] Every acceptance criterion names a command or selector and a concrete expected result.
 - [ ] No todo holds more than a signature, a path, or a command.
 - [ ] The execution strategy's waves respect every "Depends on" field, and the continue-through-waves instruction is above the wave list.

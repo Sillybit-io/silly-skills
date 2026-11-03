@@ -25,7 +25,7 @@ Use one of these, and no other type:
 Diagram: omitted — <reason>
 ```
 
-The reason names why the request is not a flow or a design. An extra diagram on a file-edit plan is allowed. A missing `## Design` section is not.
+The reason names why the request is not a flow or a design. A `### OpenDesign` block from [open-design.md](open-design.md) may follow that line. An extra diagram on a file-edit plan is allowed. A missing `## Design` section is not.
 
 ## Diagrams and flow traces
 

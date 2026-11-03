@@ -938,6 +938,52 @@ describe("plan mode", () => {
   });
 });
 
+describe("OpenDesign block", () => {
+  const OD_ID = "524751c2-5f7b-405e-87b2-70feb7c98913";
+  const block = (folder: string, link: string, project = `Fixture UI (\`${OD_ID}\`)`) =>
+    `### OpenDesign\n\n- Project: ${project}\n- Folder: \`${folder}\`\n- Link: <${link}> — local; opens while OpenDesign runs\n\n`;
+  const withBlock = (root: string, text: string) =>
+    planText(root, { mutate: (t) => t.replace("## Verification strategy\n", `${text}## Verification strategy\n`) });
+  const odErrors = (root: string) => run(root).errors.filter((e) => e.code === "OPENDESIGN").map((e) => e.message);
+
+  test("a plan that never mentions OpenDesign needs no block", () => {
+    const root = makeProject();
+    writePlan(root, planText(root));
+    expect(odErrors(root)).toEqual([]);
+  });
+
+  test("a complete block validates", () => {
+    const root = makeProject();
+    writePlan(root, withBlock(root, block(`~/design/projects/${OD_ID}`, `http://127.0.0.1:7456/projects/${OD_ID}`)));
+    expect(run(root).errors).toEqual([]);
+  });
+
+  test("a mention without a block fails, but not in a draft", () => {
+    const root = makeProject();
+    const text = planText(root, { mutate: (t) => t.replace("Diagram: omitted — a two-file change.", "Diagram: omitted — a two-file change. The screens come from OpenDesign.") });
+    writePlan(root, text);
+    expect(odErrors(root).some((m) => m.includes("needs a '### OpenDesign' block"))).toBe(true);
+    writePlan(root, text.replace(/^status: .*$/m, "status: draft"));
+    expect(odErrors(root)).toEqual([]);
+  });
+
+  test("a missing line, a missing id, an absolute folder, and a session-only or foreign link each fail", () => {
+    const good = `http://127.0.0.1:7456/projects/${OD_ID}`;
+    const cases: [string, string][] = [
+      ["### OpenDesign\n\n- Project: Fixture UI (`x`)\n\n", "missing '- Folder:'"],
+      [block(`~/design/${OD_ID}`, good, "Fixture UI"), "project id in backticks"],
+      [block(`/home/someone/design/${OD_ID}`, good), "start with '~/'"],
+      [block(`~/design/${OD_ID}`, `http://127.0.0.1:7456/projects/${OD_ID}/conversations/c1/files/index.html`), "session-only"],
+      [block(`~/design/${OD_ID}`, "http://127.0.0.1:7456/projects/other"), `must end in '/projects/${OD_ID}'`],
+    ];
+    for (const [text, message] of cases) {
+      const root = makeProject();
+      writePlan(root, withBlock(root, text));
+      expect(odErrors(root).some((m) => m.includes(message))).toBe(true);
+    }
+  });
+});
+
 describe("field caps", () => {
   test("a field past its soft cap is a gap and the plan still validates", () => {
     const root = makeProject();

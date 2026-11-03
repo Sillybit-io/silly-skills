@@ -66,6 +66,7 @@ Every digest of a JSON value hashes its canonical JSON. Object keys are sorted, 
 - **Identifiers:** gap rows start with `G<n>`. Must have bullets start `- MH<n>:` and Must NOT have bullets start `- MN<n>:`.
 - **Questions:** `### Product` before `### Technical`, neither empty.
 - **Design:** a `mermaid` fence whose first line starts with `flowchart`, `sequenceDiagram`, or `stateDiagram`, or the line `Diagram: omitted — <reason>`.
+- **OpenDesign:** only when the spec mentions OpenDesign outside a fence, and not in a draft. `## Design` then holds `### OpenDesign` with `- Project:` and the project id in backticks, `- Folder:` starting with `~/`, and `- Link:` with an `http` or `https` URL ending in `/projects/<id>` and no `/conversations/` part. Any miss is an `OPENDESIGN` error.
 - **Todos:** `### T<n> — <title>`, T0 first. The first line is `- [ ] Open` or `- [x] Done`. The fields are `Do`, `Must not`, `Closes gap`, `Depends on`, `References`, `Acceptance`, `QA scenario`, and `Commit`. Every gap is closed by a todo other than T0, and every todo other than T0 closes a gap.
 - **Waves:** `- Wave <n>: T<a>, T<b> — <note>`. Waves count up from 1. T0 runs alone first. A dependency must sit in an earlier wave. Cycles, same-wave dependencies, and missing producers are errors.
 - **Final wave:** `### F1 —` through `### F4 —` in order, each with a box. With `ui: yes`, `### Automated UI QA` is the last gate.
@@ -235,7 +236,7 @@ A receipt holds only `seq`, `todo`, `event`, `state`, `prev`, `before`, `after`,
 | Code | Meaning |
 | --- | --- |
 | PLAN_FILES | The plan directory, the links line, or the evidence index file |
-| FRONTMATTER, SECTION, QUESTIONS, DESIGN, PLACEHOLDER | Plan shape |
+| FRONTMATTER, SECTION, QUESTIONS, DESIGN, OPENDESIGN, PLACEHOLDER | Plan shape |
 | FIELD_CAP | A field past its hard cap |
 | REQUIREMENT_ID, GAP_MAP, SUCCESS_MAP | Identifiers and gap mapping |
 | TODO, DEPENDENCY, WAVE, FINAL_WAVE | Todos, dependency graph, waves, and gates |
