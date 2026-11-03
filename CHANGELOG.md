@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-11-03
+
 ### Added
 
 - `plan-writer` 1.1.0: when the work uses OpenDesign, `## Design` gets a `### OpenDesign` block with the project name and id, its folder relative to the home directory, and its `/projects/<id>` link, read from OpenDesign itself. Todos that build a screen the design covers reference the project. The rule against absolute paths and internal hostnames still holds outside this block, and a session-only OpenDesign URL is never written.
