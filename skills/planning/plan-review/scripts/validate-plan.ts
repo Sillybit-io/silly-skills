@@ -206,6 +206,12 @@ export type ValidationResult = {
   requiredRechecks: { todo: string; paths: string[] }[];
   reconcileBoxes: string[];
   drift: string[];
+  /** Only for a plan with slices, in every mode. */
+  slices?: { id: string; name: string; branch: string | null; todos: string[] }[];
+  /** Only for a plan with slices, in resume mode: the slice of nextTodo, or null. */
+  nextSlice?: string | null;
+  /** Only for a plan with slices, in resume mode: no todo is active and nextTodo is the first todo of nextSlice. */
+  sliceStart?: boolean;
   exitCode: 0 | 1 | 2;
 };
 
@@ -472,6 +478,14 @@ export type Todo = {
 /** A Behavior line: `- B<n> (<case>): Given ..., when ..., then ...`. `text` is the part after the colon. */
 export type BehaviorLine = { id: string; case: string; text: string; line: number };
 
+/**
+ * A slice line in the execution strategy: `- Slice S<n> — <name>. Independent
+ * test: <test>`, with an optional `. Branch: <branch>`, the branch in
+ * backticks. It holds the wave lines after it, up to the next slice line;
+ * `todos` lists their todos in order.
+ */
+export type Slice = { id: string; name: string; test: string; branch: string | null; waves: number[]; todos: string[]; line: number };
+
 export type ParsedPlan = {
   text: string;
   lines: Line[];
@@ -482,6 +496,8 @@ export type ParsedPlan = {
   todos: Todo[];
   finals: { id: string; line: number; box: "Open" | "Done" | null }[];
   waves: { wave: number; todos: string[]; line: number }[];
+  /** The slices of the execution strategy, in order; empty when the plan has none. */
+  slices: Slice[];
   gaps: { id: string; line: number }[];
   mustHave: { id: string; line: number }[];
   mustNotHave: { id: string; line: number }[];
@@ -539,6 +555,11 @@ function behaviorEntries(lines: Line[], s: Section): BehaviorEntry[] {
   return out;
 }
 
+/** A line that starts with the word `Slice` is a slice line, so it must match SLICE_LINE. */
+const SLICE_START = /^- Slice\b/;
+/** `- Slice S<n> — <name>. Independent test: <test>`, with an optional `. Branch: <branch>` at the end, the branch in backticks. */
+const SLICE_LINE = /^- Slice (S\d+) — (.*?)\.\s+Independent test:\s*((?:(?!\.\s+Branch:).)*?)(?:\.\s+Branch:\s*`([^`\s]+)`)?\.?$/;
+
 export function parsePlan(text: string, evidenceText?: string): ParsedPlan {
   const lines = scanLines(text);
   const frontmatter: Record<string, string> = {};
@@ -574,6 +595,7 @@ export function parsePlan(text: string, evidenceText?: string): ParsedPlan {
     todos: [],
     finals: [],
     waves: [],
+    slices: [],
     gaps: [],
     mustHave: [],
     mustNotHave: [],
@@ -683,13 +705,27 @@ export function parsePlan(text: string, evidenceText?: string): ParsedPlan {
 
   const execution = section(plan, "Execution strategy");
   if (execution) {
+    // A slice holds the wave lines after it, up to the next slice line. A slice
+    // line that does not parse holds none; validateSlices reports it.
+    let slice: Slice | null = null;
     for (let i = execution.start; i < execution.end; i++) {
       const line = lines[i];
       if (line.fenced || line.fenceMarker) continue;
+      if (SLICE_START.test(line.text)) {
+        const s = SLICE_LINE.exec(line.text.trimEnd());
+        slice = s ? { id: s[1], name: s[2].trim(), test: s[3].trim(), branch: s[4] ?? null, waves: [], todos: [], line: line.no } : null;
+        if (slice) plan.slices.push(slice);
+        continue;
+      }
       const m = /^- Wave (\d+): (.+)$/.exec(line.text);
       if (!m) continue;
       const head = m[2].split(/\s+[—(]/)[0];
-      plan.waves.push({ wave: Number(m[1]), todos: head.match(/\bT\d+\b/g) ?? [], line: line.no });
+      const wave = { wave: Number(m[1]), todos: head.match(/\bT\d+\b/g) ?? [], line: line.no };
+      plan.waves.push(wave);
+      if (slice) {
+        slice.waves.push(wave.wave);
+        slice.todos.push(...wave.todos);
+      }
     }
   }
 
@@ -1340,6 +1376,7 @@ function validateStructure(ctx: Context, plan: ParsedPlan): void {
       else if (b > a) err(ctx, "WAVE", todo.line, `${todo.id} depends on ${dep}, which runs in a later wave`);
     }
   }
+  validateSlices(ctx, plan);
 
   // Final wave.
   const finalIds = plan.finals.map((f) => f.id);
@@ -1531,6 +1568,48 @@ function validateBehavior(ctx: Context, plan: ParsedPlan): void {
   for (const l of lines) {
     if (!served.has(l.id)) err(ctx, "BEHAVIOR", l.no, `Behavior ${l.id} is not served by any todo`);
   }
+}
+
+/**
+ * Slice lines in the execution strategy, from `planned` on. A plan without a
+ * slice line skips every rule here. Slices group waves; they change neither
+ * the order of todos nor nextTodo.
+ */
+function validateSlices(ctx: Context, plan: ParsedPlan): void {
+  const execution = section(plan, "Execution strategy");
+  if (!execution) return;
+  const starts = plan.lines.slice(execution.start, execution.end).filter((l) => !l.fenced && !l.fenceMarker && SLICE_START.test(l.text));
+  if (starts.length === 0) return;
+  for (const l of starts) {
+    if (!plan.slices.some((s) => s.line === l.no)) {
+      err(ctx, "SLICE", l.no, "a slice line must be '- Slice S<n> — <name>. Independent test: <test>', with an optional '. Branch: `<branch>`' at the end");
+    }
+  }
+  const firstWave = plan.waves[0];
+  if (firstWave && firstWave.line < starts[0].no) {
+    err(ctx, "SLICE", starts[0].no, `the first slice line must come before Wave ${firstWave.wave}, so every wave is in a slice`);
+  }
+  const seen = new Set<string>();
+  let next = 1;
+  for (const s of plan.slices) {
+    if (seen.has(s.id)) err(ctx, "SLICE", s.line, `duplicate slice ${s.id}`);
+    else if (s.id !== `S${next}`) err(ctx, "SLICE", s.line, `Slice ${s.id} is out of sequence; ids count up from S1, so expected S${next}`);
+    seen.add(s.id);
+    next = Number(s.id.slice(1)) + 1;
+    if (s.name === "") err(ctx, "SLICE", s.line, `Slice ${s.id} needs a name`);
+    if (s.test === "") err(ctx, "SLICE", s.line, `Slice ${s.id} needs an independent test`);
+    if (s.waves.length === 0) err(ctx, "SLICE", s.line, `Slice ${s.id} has no wave`);
+  }
+}
+
+/** The slice that holds a todo; undefined for T0, a final gate, or a plan without slices. */
+function sliceOf(plan: ParsedPlan, id: string): Slice | undefined {
+  return plan.slices.find((s) => s.todos.includes(id));
+}
+
+/** The slice whose last todo is `id`: that todo runs the slice's independent test. */
+function sliceEndingAt(plan: ParsedPlan, id: string): Slice | undefined {
+  return plan.slices.find((s) => s.todos[s.todos.length - 1] === id);
 }
 
 function findCycle(todos: Todo[]): string[] | null {
@@ -1749,6 +1828,11 @@ function behaviorTargets(plan: ParsedPlan): string[] {
   return [...new Set(plan.behavior.map((b) => `behavior:${b.id}`))];
 }
 
+/** One `slice:S<n>` review target per slice; none for a plan without slices. */
+function sliceTargets(plan: ParsedPlan): string[] {
+  return [...new Set(plan.slices.map((s) => `slice:${s.id}`))];
+}
+
 /** The review targets every gate record must cover. */
 export function requiredTargets(plan: ParsedPlan, citations: Map<string, Citation>): string[] {
   const out: string[] = [];
@@ -1758,6 +1842,7 @@ export function requiredTargets(plan: ParsedPlan, citations: Map<string, Citatio
     out.push(`${todo.id}.start`, `${todo.id}.acceptance`, `${todo.id}.qa`);
     for (const dep of todo.dependsOn) out.push(`dep:${todo.id}:${dep}`);
   }
+  out.push(...sliceTargets(plan));
   for (const final of plan.finals) out.push(`${final.id}.acceptance`);
   for (const flow of evidenceFlows(plan)) out.push(`flow:${flow}`);
   for (const c of citations.values()) if (c.kind === "external") out.push(`contract:${c.id}`);
@@ -2123,9 +2208,15 @@ export function qaLabels(todo: Todo): string[] {
   return labelled ? labels : text === "" ? [] : ["qa"];
 }
 
-/** The check ids a todo's pass receipt must record as passing: `acceptance` and one `qa:<label>` per QA part. */
-export function requiredCheckIds(todo: Todo): string[] {
-  return ["acceptance", ...qaLabels(todo).map((l) => (l === "qa" ? "qa" : `qa:${l}`))];
+/**
+ * The check ids a todo's pass receipt must record as passing: `acceptance` and
+ * one `qa:<label>` per QA part. Given the plan, the last todo of a slice adds
+ * `slice:S<n>`, the slice's independent test.
+ */
+export function requiredCheckIds(todo: Todo, plan?: ParsedPlan): string[] {
+  const ids = ["acceptance", ...qaLabels(todo).map((l) => (l === "qa" ? "qa" : `qa:${l}`))];
+  const slice = plan ? sliceEndingAt(plan, todo.id) : undefined;
+  return slice ? [...ids, `slice:${slice.id}`] : ids;
 }
 
 /**
@@ -2381,7 +2472,7 @@ function validateResume(
     }
     if (r.event === "pass" && planTodo) {
       const checks = (Array.isArray(r.checks) ? r.checks : []).filter(isObject);
-      for (const id of requiredCheckIds(planTodo)) {
+      for (const id of requiredCheckIds(planTodo, plan)) {
         if (!checks.some((c) => str(c.id) === id && checkPassed(c))) {
           err(ctx, "MISSING_CHECK", line, `${label}: ${r.todo} has no passing '${id}' check, so it is not done; run it and record it`);
         }
@@ -2481,16 +2572,20 @@ function blockText(plan: ParsedPlan, id: string): { title: string; text: string 
 }
 
 /**
- * One todo with what a todo child needs around it: the gaps it closes, the
- * Behavior lines it serves, the titles of its dependencies, its strict areas,
- * and the check ids its pass receipt must record. About one todo's worth of
- * text instead of the whole spec.
+ * One todo with what a todo child needs around it: its slice, the gaps it
+ * closes, the Behavior lines it serves, the titles of its dependencies, its
+ * strict areas, and the check ids its pass receipt must record. About one
+ * todo's worth of text instead of the whole spec.
  */
 export function todoBrief(plan: ParsedPlan, id: string): string | null {
   const block = blockText(plan, id);
   if (!block) return null;
-  const out = [`# ${plan.frontmatter.title ?? "Plan"}: ${block.title}`, "", `Branch: \`${plan.frontmatter.branch ?? ""}\``, "", block.text];
   const todo = plan.todos.find((t) => t.id === id);
+  // A todo in a slice builds on the slice's branch when the slice names one.
+  const slice = todo ? sliceOf(plan, todo.id) : undefined;
+  const out = [`# ${plan.frontmatter.title ?? "Plan"}: ${block.title}`, "", `Branch: \`${slice?.branch ?? plan.frontmatter.branch ?? ""}\``];
+  if (slice) out.push(`Slice: ${slice.id} — ${slice.name}`);
+  out.push("", block.text);
   if (todo) {
     const gaps = todo.closes.map((g) => plan.gaps.find((x) => x.id === g)).filter((g): g is { id: string; line: number } => Boolean(g));
     if (gaps.length > 0) out.push("", "Gaps it closes:", "", ...gaps.map((g) => plan.lines[g.line - 1].text));
@@ -2499,7 +2594,9 @@ export function todoBrief(plan: ParsedPlan, id: string): string | null {
     const deps = todo.dependsOn.map((d) => plan.todos.find((t) => t.id === d)).filter((t): t is Todo => Boolean(t));
     if (deps.length > 0) out.push("", `Depends on: ${deps.map((t) => `${t.id} — ${t.title}`).join("; ")}`);
     out.push("", `Strict areas: ${todo.strict.length > 0 ? todo.strict.join(", ") : "none"}`);
-    out.push(`Checks its pass receipt must record: ${requiredCheckIds(todo).map((c) => `\`${c}\``).join(", ")}`);
+    out.push(`Checks its pass receipt must record: ${requiredCheckIds(todo, plan).map((c) => `\`${c}\``).join(", ")}`);
+    const ends = sliceEndingAt(plan, todo.id);
+    if (ends) out.push(`Independent test of ${ends.id}, recorded as \`slice:${ends.id}\`: ${ends.test}`);
   }
   const must = [...plan.mustHave, ...plan.mustNotHave].map((r) => plan.lines[r.line - 1].text);
   if (must.length > 0) out.push("", "Must have and must not have (whole plan):", "", ...must);
@@ -2522,6 +2619,8 @@ export function gateSkeleton(plan: ParsedPlan, root: string, planDigest: string)
   for (const todo of plan.todos) {
     groups.push([`${todo.id}.start`, `${todo.id}.acceptance`, `${todo.id}.qa`, ...todo.dependsOn.map((d) => `dep:${todo.id}:${d}`)]);
   }
+  const slices = sliceTargets(plan);
+  if (slices.length > 0) groups.push(slices);
   for (const final of plan.finals) groups.push([`${final.id}.acceptance`]);
   for (const flow of evidenceFlows(plan)) groups.push([`flow:${flow}`]);
   for (const c of citations) if (c.kind === "external") groups.push([`contract:${str(c.id)}`]);
@@ -2604,6 +2703,8 @@ export function validatePlan(planPath: string, options: Options = {}): Validatio
   const plan = parsePlan(text, evidenceText ?? undefined);
   const digest = canonicalSpecDigest(text, evidenceText ?? "");
   result.planDigest = digest;
+  // Only a plan with slices gets the slice keys, so the output of any other plan stays as it was.
+  if (plan.slices.length > 0) result.slices = plan.slices.map(({ id, name, branch, todos }) => ({ id, name, branch, todos }));
   validateStructure(ctx, plan);
 
   const currentReader: SourceReader = (path) => {
@@ -2649,6 +2750,11 @@ export function validatePlan(planPath: string, options: Options = {}): Validatio
     result.requiredRechecks = resume.requiredRechecks;
     result.reconcileBoxes = resume.reconcileBoxes;
     result.drift = resume.drift;
+    if (plan.slices.length > 0) {
+      const slice = resume.nextTodo === null ? undefined : sliceOf(plan, resume.nextTodo);
+      result.nextSlice = slice?.id ?? null;
+      result.sliceStart = slice !== undefined && resume.activeTodo === null && slice.todos[0] === resume.nextTodo;
+    }
     if (resume.exit2) {
       result.gaps.push(...ctx.capGaps);
       result.exitCode = 2;
@@ -2685,11 +2791,12 @@ docs/plans/<stem>/<stem>.md; the four sibling files are found beside it.
                   Exit 0 is not approval: read gateEligible.
   --resume        With --review: verify the approval against the build
                   baseline and the receipt chain in <stem>.build.md against
-                  the current project, and report resumeEligible and nextTodo.
-  --todo <id>     Print one todo or final gate with the gaps it closes, the
-                  Behavior lines it serves, its dependencies, its strict
-                  areas, and the check ids its pass receipt must record. Does
-                  not validate.
+                  the current project, and report resumeEligible and nextTodo,
+                  and for a plan with slices nextSlice and sliceStart.
+  --todo <id>     Print one todo or final gate with its slice, the gaps it
+                  closes, the Behavior lines it serves, its dependencies, its
+                  strict areas, and the check ids its pass receipt must
+                  record. Does not validate.
   --gate-skeleton Print a gate record for the next round with every required
                   target in an obligation and every status unverified, for the
                   reviewer to fill in. Does not validate.

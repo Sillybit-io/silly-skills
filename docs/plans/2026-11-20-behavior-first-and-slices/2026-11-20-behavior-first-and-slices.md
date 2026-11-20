@@ -347,7 +347,7 @@ A todo passes its Acceptance and every QA part, commits when it says `Commit: ye
 
 ### T1 — Validate Behavior lines and the Serves field
 
-- [ ] Open
+- [x] Done
 - Do: In the validator, add the optional `## Behavior` section and the `Serves` todo field, with every rule under "Behavior lines" in Design: the grammar, the `BEHAVIOR` errors, the path check, the vague-word gap, the caps, the `--todo` lines, and the `behavior:B<n>` targets with their gate-skeleton group. Accept the section only directly after `## TL;DR`. Describe the grammar, the error code and the target kind in the validator contract, each in the section that already holds its kind. Add tests in a describe block named `Behavior lines`: one per rule, the must-pass and must-fail words, and one that a fixture without the section gets no `BEHAVIOR` error, no `behavior:` target and no `Serves` requirement. Bump `plan-review` to 2.1.0 and add a changelog line.
 - Must not: change an error, a gap, a target, or a JSON key for a plan without the section. Add a rule on the number of lines. Report a vague word as an error. Edit the expectation of an existing test.
 - Closes gap: G1
