@@ -4,7 +4,7 @@ Read this file after the codebase investigation and, when the request came from 
 
 ## What to research
 
-Search the public web for this feature, not for generic best practice. The queries come from what the user asked: the official docs, how other people implemented it, what they treat as important, and the pros and cons.
+Search the public web for this feature, not for generic best practice: the official docs for what the change relies on, and how others solved the same problem when the approach is not obvious.
 
 Research ends when every external contract a todo relies on is verified, not when a count runs out. A contract is an API signature, a configuration field, a CLI flag, a file format, a lifecycle or ordering guarantee, or a version constraint. For each one:
 
@@ -17,13 +17,9 @@ General guidance, analogies, and examples for a different version do not verify 
 ## Write `## Research`
 
 - Sources. Each is an `http` or `https` URL you opened, with its version.
-- How others did it.
-- What matters.
-- Pros and cons.
-- What this plan will follow.
-- Queries not run, with the reason, or `none`.
+- What this plan will follow, in one line.
 
-When the public web has nothing useful, write the line `No useful public source found.` and name the queries you ran. That line satisfies the format. It does not waive a contract a todo needs.
+A comparison of approaches, when there was one, goes in `## Questions` as the reason for a decision. When the public web has nothing useful, write the line `No useful public source found.` That line satisfies the format. It does not waive a contract a todo needs.
 
 A research finding does not replace a code citation. Every IS cell still cites `path:line`. Put a research finding in the GAP cell or in this section.
 

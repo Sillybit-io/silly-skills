@@ -1,6 +1,6 @@
-# Coverage closure
+# Coverage
 
-Read this file before exploring the codebase, when resuming a draft, and when a fix-only step reopens investigation. Investigation ends when coverage is closed, not when a count runs out. By the owner's decision, this planning skill has no file, line, search, page, or pass budget. That decision overrides the work-budget rule in `skill-writer` for planning investigation only. A host timeout or interruption produces a checkpoint, never a planned file.
+Read this file before exploring the codebase, when resuming a draft, and when a fix-only step reopens investigation. By the owner's decision, discovery has a fixed depth instead of a count: one step from the changed code, plus the changed inventory, plus everything in a strict area. A host timeout or interruption produces a checkpoint, never a planned file.
 
 ## Seeds
 
@@ -12,9 +12,15 @@ Start from everything the request touches:
 - Invariants the change alters: inventory membership, counts, identifiers, and generated lists.
 - The tests and fixtures that pin the current behavior.
 
-## Follow every edge
+## One step from the seeds
 
-For each seed, find what it depends on (producers) and what depends on it (consumers). Repeat for every relevant file you find. Check these edge kinds, because a plain import search misses most of them:
+For each seed, find what it depends on (producers) and what depends on it (consumers). Stop there, with three exceptions:
+
+1. **A consumer that needs a change** becomes a new seed. Its own consumers are one step from it.
+2. **The changed inventory.** Search for the collection the change adds to, removes from, or renames in, and for the code that enumerates, counts, registers, or asserts it. A new item's name cannot find the existing consumers of the whole collection. This search is never skipped: missed counts and lists are the most common gap in a plan.
+3. **A strict area.** When a seed or a consumer touches security, sign-in, or permissions, or production and shared services, follow its edges to the end. When unsure, treat it as strict.
+
+Check these edge kinds, because a plain import search misses most of them:
 
 | Edge | How to find it |
 | --- | --- |
@@ -26,44 +32,37 @@ For each seed, find what it depends on (producers) and what depends on it (consu
 | Generated and installed files | Build outputs, templates, installers, update and migration paths |
 | Inventory invariants | Code that enumerates the affected collection, registrations, derived counts and lists, and assertions or snapshots of them |
 | Documentation commands | Commands and flags quoted in READMEs and runbooks |
-| Failure and recovery | Error handlers, retries, rollbacks, and cleanup that run when the change fails |
 | Tests | Tests that pin current behavior, including snapshot and fixture files |
 
-Search beyond the files the request names. Use synonyms and the old and new names. Also search for the changed invariant and the code that derives or asserts it: a new item's name cannot find existing consumers of the whole collection. Record each search: the command or query, its scope, and what it found.
+Use synonyms and the old and new names. An empty or failed search is not proof of absence: try another name before you exclude.
 
-An empty or failed search is not proof of absence. Record its scope and the synonyms tried. When a search tool is unavailable, record that and use another way to read the same scope.
+## Account for each edge you found
 
-## Account for each relevant edge
+Every edge you found ends in one of two states:
 
-Every relevant edge ends in one of two states:
+- **inspected** — you opened the code at that location and cited the lines you rely on: path and line range, with an empty `sha256` for `stamp-evidence.ts` to fill.
+- **excluded** — you read the code that consumes the changed value and give a short reason why its behavior cannot be affected. A filename or a directory is not a reason.
 
-- **inspected** — you opened the code at that location and recorded a citation with a literal excerpt of the lines you rely on: the whole range when it is three lines or fewer, otherwise a one-to-three-line anchor from inside it.
-- **excluded** — you read the code that consumes or asserts the changed value, name why that behavior cannot be affected, and cite those lines. A filename, directory, or unrelated feature boundary is not evidence. A mixed-purpose file can contain an affected aggregate check even when its main feature stays unchanged; keep that part inspected rather than excluding the whole file.
+An edge still unread stays `pending`, and `pending` rows block the planned state.
 
-"Probably fine" is not a reason. An edge still unread stays `pending`, and `pending` rows block the planned state.
-
-When an inspected consumer needs a change, name that change in its owning todo. A citation or a generic instruction to fix failing tests does not supply it. Use the existing coverage entries and todos; no separate inventory report is needed.
+When an inspected consumer needs a change, name that change in its owning todo. A generic instruction to fix failing tests does not supply it.
 
 ## Frontier and closure
 
-Keep the frontier: the pending paths, searches, and unverified external contracts, each with why it is open and the next action. Coverage is closed when:
+Keep the frontier: the pending paths and unverified external contracts, each with why it is open and the next action. Coverage is closed when every edge you found is inspected or excluded, every external contract a todo relies on is checked at its target version, and the frontier is empty.
 
-1. every discovered relevant edge is inspected or excluded,
-2. every external contract a todo relies on is checked at its target version, and
-3. the frontier is empty.
-
-Unknown product choices belong to the owner and become questions. Unread files and unfinished searches belong to you. Never turn an unread file into an owner question such as "needs a look at <path>".
+Unknown product choices belong to the owner and become questions. Unread files belong to you. Never turn an unread file into an owner question.
 
 ## Checkpoints and resume
 
-The plan file exists from the skeleton step on, and each citation, coverage row, and frontier item was appended as you found it, so the draft is already current. Before the session ends, append the frontier items and the next action, one block each. Keep `status: draft`.
+The plan file exists from the skeleton step on, and each citation, coverage row, and frontier item was appended as you found it, so the draft is already current. Before the session ends, append the frontier items and the next action. Keep `status: draft`.
 
-On resume, re-read the draft from disk. Recompute the SHA-256 of every cited source. When a source changed, re-read its cited lines and update the excerpt, or record the change. Then work the frontier before anything else, even when `## Research` and `## Questions` are already filled. New evidence can add seeds. Research and questions repeat when that evidence demands it.
+On resume, re-read the draft from disk and run the validator. A `CITATION_DRIFT` error names a source that changed: re-read its cited lines, fix the range, empty its `sha256`, and stamp again. Then work the frontier.
 
 ## Fix-only follow-up
 
-A blocker about coverage, a flow, or a missed consumer reopens investigation along that blocker's affected paths. Follow those edges to closure, update the coverage rows, citations, critical flows, and the QA that proves the fix. Edit each entry into its corrected state; the `### Coverage` paragraph never gains a sentence about what a fix reopened. Do not redesign unrelated sections.
+A blocker about coverage, a flow, or a missed consumer reopens investigation along that blocker's affected paths, with the same depth rules. Edit each entry into its corrected state. Do not redesign unrelated sections.
 
 ## Delegating discovery
 
-When a `plan-scout` persona is available and allowed, you may send it one bounded discovery question: the seed, the edge kinds, and the scope. It returns paths, excerpts, and searches, never a verdict. Re-read each returned excerpt in the file before you cite it. When the scout is unavailable or denied, search yourself. Discovery never waits on delegation.
+When a `plan-scout` persona is available and allowed, you may send it one bounded discovery question: the seed, the edge kinds, and the scope. Open each returned location yourself before you cite it. When the scout is unavailable or denied, search yourself.

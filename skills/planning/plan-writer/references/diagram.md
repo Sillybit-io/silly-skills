@@ -1,6 +1,6 @@
 # Design diagram
 
-Read this file after the second research pass, when the plan is being filled in. Put the result in `## Design`, after Scope and before Verification strategy.
+Read this file after the second research pass, when the plan is being filled in. Put the result in `## Design`, after Scope and before Execution strategy.
 
 ## When a diagram is required
 
