@@ -399,7 +399,7 @@ A todo passes its Acceptance and every QA part, commits when it says `Commit: ye
 
 ### T5 — Let the builder stop at a slice and resume
 
-- [ ] Open
+- [x] Done
 - Do: Change the builder skill as "Slice stop and resume" in Design says. Add a `## Slices` section to the receipts reference that holds every rule. In the skill, add one bullet for `sliceStart` to the step that acts on the resume JSON, the first-slice branch check to the new-build step, the `SLICE` verdict line with its reply shape, and one guardrail that the builder never creates, switches, or pushes a branch. Bump `plan-builder` to 2.1.0 and add a changelog line.
 - Must not: renumber a step. Add a receipt event or a child role. Run the final wave or a result review per slice. Change the recovery rules. State a slice rule in both the skill and the reference.
 - Closes gap: G6

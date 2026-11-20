@@ -18,7 +18,7 @@ Read this file when you record a difference and before you decide the verdict.
 
 Every difference records:
 
-- **Clause:** the plan text it is judged against, as `T3 Acceptance`, `MH2`, or `D4`, with a short quote.
+- **Clause:** the plan text it is judged against, as `T3 Acceptance`, `MH2`, `D4`, or `Behavior B2`, with a short quote. Never write a Behavior line as a bare `B2`: plan review blockers use that form.
 - **Changed part:** `path:line`, a diff hunk, or `path (deleted)`, `path (binary)`, `path (symlink a → b)`, `path (mode 100755 → 100644)`.
 - **Expected** and **actual**, as observable facts.
 - **Reason** and its **source**: `approved` when the owner's recorded decision authorizes it, with where it is recorded; `inferred` when the reason comes from evidence such as a commit message or a receipt note, with that evidence; `unknown` when nothing states it. Never invent a builder's intention.
@@ -37,6 +37,7 @@ A recorded difference is rendered as one line: its id, kind, clause, and locatio
 | A UI todo with no browser check | blocking |
 | Owner work from before the build was changed or lost (`owner-work-changed`) | blocking |
 | A todo or Must Have with nothing built (`missing`) | blocking |
+| A Behavior line the build does not show (`missing` or `partial`) | blocking |
 | A file no todo names (`extra`) | recorded |
 | A file renamed or moved (`obsolete-or-renamed`) | recorded |
 | Commit subject, commit files, or branch differ from the plan (`partial` on an execution commitment) | recorded |
@@ -48,7 +49,7 @@ The validator refuses a pass receipt that lacks its Acceptance and QA checks, so
 
 A reason does not make a violation acceptable. Only an owner's recorded approval does, and the difference stays listed, as one line under Approved deviations.
 
-These are not differences: a commit subject the builder shortened but kept in type, scope, and meaning; a todo that edits a file an earlier wave also edited, within its own `Do`; the plan directory in a todo commit.
+These are not differences: a commit subject the builder shortened but kept in type, scope, and meaning; a todo that edits a file an earlier wave also edited, within its own `Do`; the plan directory in a todo commit; a slice commit, `docs(plans): complete <slug> slice S<n>`; a merge or squash commit that only brings an earlier slice's commits onto the current branch.
 
 ## Verdict
 

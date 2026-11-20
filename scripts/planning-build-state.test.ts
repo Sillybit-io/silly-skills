@@ -136,8 +136,62 @@ describe("capture-build-state", () => {
     ]);
     const byPath = Object.fromEntries(brief.changes.map((c: { path: string; todos: string[] }) => [c.path, c.todos]));
     expect(byPath).toEqual({ "app.py": ["T1"], "stray.py": [] });
+    // A plan with no Behavior section and no slices gets neither part.
+    expect(brief).not.toHaveProperty("behavior");
+    expect(brief).not.toHaveProperty("slices");
     const text = Bun.spawnSync(["bun", INVENTORY, plan, "--root", dir, "--baseline", baseline, "--brief"], { stdout: "pipe" }).stdout.toString();
     expect(text).toMatch(/^- stray\.py \([a-z+]+\): unattributed$/m);
     expect(text).not.toContain("+1:");
+    expect(text).not.toMatch(/^## (Behavior|Slices)$/m);
+  });
+
+  test("--brief lists each Behavior line with the todos that serve it, and each slice with its branch and todos", () => {
+    const dir = tempDir();
+    const stem = "2026-11-20-y";
+    const planDir = `docs/plans/${stem}`;
+    const plan = `${planDir}/${stem}.md`;
+    mkdirSync(join(dir, planDir), { recursive: true });
+    writeFileSync(
+      join(dir, plan),
+      [
+        "---\ntitle: Slice fixture\n---\n\n# Slice fixture\n\n## TL;DR\n\n- Effort: S\n\n## Behavior\n",
+        "- B1 (primary): Given an open shop, when a visitor opens the page, then it greets them.",
+        "- B2 (error): Given a closed shop, when a visitor opens the page, then it says the shop is closed.",
+        "- No alternate case: the page opens one way.",
+        "- No recovery case: opening the page changes nothing.",
+        "\n## Scope\n\n### Must have\n\n- MH1: A greeting.\n\n## Execution strategy\n",
+        "- T0 runs alone before wave 1.",
+        "- Slice S1 — foundation. Independent test: `bun test` exits 0. Branch: `feat/shop-foundation`",
+        "- Wave 1: T1",
+        "- Slice S2 — greeting. Independent test: a visitor sees the greeting.",
+        "- Wave 2: T2 — needs T1",
+        "- Wave 3: T3 — needs T2",
+        "\n## Todos\n",
+        "### T1 — Add the page\n\n- [x] Done\n- Do: page.\n- Closes gap: G1\n- Serves: none\n- Strict: no\n- Commit: no\n",
+        "### T2 — Greet the visitor\n\n- [ ] Open\n- Do: greet.\n- Closes gap: G1\n- Serves: B1\n- Strict: no\n- Commit: no\n",
+        "### T3 — Say when the shop is closed\n\n- [ ] Open\n- Do: closed.\n- Closes gap: G1\n- Serves: B1, B2\n- Strict: no\n- Commit: no\n",
+      ].join("\n"),
+    );
+    writeFileSync(join(dir, `${planDir}/${stem}.evidence-index.md`), "```json\n{}\n```\n");
+    writeFileSync(join(dir, "app.py"), "print('hi')\n");
+    const baseline = join(tempDir(), "baseline");
+    expect(run([plan, "--root", dir, "--output", baseline], dir).code).toBe(0);
+    const p = Bun.spawnSync(["bun", INVENTORY, plan, "--root", dir, "--baseline", baseline, "--brief", "--json"], { stdout: "pipe", stderr: "pipe" });
+    expect(p.exitCode).toBe(0);
+    const brief = JSON.parse(p.stdout.toString());
+    expect(brief.behavior).toEqual([
+      { id: "B1", text: "Given an open shop, when a visitor opens the page, then it greets them.", todos: ["T2", "T3"] },
+      { id: "B2", text: "Given a closed shop, when a visitor opens the page, then it says the shop is closed.", todos: ["T3"] },
+    ]);
+    expect(brief.slices).toEqual([
+      { id: "S1", name: "foundation", branch: "feat/shop-foundation", todos: ["T1"] },
+      { id: "S2", name: "greeting", branch: null, todos: ["T2", "T3"] },
+    ]);
+    expect(Object.keys(brief)).toEqual(["plan", "baseline", "headRevision", "ownerWorkCertifiable", "requirements", "behavior", "todos", "slices", "fixes", "changes", "unnamedCommits"]);
+    const text = Bun.spawnSync(["bun", INVENTORY, plan, "--root", dir, "--baseline", baseline, "--brief"], { stdout: "pipe" }).stdout.toString();
+    expect(text).toContain(
+      "## Behavior\n\n- B1 served by T2, T3: Given an open shop, when a visitor opens the page, then it greets them.\n- B2 served by T3: Given a closed shop, when a visitor opens the page, then it says the shop is closed.\n\n## Todos\n",
+    );
+    expect(text).toContain("## Slices\n\n- S1 — foundation; branch: feat/shop-foundation; todos: T1\n- S2 — greeting; todos: T2, T3\n");
   });
 });
