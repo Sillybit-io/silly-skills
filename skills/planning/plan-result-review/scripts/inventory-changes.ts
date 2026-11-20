@@ -7,7 +7,8 @@
  *
  * --brief prints a short summary for a result reviewer instead of diffs: the
  * requirements, each todo with its strict areas, recorded checks, and commit,
- * and each changed path with the todo whose receipt interval changed it.
+ * and each changed path with the todo whose receipt interval changed it. A
+ * plan with Behavior lines or slices also gets them, with their todos.
  *
  * Read-only. It uses the validator bundled with the plan-review skill, found
  * beside this skill (`../../plan-review/scripts/validate-plan.ts`), for
@@ -36,7 +37,8 @@ build baseline recorded in the plan's build file, or since --baseline.
 The plan's own directory is left out: the build commits it by design.
 With only --base, lists committed and current changes without owner-work
 attribution. --brief prints requirements, todos with their recorded checks and
-commits, and changed paths with the todo that changed them, without diffs.
+commits, and changed paths with the todo that changed them, without diffs, plus
+the plan's Behavior lines and slices when it has them.
 Read-only; needs the plan-review skill installed beside this one.`;
 
 function git(root: string, args: string[]): { code: number; out: string } {
@@ -290,7 +292,9 @@ type Brief = { json: Record<string, unknown>; text: string };
 /**
  * The navigation summary a result reviewer reads first: requirements, todos
  * with their recorded checks and commits, and each changed path attributed to
- * the todo whose receipt interval changed it. It is not a verdict.
+ * the todo whose receipt interval changed it. A plan with Behavior lines gets
+ * each line with the todos that serve it, and a plan with slices gets each
+ * slice with its branch and todos. It is not a verdict.
  */
 function resultBrief(
   v: any,
@@ -345,13 +349,23 @@ function resultBrief(
     removed: c.removed === true,
   }));
   const unnamedCommits = [...commits.values()].filter((c) => !named.has(String(c.sha))).map((c) => ({ sha: c.sha, subject: c.subject }));
+  // `?? []` keeps the brief working beside a plan-review validator that parses neither part.
+  const behavior = ((plan.behavior ?? []) as { id: string; text: string }[]).map((b) => ({
+    id: b.id,
+    text: b.text,
+    todos: (plan.todos as { id: string; serves?: string[] }[]).filter((todo) => (todo.serves ?? []).includes(b.id)).map((todo) => todo.id),
+  }));
+  const slices = ((plan.slices ?? []) as { id: string; name: string; branch: string | null; todos: string[] }[]).map((s) => ({ id: s.id, name: s.name, branch: s.branch, todos: s.todos }));
+  // Only a plan with Behavior lines or slices gets these keys, so the brief of any other plan stays as it was.
   const json = {
     plan: report.plan,
     baseline: report.baseline,
     headRevision: report.headRevision,
     ownerWorkCertifiable: report.ownerWorkCertifiable,
     requirements: [...plan.mustHave, ...plan.mustNotHave].map((m: { line: number }) => lineOf(m.line)),
+    ...(behavior.length > 0 ? { behavior } : {}),
     todos,
+    ...(slices.length > 0 ? { slices } : {}),
     fixes,
     changes,
     unnamedCommits,
@@ -359,12 +373,15 @@ function resultBrief(
   const t: string[] = [`# Result brief: ${plan.frontmatter.title ?? report.plan}`, ""];
   const base = report.baseline as Record<string, string> | null;
   t.push(`Baseline: ${base ? base.snapshot : "none (revision-only)"}. HEAD: ${report.headRevision ?? "none"}. Owner work certifiable: ${report.ownerWorkCertifiable}.`, "");
-  t.push("## Requirements", "", ...json.requirements, "", "## Todos", "");
+  t.push("## Requirements", "", ...json.requirements, "");
+  if (behavior.length > 0) t.push("## Behavior", "", ...behavior.map((b) => `- ${b.id} served by ${b.todos.join(", ") || "no todo"}: ${b.text}`), "");
+  t.push("## Todos", "");
   for (const todo of todos) {
     const checks = todo.checks.map((c) => `${c.id} ${c.passed && c.exit === 0 ? "passed" : `exit ${c.exit}`}`).join(", ") || "none recorded";
     const commit = todo.commit ? `${todo.commit.sha.slice(0, 12)} (${todo.commit.files.join(", ") || "no files"})` : "none";
     t.push(`- ${todo.id} — ${todo.title} [${todo.box ?? "no box"}]; strict: ${todo.strict.join(", ") || "no"}; receipts: ${todo.events.join(", ") || "none"}; checks: ${checks}; commit: ${commit}`);
   }
+  if (slices.length > 0) t.push("", "## Slices", "", ...slices.map((s) => `- ${s.id} — ${s.name}${s.branch ? `; branch: ${s.branch}` : ""}; todos: ${s.todos.join(", ") || "none"}`));
   if (fixes.length > 0) t.push("", "## Fix receipts", "", ...fixes.map((f) => `- ${f.gate} seq ${f.seq}; commit: ${f.commit ?? "none"}`));
   t.push("", "## Changed paths", "");
   for (const c of changes) {

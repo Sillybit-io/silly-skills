@@ -154,6 +154,21 @@ contract that changed, a Must Have the current code contradicts — is not
 something a recovery receipt can wave through. It needs a new plan and a new
 review. Checkpoint and say so.
 
+## Slices
+
+These rules apply only to a plan with slice lines; for any other plan the resume JSON has no `sliceStart`. When `sliceStart` is true, the coordinator checks two stop rules:
+
+- **Stop slice.** The slice before `nextSlice` is the request's stop slice. "Build slice S1" and "build through slice S2" name it. "The next slice" means the slice of `nextTodo` when the request arrives. A request that names no slice has none. After a compaction that lost the request, the slice just built is the stop slice.
+- **Branch.** The slice about to start, `nextSlice` on a resume, names a branch, and `git branch --show-current` prints another. "On the current branch" in the request turns this rule off.
+
+When a rule applies and an earlier slice is built, the coordinator stops. It makes one plan-only commit for the slice just built, `docs(plans): complete <slug> slice S<n>`, and skips it when the plan directory has nothing to commit. It appends no receipt and replies with the `SLICE` verdict. When the branch rule applies and no slice is built yet, it replies `BLOCKED` with that branch as the missing input.
+
+A resume after a slice stop sees the slice commit, and any merge, as drift. The Recovery section handles it: the first todo child of the next slice appends one recovery receipt and then builds.
+
+The todo child of a slice's last todo runs the slice's independent test, which `--todo` prints, and records it as the `slice:S<n>` check.
+
+When the stop slice is the last slice, there is no stop. The final wave and the result review run once, after the last slice.
+
 ## Final wave
 
 The final-wave child runs every gate before F4:
@@ -169,4 +184,3 @@ A failing gate is fixed in the same child: change the implementation, re-run the
 ## Result review rounds
 
 F4 is a fresh `plan-result-reviewer` child, given the plan path and the project root. Its verdict is `MATCH`, `ACCEPTED (<n> recorded)`, `MISMATCH (<n> blocking, <m> recorded)`, or `INCOMPLETE`. A build runs at most two result rounds. Only blocking differences go to a fix child; recorded ones stay in the round. After a second `MISMATCH`, the build stops and the owner decides.
-

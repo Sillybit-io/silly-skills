@@ -20,7 +20,7 @@ The helper ships with this skill. It needs Bun and the `plan-review` skill insta
 bun <plan-result-review-base>/scripts/inventory-changes.ts <plan> --root <project> [--baseline <snapshot>] [--base <revision>] [--brief] [--json]
 ```
 
-With `--brief`, it prints the summary the review starts from instead of diffs: the Must Haves and Must NOT Haves, each todo with its box, strict areas, receipts, recorded checks, and commit, each changed path with the todo whose receipt interval changed it or `unattributed`, and any commit no receipt names. Read it first, then the full inventory for the diffs.
+With `--brief`, it prints the summary the review starts from instead of diffs: the Must Haves and Must NOT Haves, the Behavior lines with the todos that serve them, each todo with its box, strict areas, receipts, recorded checks, and commit, the slices with their branches and todos, each changed path with the todo whose receipt interval changed it or `unattributed`, and any commit no receipt names. The Behavior lines and the slices appear only when the plan has them. Read it first, then the full inventory for the diffs.
 
 It verifies the baseline snapshot, reads the current HEAD, index, and working tree for every path the baseline, the receipts, or git knows about, and prints each path whose layers changed. For each path, it prints:
 

@@ -79,6 +79,8 @@ These are recorded as Notes, if at all. None of them stops a capable developer:
 - A commit subject whose wording differs from what the reviewer would write. Check the type, the scope, and that it says what the todo changes; the builder may shorten a subject.
 - A todo that does not predict the exact compiler or linter diagnostic code a failure will print. A plan names the failing command and the expected outcome; the code is the builder's observation.
 - A field past its soft cap. The validator lists it as a gap; it is a writing note, not an execution defect.
+- A plan with no `## Behavior` section, or with no slices. Both parts are optional.
+- A vague-word gap on a Behavior line. The validator lists it; the word alone is a writing note, not an execution defect.
 - A consumer more than one step from the changed code, outside a strict area and the changed inventory, that the writer did not trace, unless the review shows the change breaks it.
 - The exact wording of T0, the standard gates, or the two standard builder sentences, as long as each says what writer-contract.md requires.
 - Anything the validator already accepts as structurally correct, raised again as a matter of form.

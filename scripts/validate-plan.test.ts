@@ -27,9 +27,11 @@ import {
   canonicalJson,
   canonicalSpecDigest,
   FORMAT_1_MESSAGE,
+  filePathWords,
   parsePlan,
   qaLabels,
   requiredCheckIds,
+  requiredTargets,
   type Todo,
   validatePlan,
 } from "./validate-plan.ts";
@@ -619,9 +621,26 @@ function setBoxes(root: string, done: string[]): void {
 const T1_COMMIT = (t: string) =>
   t.replace("- QA scenario: happy — greets; failure — empty name.\n- Strict: no.\n- Commit: no.", "- QA scenario: happy — greets; failure — empty name.\n- Strict: no.\n- Commit: yes — `feat: greet`.");
 
-function buildScenario(options: { stopAfter?: "T0"; t1Commit?: boolean; omitCommit?: boolean; reports?: string[] } = {}) {
+type ScenarioOptions = {
+  stopAfter?: "T0";
+  t1Commit?: boolean;
+  omitCommit?: boolean;
+  reports?: string[];
+  /** Changes the plan before its review, such as adding slice lines. */
+  mutatePlan?: (t: string) => string;
+  /** The review's obligations, for a plan with more targets than ALL_TARGETS. */
+  obligations?: Obligation[];
+  /** The checks on T1's pass receipt; PASSING by default. */
+  t1Checks?: unknown[];
+};
+
+function buildScenario(options: ScenarioOptions = {}) {
   const root = makeProject();
-  const text = reviewedPlan(root, { mutatePlan: options.t1Commit ? T1_COMMIT : undefined });
+  const mutatePlan = (t: string): string => {
+    const changed = options.mutatePlan ? options.mutatePlan(t) : t;
+    return options.t1Commit ? T1_COMMIT(changed) : changed;
+  };
+  const text = reviewedPlan(root, { mutatePlan, obligations: options.obligations });
   const spec = specOf(root, text);
   const gateDigest = sha(canon(JSON.parse(read(root, GATE))));
   const baseline = saveSnapshot(root, snapshot(root, "silly-skills/plan-builds/run/baseline", { reports: options.reports }), spec);
@@ -634,7 +653,7 @@ function buildScenario(options: { stopAfter?: "T0"; t1Commit?: boolean; omitComm
     after = saveSnapshot(root, snapshot(root, "silly-skills/plan-builds/run/T1", { carry, reports: options.reports }), spec);
     const commit = options.t1Commit && !options.omitCommit ? { sha: git(root, "rev-parse", "HEAD").toString().trim() } : undefined;
     const prerequisites = [{ targets: ["T1.start"], sources: [{ path: "src/app.ts", sha256: sha(APP) }], status: "holds", observed: "unchanged since baseline" }];
-    inputs.push({ todo: "T1", event: "pass", after, commit, prerequisites });
+    inputs.push({ todo: "T1", event: "pass", after, commit, prerequisites, checks: options.t1Checks });
   }
   const record = {
     schemaVersion: 2,
@@ -1025,6 +1044,437 @@ describe("field caps", () => {
     const result = run(root);
     expect(result.errors).toEqual([]);
     expect(result.gaps).toEqual([]);
+  });
+});
+
+describe("Behavior lines", () => {
+  const B1 = "- B1 (primary): Given a configured name, when the owner starts the tool, then it greets that name.";
+  const B2 = "- B2 (error): Given an empty name, when the owner starts the tool, then it stops and says the name is missing.";
+  const SECTION = ["## Behavior", "", B1, B2, "- No alternate case: the tool has one way to start.", "- No recovery case: a failed start changes nothing.", ""];
+  type Fixture = { section?: string[]; before?: string; t1?: string | null; t2?: string | null };
+
+  /** Adds a Behavior section, after TL;DR unless `before` names another heading, and `Serves` fields: B1 and B2 for T1, none for T2. */
+  const withBehavior =
+    ({ section = SECTION, before = "## Scope\n", t1 = "B1, B2", t2 = "none" }: Fixture = {}) =>
+    (t: string): string => {
+      let out = t.replace(before, `${section.join("\n")}\n${before}`);
+      if (t1 !== null) out = out.replace("- Closes gap: G1.\n", `- Closes gap: G1.\n- Serves: ${t1}.\n`);
+      if (t2 !== null) out = out.replace("- Closes gap: G2.\n", `- Closes gap: G2.\n- Serves: ${t2}.\n`);
+      return out;
+    };
+  const behaviorPlan = (fixture: Fixture = {}, status?: string): string => {
+    const root = makeProject();
+    writePlan(root, planText(root, { status, mutate: withBehavior(fixture) }));
+    return root;
+  };
+  const behaviorErrors = (root: string) =>
+    run(root)
+      .errors.filter((e) => e.code === "BEHAVIOR")
+      .map((e) => e.message);
+  /** SECTION with one line replaced. */
+  const swap = (from: string, to: string) => SECTION.map((l) => (l === from ? to : l));
+  const cli = (root: string, ...args: string[]) => spawnSync("bun", [rootCli, PLAN, ...args, "--root", root], { encoding: "utf8" });
+
+  test("a section directly after TL;DR, with Serves fields, validates and is parsed", () => {
+    const root = behaviorPlan();
+    const result = run(root);
+    expect(result.errors).toEqual([]);
+    expect(result.gaps).toEqual([]);
+    const plan = parsePlan(read(root, PLAN));
+    expect(plan.behavior.map((b) => [b.id, b.case])).toEqual([["B1", "primary"], ["B2", "error"]]);
+    expect(plan.behavior[0].text).toBe("Given a configured name, when the owner starts the tool, then it greets that name.");
+    expect(plan.todos.map((t) => [t.id, t.serves])).toEqual([["T0", []], ["T1", ["B1", "B2"]], ["T2", []]]);
+  });
+
+  test("the section is accepted only directly after TL;DR, and only once", () => {
+    const moved = run(behaviorPlan({ before: "## Research\n" }));
+    expect(moved.errors.map((e) => [e.code, e.message])).toEqual([["BEHAVIOR", "'## Behavior' must come directly after '## TL;DR'"]]);
+    const twice = makeProject();
+    writePlan(twice, planText(twice, { mutate: (t) => withBehavior()(t).replace("## Research\n", `${SECTION.join("\n")}\n## Research\n`) }));
+    expect(behaviorErrors(twice)).toEqual(["section '## Behavior' appears more than once"]);
+  });
+
+  test("each line outside a fence or a comment is a Behavior line or an exclusion line", () => {
+    const section = [
+      "## Behavior",
+      "",
+      "<!-- The owner approved these lines. -->",
+      "<!--",
+      "A note that spans lines.",
+      "-->",
+      "```text",
+      "- B9 (happy): an example, not a line",
+      "```",
+      B1,
+      B2,
+      "These lines need approval.",
+      "- No alternate case: the tool has one way to start.",
+      "- No recovery case: a failed start changes nothing.",
+      "",
+    ];
+    const root = behaviorPlan({ section });
+    const errors = run(root).errors;
+    expect(errors.map((e) => e.code)).toEqual(["BEHAVIOR"]);
+    expect(errors[0].message).toBe("a Behavior section line must be '- B<n> (<case>): Given ..., when ..., then ...' or '- No <case> case: <reason>'");
+    expect(read(root, PLAN).split("\n")[errors[0].line - 1]).toBe("These lines need approval.");
+  });
+
+  test("ids count up from B1", () => {
+    expect(behaviorErrors(behaviorPlan({ section: swap(B2, B2.replace("B2", "B3")), t1: "B1, B3" }))).toEqual([
+      "Behavior B3 is out of sequence; ids count up from B1, so expected B2",
+    ]);
+    expect(behaviorErrors(behaviorPlan({ section: swap(B2, B2.replace("B2", "B1")), t1: "B1" }))).toEqual(["duplicate Behavior line B1"]);
+  });
+
+  test("the case is primary, alternate, error, or recovery", () => {
+    const section = swap(B2, B2.replace("(error)", "(failure)")).map((l) => l.replace("No recovery case", "No restart case"));
+    const errors = behaviorErrors(behaviorPlan({ section }));
+    expect(errors).toContain("Behavior B2 has unknown case 'failure'; use primary, alternate, error, recovery");
+    expect(errors).toContain("the 'No restart case' line has unknown case 'restart'; use primary, alternate, error, recovery");
+  });
+
+  test("Given, when, and then appear in that order", () => {
+    const message = "Behavior B1 needs 'Given', 'when', and 'then' in that order";
+    const reordered = "- B1 (primary): When the owner starts the tool, given a configured name, then it greets that name.";
+    expect(behaviorErrors(behaviorPlan({ section: swap(B1, reordered) }))).toEqual([message]);
+    const noThen = B1.replace(", then it greets", " and it greets");
+    expect(behaviorErrors(behaviorPlan({ section: swap(B1, noThen) }))).toEqual([message]);
+  });
+
+  test("a file path in a Behavior line or an exclusion line is an error", () => {
+    const section = swap(B1, B1.replace("a configured name", "a name in `src/app.ts`")).map((l) =>
+      l.replace("a failed start changes nothing.", "a failed start leaves ~/notes as it was."),
+    );
+    expect(behaviorErrors(behaviorPlan({ section }))).toEqual([
+      "Behavior B1 names the file path 'src/app.ts'; say what a user or an operator sees",
+      "the 'No recovery case' line names the file path '~/notes'; say what a user or an operator sees",
+    ]);
+  });
+
+  test("the path check passes the must-pass words and fails the must-fail words", () => {
+    const line = (word: string) => `Given ${word}, when it runs, then it works.`;
+    for (const word of ["and/or", "read/write", "v2.1.0", "e.g.", "Node.js", "https://example.com/a.html", "/pricing", "1.0/2.0"]) {
+      expect(filePathWords(line(word))).toEqual([]);
+    }
+    for (const word of ["src/app.ts", "./run.sh", "../shared", "~/notes", "README.md", "package.json", "src/app.ts:12"]) {
+      expect(filePathWords(line(word))).toEqual([word.replace(/:12$/, "")]);
+    }
+    expect(filePathWords('Given `src/app.ts:12-14`, (README.md) and "./run.sh".')).toEqual(["src/app.ts", "README.md", "./run.sh"]);
+  });
+
+  test("from planned on, a primary line exists and each other case has a line or an exclusion; a draft is exempt", () => {
+    const section = swap(B1, B1.replace("(primary)", "(alternate)")).filter((l) => !l.startsWith("- No recovery case"));
+    expect(behaviorErrors(behaviorPlan({ section }))).toEqual([
+      "Behavior needs a primary line",
+      "Behavior has no recovery line and no '- No recovery case: <reason>' line",
+    ]);
+    expect(behaviorErrors(behaviorPlan({ section }, "draft"))).toEqual([]);
+  });
+
+  test("every todo except T0 has Serves after Closes gap, holding none or known Behavior ids", () => {
+    const missing = "T2 is missing '- Serves:' after '- Closes gap:'; write none or the Behavior ids it serves";
+    expect(behaviorErrors(behaviorPlan({ t2: null }))).toEqual([missing]);
+    const early = makeProject();
+    writePlan(early, planText(early, { mutate: (t) => withBehavior({ t2: null })(t).replace("- Closes gap: G2.\n", "- Serves: none.\n- Closes gap: G2.\n") }));
+    expect(behaviorErrors(early)).toEqual([missing]);
+    expect(behaviorErrors(behaviorPlan({ t2: "B1, B7" }))).toEqual(["T2 serves unknown Behavior line B7"]);
+    expect(behaviorErrors(behaviorPlan({ t2: "the greeting" }))).toEqual(["T2 Serves names no Behavior id; write none or ids such as B1"]);
+  });
+
+  test("every Behavior line is served by at least one todo", () => {
+    expect(behaviorErrors(behaviorPlan({ t1: "B1" }))).toEqual(["Behavior B2 is not served by any todo"]);
+  });
+
+  test("a Behavior line has the word caps of a Must have bullet", () => {
+    const long = (n: number) => swap(B1, `- B1 (primary): Given ${words(n)}, when the owner starts the tool, then it greets that name.`);
+    const soft = run(behaviorPlan({ section: long(29) }));
+    expect(soft.errors).toEqual([]);
+    expect(soft.gaps).toEqual([expect.stringMatching(/^soft cap: .*Behavior B1 is 41 words \(soft cap 40\)$/)]);
+    const hard = run(behaviorPlan({ section: long(69) }));
+    expect(hard.errors.some((e) => e.code === "FIELD_CAP" && e.message.includes("Behavior B1 is 81 words"))).toBe(true);
+  });
+
+  test("a vague word is a gap, never an error, and does not change the verdict", () => {
+    const section = swap(B1, B1.replace("then it greets that name.", "then it quickly greets that name, properly."));
+    const root = makeProject();
+    reviewedPlan(root, {
+      mutatePlan: withBehavior({ section }),
+      obligations: [{ id: "O1", targets: [...ALL_TARGETS, "behavior:B1", "behavior:B2"], evidenceIds: ["C1", "P1"], observed: "traced", plannedQa: "Q1", status: "verified" }],
+    });
+    const plan = run(root);
+    expect(plan.errors).toEqual([]);
+    expect(plan.gaps).toEqual(["vague word 'quickly' in B1", "vague word 'properly' in B1"]);
+    const review = run(root, ["--review"]);
+    expect(review.errors).toEqual([]);
+    expect(review.gaps).toEqual(plan.gaps);
+    expect(review.expectedVerdict).toBe("OKAY");
+    expect(review.gateEligible).toBe(true);
+  });
+
+  test("--todo prints the Behavior lines a todo serves", () => {
+    const root = behaviorPlan();
+    const t1 = cli(root, "--todo", "T1");
+    expect(t1.status).toBe(0);
+    expect(t1.stdout).toContain(`Behavior lines it serves:\n\n${B1}\n${B2}\n`);
+    expect(cli(root, "--todo", "T2").stdout).not.toContain("Behavior lines it serves:");
+  });
+
+  test("each Behavior line is a review target, and --gate-skeleton puts them in one group", () => {
+    const root = behaviorPlan();
+    const plan = parsePlan(read(root, PLAN), read(root, EVIDENCE));
+    expect(requiredTargets(plan, new Map()).filter((t) => t.startsWith("behavior:"))).toEqual(["behavior:B1", "behavior:B2"]);
+    const gate = JSON.parse(cli(root, "--gate-skeleton").stdout);
+    const groups = gate.obligations.map((o: Obligation) => o.targets).filter((t: string[]) => t.some((x) => x.startsWith("behavior:")));
+    expect(groups).toEqual([["behavior:B1", "behavior:B2"]]);
+    const uncovered = makeProject();
+    reviewedPlan(uncovered, { mutatePlan: withBehavior() });
+    const review = run(uncovered, ["--review"]);
+    expect(review.gaps).toContain("required target behavior:B1 has no required obligation");
+    expect(review.expectedVerdict).toBe("INCOMPLETE");
+  });
+
+  test("there is no rule on the number of lines", () => {
+    const one = ["## Behavior", "", B1, "- No alternate case: one way to start.", "- No error case: a start cannot fail.", "- No recovery case: nothing to recover.", ""];
+    expect(run(behaviorPlan({ section: one, t1: "B1" })).errors).toEqual([]);
+    const cases = ["primary", "alternate", "error", "recovery"];
+    const nine = Array.from({ length: 9 }, (_, i) => `- B${i + 1} (${cases[i % 4]}): Given name ${i + 1}, when the owner starts the tool, then it greets that name.`);
+    const ids = nine.map((_, i) => `B${i + 1}`).join(", ");
+    expect(run(behaviorPlan({ section: ["## Behavior", "", ...nine, ""], t1: ids })).errors).toEqual([]);
+  });
+
+  test("a plan without the section gets no BEHAVIOR error, no behavior: target, and no Serves requirement", () => {
+    const root = makeProject();
+    const text = planText(root);
+    writePlan(root, text);
+    const plan = parsePlan(text, read(root, EVIDENCE));
+    expect(plan.behavior).toEqual([]);
+    expect(plan.todos.some((t) => "Serves" in t.fields)).toBe(false);
+    expect(run(root).errors).toEqual([]);
+    expect(requiredTargets(plan, new Map()).some((t) => t.startsWith("behavior:"))).toBe(false);
+    const gate = JSON.parse(cli(root, "--gate-skeleton").stdout);
+    expect(gate.obligations.flatMap((o: Obligation) => o.targets).sort()).toEqual([...ALL_TARGETS].sort());
+    writePlan(root, text.replace("- Closes gap: G1.\n", "- Closes gap: G1.\n- Serves: B7.\n"));
+    expect(run(root).errors).toEqual([]);
+  });
+});
+
+describe("slices", () => {
+  const WAVES = ["- T0 runs alone before wave 1.", "- Wave 1: T1", "- Wave 2: T2 — needs T1"];
+  const S1 = "- Slice S1 — greeting. Independent test: `bun test` greets a configured name. Branch: `feat/fixture-greeting`";
+  const S2 = "- Slice S2 — flag. Independent test: the CLI accepts the flag.";
+  /** Two slices: S1 holds wave 1 (T1) and S2 holds wave 2 (T2). */
+  const TWO = [WAVES[0], S1, WAVES[1], S2, WAVES[2]];
+  /** One slice that holds both waves, so T1 is not its last todo. */
+  const ONE = [WAVES[0], S1, WAVES[1], WAVES[2]];
+  const KEYS = ["slices", "nextSlice", "sliceStart"];
+
+  /** Replaces the execution strategy's bullet lines. */
+  const strategy =
+    (bullets: string[]) =>
+    (t: string): string =>
+      t.replace(`${WAVES.join("\n")}\n`, `${bullets.join("\n")}\n`);
+  const slicePlan = (bullets = TWO, status?: string): string => {
+    const root = makeProject();
+    writePlan(root, planText(root, { status, mutate: strategy(bullets) }));
+    return root;
+  };
+  const sliceErrors = (root: string) =>
+    run(root)
+      .errors.filter((e) => e.code === "SLICE")
+      .map((e) => e.message);
+  const cli = (root: string, ...args: string[]) => spawnSync("bun", [rootCli, PLAN, ...args, "--root", root], { encoding: "utf8" });
+  /** buildScenario on the two-slice plan. T1, the last todo of S1, records the slice check unless `t1Checks` says otherwise. */
+  const sliceBuild = (options: { stopAfter?: "T0"; t1Checks?: unknown[] } = {}) =>
+    buildScenario({
+      stopAfter: options.stopAfter,
+      mutatePlan: strategy(TWO),
+      obligations: [{ id: "O1", targets: [...ALL_TARGETS, "slice:S1", "slice:S2"], evidenceIds: ["C1", "P1"], observed: "traced", plannedQa: "Q1", status: "verified" }],
+      t1Checks: options.t1Checks ?? [...PASSING, check("slice:S1")],
+    });
+
+  test("a slice line holds the wave lines after it, up to the next slice line, and wave numbers stay global", () => {
+    const root = slicePlan();
+    const result = run(root);
+    expect(result.errors).toEqual([]);
+    expect(result.gaps).toEqual([]);
+    const plan = parsePlan(read(root, PLAN));
+    expect(plan.slices.map(({ id, name, test, branch, waves, todos }) => ({ id, name, test, branch, waves, todos }))).toEqual([
+      { id: "S1", name: "greeting", test: "`bun test` greets a configured name", branch: "feat/fixture-greeting", waves: [1], todos: ["T1"] },
+      { id: "S2", name: "flag", test: "the CLI accepts the flag", branch: null, waves: [2], todos: ["T2"] },
+    ]);
+    const one = parsePlan(read(slicePlan(ONE), PLAN));
+    expect(one.slices.map((s) => [s.id, s.waves, s.todos])).toEqual([["S1", [1, 2], ["T1", "T2"]]]);
+  });
+
+  test("a line that starts with the word Slice must parse, with a name and a test that are not empty", () => {
+    const form = "a slice line must be '- Slice S<n> — <name>. Independent test: <test>', with an optional '. Branch: `<branch>`' at the end";
+    for (const bad of [
+      "- Slice S2: flag, tested by the CLI.",
+      "- Slice S2 — flag.",
+      `${S2.slice(0, -1)}. Branch: feat/fixture-flag`,
+    ]) {
+      expect(sliceErrors(slicePlan([WAVES[0], S1, WAVES[1], bad, WAVES[2]]))).toEqual([form]);
+    }
+    expect(sliceErrors(slicePlan([WAVES[0], S1, WAVES[1], "- Slice S2 — . Independent test:", WAVES[2]]))).toEqual([
+      "Slice S2 needs a name",
+      "Slice S2 needs an independent test",
+    ]);
+    const prose = slicePlan([...WAVES, "- Slices: none; the plan ships as one pull request."]);
+    expect(run(prose).errors).toEqual([]);
+    expect(parsePlan(read(prose, PLAN)).slices).toEqual([]);
+  });
+
+  test("the first slice line comes before Wave 1, so every wave is in a slice", () => {
+    expect(sliceErrors(slicePlan([WAVES[0], WAVES[1], S1, WAVES[2]]))).toEqual(["the first slice line must come before Wave 1, so every wave is in a slice"]);
+  });
+
+  test("ids count up from S1", () => {
+    expect(sliceErrors(slicePlan([WAVES[0], S1, WAVES[1], S2.replace("S2", "S3"), WAVES[2]]))).toEqual([
+      "Slice S3 is out of sequence; ids count up from S1, so expected S2",
+    ]);
+    expect(sliceErrors(slicePlan([WAVES[0], S1, WAVES[1], S2.replace("S2", "S1"), WAVES[2]]))).toEqual(["duplicate slice S1"]);
+  });
+
+  test("every slice has at least one wave", () => {
+    expect(sliceErrors(slicePlan([WAVES[0], S1, WAVES[1], WAVES[2], S2]))).toEqual(["Slice S2 has no wave"]);
+  });
+
+  test("the rules hold from planned on: a draft is exempt", () => {
+    const bad = [WAVES[0], WAVES[1], "- Slice S3 — . Independent test:", WAVES[2]];
+    expect(sliceErrors(slicePlan(bad)).length).toBe(4);
+    expect(sliceErrors(slicePlan(bad, "draft"))).toEqual([]);
+  });
+
+  test("slices change neither the order of todos nor the choice of nextTodo", () => {
+    const plain = parsePlan(planText(makeProject()));
+    const sliced = parsePlan(planText(makeProject(), { mutate: strategy(TWO) }));
+    expect(sliced.todos.map((t) => t.id)).toEqual(plain.todos.map((t) => t.id));
+    expect(sliced.waves.map(({ wave, todos }) => ({ wave, todos }))).toEqual(plain.waves.map(({ wave, todos }) => ({ wave, todos })));
+    for (const stopAfter of ["T0", undefined] as const) {
+      const unsliced = run(buildScenario({ stopAfter }).root, ["--review", "--resume"]);
+      const twoSlices = run(sliceBuild({ stopAfter }).root, ["--review", "--resume"]);
+      expect(twoSlices.errors).toEqual([]);
+      expect([twoSlices.nextTodo, twoSlices.activeTodo]).toEqual([unsliced.nextTodo, unsliced.activeTodo]);
+    }
+  });
+
+  test("every mode's JSON adds slices with id, name, branch, and todos; only resume mode adds nextSlice and sliceStart", () => {
+    const want = [
+      { id: "S1", name: "greeting", branch: "feat/fixture-greeting", todos: ["T1"] },
+      { id: "S2", name: "flag", branch: null, todos: ["T2"] },
+    ];
+    const { root } = sliceBuild();
+    for (const flags of [[], ["--review"]]) {
+      const result = run(root, flags);
+      expect(result.slices).toEqual(want);
+      expect("nextSlice" in result || "sliceStart" in result).toBe(false);
+    }
+    const resume = JSON.parse(cli(root, "--review", "--resume", "--json").stdout);
+    expect(resume.slices).toEqual(want);
+    expect([resume.nextSlice, resume.sliceStart]).toEqual(["S2", true]);
+  });
+
+  test("sliceStart is true at a slice's first todo, stays true with STATE_DRIFT after a plan-only commit, and is false after a recovery receipt", () => {
+    const { root, record, baseline, spec, carry, inputs } = sliceBuild();
+    const start = run(root, ["--review", "--resume"]);
+    expect(start.errors).toEqual([]);
+    expect(start.resumeEligible).toBe(true);
+    expect([start.nextTodo, start.activeTodo, start.nextSlice, start.sliceStart]).toEqual(["T2", null, "S2", true]);
+
+    git(root, "add", "--", DIR);
+    git(root, "commit", "-q", "-m", "docs(plans): complete fixture slice S1");
+    const stopped = run(root, ["--review", "--resume"]);
+    expect(codes(stopped)).toEqual(["STATE_DRIFT"]);
+    expect(stopped.recoveryRequired).toBe(true);
+    expect(stopped.drift.some((d) => d.startsWith("HEAD "))).toBe(true);
+    expect([stopped.nextTodo, stopped.activeTodo, stopped.nextSlice, stopped.sliceStart]).toEqual(["T2", null, "S2", true]);
+
+    const recovered = saveSnapshot(root, snapshot(root, "silly-skills/plan-builds/run/T2-recovery", { carry }), spec);
+    record.receipts = receipts(baseline, [...inputs, { todo: "T2", event: "recovery", after: recovered, note: "the slice S1 commit; nothing to replay" }]);
+    writeBuild(root, record);
+    const resumed = run(root, ["--review", "--resume"]);
+    expect(resumed.errors).toEqual([]);
+    expect(resumed.resumeEligible).toBe(true);
+    expect([resumed.nextTodo, resumed.activeTodo, resumed.nextSlice, resumed.sliceStart]).toEqual(["T2", "T2", "S2", false]);
+  });
+
+  test("nextSlice is null for T0 and for a final gate", () => {
+    const first = sliceBuild({ stopAfter: "T0" });
+    first.record.receipts = [];
+    writeBuild(first.root, first.record);
+    writePlan(first.root, read(first.root, PLAN).replace("- [x] Done", "- [ ] Open"));
+    const t0 = run(first.root, ["--review", "--resume"]);
+    expect(t0.errors).toEqual([]);
+    expect([t0.nextTodo, t0.nextSlice, t0.sliceStart]).toEqual(["T0", null, false]);
+
+    const last = sliceBuild();
+    last.record.receipts = receipts(last.baseline, [...last.inputs, { todo: "T2", event: "pass", after: "same", checks: [...PASSING, check("slice:S2")] }]);
+    writeBuild(last.root, last.record);
+    setBoxes(last.root, ["T2"]);
+    const gate = run(last.root, ["--review", "--resume"]);
+    expect(gate.errors).toEqual([]);
+    expect([gate.nextTodo, gate.nextSlice, gate.sliceStart]).toEqual(["F1", null, false]);
+  });
+
+  test("the pass receipt of a slice's last todo needs a passing slice check, or it is MISSING_CHECK", () => {
+    const result = run(sliceBuild({ t1Checks: PASSING }).root, ["--review", "--resume"]);
+    expect(result.errors.map((e) => [e.code, e.message.includes("'slice:S1'")])).toEqual([["MISSING_CHECK", true]]);
+    expect(result.resumeEligible).toBe(false);
+    const plan = parsePlan(planText(makeProject(), { mutate: strategy(ONE) }));
+    const [t0, t1, t2] = plan.todos;
+    expect(requiredCheckIds(t0, plan)).toEqual(["acceptance", "qa:happy"]);
+    expect(requiredCheckIds(t1, plan)).toEqual(["acceptance", "qa:happy", "qa:failure"]);
+    expect(requiredCheckIds(t2, plan)).toEqual(["acceptance", "qa:happy", "qa:failure", "slice:S1"]);
+    expect(requiredCheckIds(t2)).toEqual(["acceptance", "qa:happy", "qa:failure"]);
+  });
+
+  test("--todo prints the slice and its branch, and for its last todo the check id and the independent test", () => {
+    const root = slicePlan();
+    const t1 = cli(root, "--todo", "T1");
+    expect(t1.status).toBe(0);
+    expect(t1.stdout).toContain("Branch: `feat/fixture-greeting`\nSlice: S1 — greeting\n\n### T1 — Add the greeting");
+    expect(t1.stdout).toContain(
+      "Checks its pass receipt must record: `acceptance`, `qa:happy`, `qa:failure`, `slice:S1`\nIndependent test of S1, recorded as `slice:S1`: `bun test` greets a configured name\n",
+    );
+    const t2 = cli(root, "--todo", "T2").stdout;
+    expect(t2).toContain("Branch: `feat/fixture`\nSlice: S2 — flag\n");
+    expect(t2).toContain("Independent test of S2, recorded as `slice:S2`: the CLI accepts the flag\n");
+    const t0 = cli(root, "--todo", "T0").stdout;
+    expect(t0).toContain("Branch: `feat/fixture`\n\n### T0");
+    expect(t0).not.toContain("Slice:");
+    const notLast = cli(slicePlan(ONE), "--todo", "T1").stdout;
+    expect(notLast).toContain("Slice: S1 — greeting\n");
+    expect(notLast).not.toContain("slice:S1");
+    expect(notLast).not.toContain("Independent test");
+  });
+
+  test("each slice is a review target, and --gate-skeleton puts them in one group", () => {
+    const root = slicePlan();
+    const plan = parsePlan(read(root, PLAN), read(root, EVIDENCE));
+    expect(requiredTargets(plan, new Map()).filter((t) => t.startsWith("slice:"))).toEqual(["slice:S1", "slice:S2"]);
+    const gate = JSON.parse(cli(root, "--gate-skeleton").stdout);
+    const groups = gate.obligations.map((o: Obligation) => o.targets).filter((t: string[]) => t.some((x) => x.startsWith("slice:")));
+    expect(groups).toEqual([["slice:S1", "slice:S2"]]);
+    const uncovered = makeProject();
+    reviewedPlan(uncovered, { mutatePlan: strategy(TWO) });
+    const review = run(uncovered, ["--review"]);
+    expect(review.gaps).toContain("required target slice:S1 has no required obligation");
+    expect(review.expectedVerdict).toBe("INCOMPLETE");
+  });
+
+  test("a plan without slices gets none of the three keys, no slice: target, and no slice check", () => {
+    const { root } = buildScenario();
+    for (const flags of [[], ["--review"], ["--review", "--resume"]]) {
+      const result = run(root, flags);
+      for (const key of KEYS) expect(key in result).toBe(false);
+    }
+    const json = JSON.parse(cli(root, "--review", "--resume", "--json").stdout);
+    for (const key of KEYS) expect(key in json).toBe(false);
+    const plan = parsePlan(read(root, PLAN), read(root, EVIDENCE));
+    expect(plan.slices).toEqual([]);
+    expect(requiredTargets(plan, new Map()).some((t) => t.startsWith("slice:"))).toBe(false);
+    expect(plan.todos.map((t) => requiredCheckIds(t, plan))).toEqual(plan.todos.map((t) => requiredCheckIds(t)));
+    expect(cli(root, "--todo", "T2").stdout).not.toContain("Slice:");
   });
 });
 

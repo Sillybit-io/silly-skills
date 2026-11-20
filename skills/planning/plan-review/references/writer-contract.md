@@ -39,7 +39,7 @@ The wave contains todos titled `F1`, `F2`, `F3`, and `F4`, in that order, each w
 
 When `ui: yes` — including a plan that adds a web or mobile surface — the automated UI QA todo is present and last. It names the tool, the route or screen, the viewport widths, the steps, the expected result, and a screenshot path under `reports/ui-qa/`. When `ui: no`, that todo is absent and the wave says why in one line.
 
-## Check J — Todo boxes, standard sentences, T0, and strict fields
+## Check J — Todo boxes, standard sentences, T0, strict fields, Behavior lines, and slices
 
 Each of these is a blocker. Judge what the text says, not its exact wording:
 
@@ -49,3 +49,12 @@ Each of these is a blocker. Judge what the text says, not its exact wording:
 - `T0` is the first todo. It copies the plan directory into `docs/plans/` when it is not already there and commits it as `docs(plans): add <slug> plan`. Its details live in `plan-builder`. A missing T0, or a T0 that copies unconditionally or overwrites a destination, is a blocker.
 - Every todo has a `Strict:` field. A todo whose changes touch security, sign-in, or permissions, or production and shared services, says so; when unsure, it counts as strict. A strict todo marked `no` is a blocker.
 - Every todo's QA scenario labels its parts, such as `happy — ...; failure — ...`, or marks a part `n/a`, so the builder knows which checks to record.
+
+A plan with Behavior lines or slices has four more blockers. Each applies only when the plan has the part it names:
+
+- A Behavior line says how the change is built, such as a function, a handler, a table row, or a library, instead of what a user or an operator sees.
+- A todo's `Serves` names a Behavior line that its work does not lead to, or no check of the todos that serve a Behavior line can observe that line's `then`.
+- The first `### Product` bullet does not record the owner's approval of the Behavior lines, as an answer or a default.
+- A slice does not ship alone: one of its todos depends on a later slice, or its independent test needs a later slice.
+
+Review prose names a Behavior line as `Behavior B2`, never a bare `B2`, because blocker ids are also `B<n>`.
