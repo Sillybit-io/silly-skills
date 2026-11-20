@@ -183,8 +183,6 @@ Without the skills, Claude Code planned in about half the time, 38.3 minutes aga
 
 Pick Spec Kit when the hard part is deciding what to build: a new product or feature, work that starts from user stories, or a team that wants one workflow across many agents. Pick the plan skills when the hard part is changing code that already exists without breaking it, and you want a script and a second session to check the plan and the result, not the agent that wrote them.
 
-Two ideas from Spec Kit have been in the plan skills since 2.1.0: Behavior lines in Given/When/Then that the owner approves before the todos are written, and slices of a large plan that each ship alone.
-
 ## Versioning
 
 Versions live at two levels. The repository follows SemVer as a whole: each release is a git tag plus a GitHub Release, and every notable change is recorded in [CHANGELOG.md](CHANGELOG.md). Each skill also carries its own `metadata.version` in its frontmatter and moves independently — patch for wording, minor for a new capability, major for a change to how you invoke it — so you can see that one skill changed without reading the whole repository changelog. [RELEASING.md](RELEASING.md) walks through the commands for both levels.

@@ -32,7 +32,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `skill-writer` 0.4.1: the `suggested-model` example names `anthropic/claude-fable-5-2`.
 - README: the suggested-model table lists every skill that sets a hint, and the model table names the current Fable and Sonnet versions.
 - README: a new section compares the plan skills with GitHub Spec Kit, from reading its command prompts.
-- README: the planning section says that a plan states Behavior lines first, that the owner approves them and the result review checks them, and that a large plan can be built slice by slice, with one pull request per slice when the owner wants one. The comparison with Spec Kit is written beside the plan skills at 2.1.0: its `Starts from` row adds Behavior lines, its `Slicing` row describes slices, and its last sentence says both ideas are in 2.1.0.
+- README: the planning section says that a plan states Behavior lines first, that the owner approves them and the result review checks them, and that a large plan can be built slice by slice, with one pull request per slice when the owner wants one. The comparison with Spec Kit is written beside the plan skills at 2.1.0: its `Starts from` row adds Behavior lines, and its `Slicing` row describes slices.
 
 ## [0.12.0] - 2026-11-03
 
