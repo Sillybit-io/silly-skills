@@ -31,7 +31,7 @@ const EXPECTED_DELEGATES: Record<Persona, Persona[]> = {
   "plan-writer": ["plan-scout"],
   "plan-reviewer": ["plan-scout"],
   "plan-scout": [],
-  "plan-builder": ["plan-result-reviewer"],
+  "plan-builder": ["plan-builder", "plan-result-reviewer"],
   "plan-loop": ["plan-writer", "plan-reviewer"],
   "plan-result-reviewer": ["plan-scout"],
 };

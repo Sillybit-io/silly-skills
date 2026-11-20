@@ -60,32 +60,16 @@ and the output matters, save it to
 `<run directory>/logs/<seq>-<todo>.log` and name that path in the receipt's
 `log`.
 
-## The receipt sequence, per todo
+## One receipt per todo
 
-1. **start.** Before any effect. `before` is the previous receipt's end state
-   (or the baseline, for the first todo). `after` is absent. If this todo
-   references a path a completed todo changed since the last time this
-   todo's prerequisites were checked, recheck it now and record the result
-   under `prerequisites`: the target IDs, the checked source's path and
-   SHA-256, `holds` or `fails`, and what you observed. A `fails` result means
-   the plan needs a new review, not a receipt that quietly proceeds anyway.
-2. **checkpoint.** After the todo's edits are made, before its checks run.
-   `before` is the start receipt's `before`. `after` is a fresh snapshot.
-   This receipt exists so a crash between the edit and the check
-   still has a recorded, resumable state.
-3. **pass.** Only after the todo's real Acceptance command and every QA
-   scenario ran and passed, and its commit (if `Commit: yes`) landed.
-   `checks` lists each command actually run, its actual exit code, the
-   expected one, whether it passed, and what it printed — never a planned
-   command you did not execute. `before` is the checkpoint's `after`.
-   `after` is a fresh snapshot taken once the commit (if any) has landed;
-   its `headRevision` must equal the commit you recorded. Only after this
-   receipt is durable does the todo's box become `- [x] Done`.
+A todo child writes one receipt, after its work:
 
-A todo with no edits between its start and its checks (a pure verification
-step) may have an `after` equal to its `before` at the checkpoint; do not
-force a snapshot that would be byte-identical to the last one, but do not
-skip recording the checkpoint event itself.
+- **pass.** Only after the todo's real Acceptance command and every QA part ran and passed, and its commit (if `Commit: yes`) landed. `before` is the previous receipt's end state (the baseline, for the first). `after` is a fresh snapshot taken once the commit has landed; its `headRevision` must equal the commit you recorded. `checks` lists each command actually run, its actual exit code, the expected one, whether it passed, and what it printed — never a planned command you did not execute. Use the ids `validate-plan.ts --todo` prints: `acceptance`, and `qa:<label>` for each labelled QA part that is not `n/a`. The validator refuses a pass without them (`MISSING_CHECK`). Only after this receipt is durable does the todo's box become `- [x] Done`.
+- **block.** When the todo cannot finish. `after` is a fresh snapshot of the state you leave, and `note` names what is missing.
+
+A todo with no edits (a pure verification step) may have an `after` equal to its `before`. A todo's first receipt comes only after its dependencies passed.
+
+A fix child writes one **fix** receipt with `F4` as its todo after a result round, and a final-wave child writes one naming the gate it repaired. Its checks are the commands it re-ran, all passing.
 
 ## Commits
 
@@ -99,8 +83,8 @@ paths and the plan directory, and check that unrelated index/worktree state
 is unchanged. Use the todo's commit subject; you may shorten it, keeping its
 type, scope, and meaning.
 
-T0's commit is the plan directory alone, `docs(plans): add <slug> plan`. After
-F4 returns MATCH, one more plan-only commit, `docs(plans): complete <slug>
+T0's commit is the plan directory alone, `docs(plans): add <slug> plan`; the
+coordinator makes it. After F4 returns MATCH or ACCEPTED, one more plan-only commit, `docs(plans): complete <slug>
 build`, records the final boxes, receipts, and result review; it is not a
 todo and gets no receipt. A CHECKPOINT or BLOCKED stop makes no commit of its
 own; the next todo commit or the resumed build's final commit carries the
@@ -108,7 +92,7 @@ plan directory forward.
 
 If an owned path also holds the project owner's pre-existing changes, or an
 edit this build did not intend, do not whole-file stage it and do not attempt
-to split its hunks automatically. Record a `checkpoint` receipt describing the
+to split its hunks automatically. Record a `block` receipt describing the
 collision — which path, whose changes are mixed, and why — and leave the
 todo open until the collision is resolved, by the owner's explicit direction
 or by separating the edits by hand. Snapshotting, no-commit work, resume, and
@@ -123,7 +107,8 @@ get there. Never push, under any circumstance.
 ## Prerequisite rechecks
 
 A pending todo whose References include a path a completed todo changed needs
-a recorded recheck before it starts, even mid-build. `holds` means you traced
+a recorded recheck, in its pass receipt's `prerequisites`, or in a recovery
+receipt when the recheck fails before any work. `holds` means you traced
 the actual current behavior of that source and confirmed this todo's plan
 still executes as written against it. `fails` means it does not, and building
 this todo further requires a new plan/review, not a receipt that silently
@@ -139,8 +124,9 @@ one. Trust its `resumeEligible`, `nextTodo`, `activeTodo`,
 hand. `reconcileBoxes` lists a todo with a passed receipt but an `- [ ] Open`
 box: fix the box only, without repeating that todo's effects or checks.
 `requiredRechecks` lists a pending todo whose referenced sources changed
-since the baseline or its receipts: record the recheck in that todo's start
-receipt before proceeding, per the section above.
+since the baseline or its receipts: the coordinator passes it to that todo's
+child, which records the recheck, per the section above. A new build reaches
+the resume command with only T0's receipt; `nextTodo` names the first todo.
 
 ## Recovery
 
@@ -155,9 +141,10 @@ Then append a `recovery` receipt: its `before` is the last recorded end
 state, its `after` is a fresh snapshot of the actual current state, and its
 `note` explains what you found and what you did about it, briefly; a longer
 account goes in the `log` file. A `recovery` receipt makes its todo (or the todo
-whose start receipt precedes the drift, if the drift began before any start
-receipt was recorded) active again; it does not itself advance that todo to
-passed. Never replay a commit, a delete, or any other irreversible action
+that was interrupted before its pass receipt) active; it does not itself
+advance that todo to passed. A commit made after the last receipt, whose
+subject matches the interrupted todo, is that todo's commit: record it, and
+never make it again. Never replay a commit, a delete, or any other irreversible action
 merely because the record does not show it happened — check the real state
 first, since replaying an action that already occurred can double its effect
 or destroy evidence of what actually happened.
@@ -166,3 +153,20 @@ A required premise that no longer holds — a dependency removed, an external
 contract that changed, a Must Have the current code contradicts — is not
 something a recovery receipt can wave through. It needs a new plan and a new
 review. Checkpoint and say so.
+
+## Final wave
+
+The final-wave child runs every gate before F4:
+
+- **F1 Plan compliance.** Every Must Have is present and every Must NOT Have is absent, with the evidence named.
+- **F2 Code quality.** The test, lint, and build commands the project defines, compared with the baseline checks in the evidence index, so a failure that predates the build is named instead of blamed on it. Name any of the three the project lacks. Then a slop pass: empty catches, debug logs, commented-out code, unused imports, and type escapes.
+- **F3 Scenario QA.** Every todo's QA scenario, including edge cases.
+- **F5 onward**, and any `Acceptance:` line a gate carries, exactly as the plan says.
+- **Automated UI QA**, when `ui: yes`: the tool, routes, viewports, steps, and screenshot path the plan names, in a real browser.
+
+A failing gate is fixed in the same child: change the implementation, re-run the affected checks, and append a `fix` receipt naming the gate. Never weaken the gate's check.
+
+## Result review rounds
+
+F4 is a fresh `plan-result-reviewer` child, given the plan path and the project root. Its verdict is `MATCH`, `ACCEPTED (<n> recorded)`, `MISMATCH (<n> blocking, <m> recorded)`, or `INCOMPLETE`. A build runs at most two result rounds. Only blocking differences go to a fix child; recorded ones stay in the round. After a second `MISMATCH`, the build stops and the owner decides.
+
