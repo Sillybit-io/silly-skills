@@ -1,6 +1,6 @@
 # Design: lighter plan skills
 
-Status: draft for owner review. Branch: `feat/lighter-plan-skills`.
+Status: approved by the owner on 2026-11-20. Branch: `feat/lighter-plan-skills`.
 
 ## Why
 
@@ -35,7 +35,7 @@ These were decided before this design.
    - UI checked in a browser.
 2. A plan has no size cap.
 3. Plan review keeps today's verdict rules: every finding blocks. Only the round limit changes.
-4. Result review gets an accepted verdict. Failing tests and strict-area findings block. Two more blocking rows are proposed in D2 and open question 5.
+4. Result review gets an accepted verdict. Failing tests and strict-area findings block. Two more blocking rows are added in D2 (owner answer 5).
 5. The build stays coordinated from the main session.
 6. Plans already written finish on the old install. Only new plans use the new format.
 7. Model pins are done (first commit on this branch). Writer effort is `xhigh`.
@@ -105,14 +105,13 @@ Tests cover an interruption before the commit, after the commit, and drift the t
 
 ### T0 and the final gates
 
-Today every plan carries T0 and F1 to F4 as todos, with fixed wording the reviewer checks (Checks I and J). In the new format the builder owns them:
+T0 and F1 to F4 stay in the plan, as todos with boxes (owner decision). Their text gets shorter:
 
-- T0 (copy and commit the plan directory) is the coordinator's first step. It touches only the plan directory and makes no code edit.
-- F1 to F3, every extra check `F5` onward, and the UI QA todo are the final-wave child's job, described in `plan-builder`.
-- F4 is the result review.
-- The plan keeps only what is specific to it: extra final checks `F5` onward, and the UI QA todo when `ui: yes`.
+- T0 keeps its heading, box, and commit line. Its `Do` becomes one line: "Copy the plan directory into `docs/plans/` when needed, and commit it." The details of copying live in `plan-builder`. The coordinator runs T0 itself; it touches only the plan directory.
+- F1 to F4 keep their headings and boxes. Each `Do` and `Acceptance` becomes one line, unless the plan has something specific to say. F1 to F3, every extra check `F5` onward, and the UI QA todo are the final-wave child's job. F4 is the result review.
+- The two fixed paragraphs, test-before-next under `## Todos` and continue-through-waves under `## Execution strategy`, become one sentence each. `plan-builder` holds the full rules.
 
-The fixed paragraphs about test-before-next and not stopping between waves move into `plan-builder` too. The plan no longer repeats them.
+Checks I and J keep their blockers: missing todos, boxes, order, and the two sentences. They stop judging the exact wording.
 
 ### When a child cannot be launched
 
@@ -186,7 +185,7 @@ Blocking differences keep today's fields. Recorded differences are one line each
 - Follow producers and consumers one step from the changed code. A consumer that itself needs a change becomes a new starting point.
 - Always search the changed inventory too: counts, registrations, generated lists, and the tests that assert them. The benchmark's misses were of this kind.
 - In a strict area, follow edges to the end, as today.
-- Critical flows are traced for strict areas and for changes that write or migrate stored data (open question 4). Elsewhere the index records `noRuntimeFlowReason`.
+- Critical flows are traced for strict areas and for changes that write or migrate stored data (owner answer 4). Elsewhere the index records `noRuntimeFlowReason`.
 
 ### Spec
 
@@ -203,9 +202,9 @@ The spec keeps what the owner reads (TL;DR, questions, todos) and what the build
 | Questions | Kept |
 | Design | Kept |
 | Verification strategy | Removed; it repeated Success criteria |
-| Execution strategy | Wave list only |
-| Todos | No T0; a new `Strict:` field |
-| Final verification wave | Only `F5` onward and UI QA |
+| Execution strategy | One continue-through-waves sentence and the wave list |
+| Todos | One test-before-next sentence; a short T0; a new `Strict:` field |
+| Final verification wave | Short F1 to F4, then `F5` onward and UI QA |
 | Success criteria | Kept |
 
 ### Owner rule
@@ -222,7 +221,7 @@ Two ideas wait until the next real writer sessions are measured: finishing valid
 - **Verdict rules.** Unchanged. Only `OKAY` can be built. Owner acceptance is recorded but does not make a plan buildable.
 - **Gate record skeleton.** A new option, `validate-plan.ts <plan> --gate-skeleton`, prints the gate record with every required target already grouped: one obligation per todo (split into `.start`, `.acceptance`, and `.qa` when their evidence or status differs), one per Must Have, one per dependency, one per flow and contract, and one per check. The reviewer fills in statuses and evidence. It no longer types 20 to 50 KB of JSON, and it reads `validator-contract.md` only when the validator fails.
 - **Trust the script for structure.** The validator checks that cited lines exist and that their hashes match. Without excerpts, a citation no longer proves the writer read those lines, so the reviewer opens the citations a todo relies on when it checks that todo (Checks A and B, as today). It does not re-check every citation. It reads the spec once and pulls evidence entries by id. It reads the source behind every strict-area todo.
-- **Checks I and J** shrink to what the plan still holds: the `Strict:` field, extra final checks, and the UI QA todo.
+- **Checks I and J** keep their blockers but stop judging exact wording. Check J adds the `Strict:` field.
 
 ## D5. `plan-loop`
 
@@ -270,11 +269,13 @@ From the session database, on the next real plans:
 | Result-review rounds per build | up to 11 | 2 at most |
 | Plan size, spec plus evidence index | 136 to 515 KB | about half |
 
-## Open questions for the owner
+## Owner answers
 
-1. **T0 and F1 to F4 move into the builder.** The plan keeps only extra checks and UI QA. Recommended. The alternative keeps them in the plan with shorter fixed text.
-2. **What result review re-runs.** Recommended: the test command once, plus the Acceptance commands of strict todos. The alternative re-runs every todo's checks, as today.
-3. **Fixes for a rejected plan.** Today they run on Fable through the writer persona. The alternative is an Opus child, which you chose by hand once. Recommended: keep the writer persona, since its sessions are now smaller.
-4. **Which flows are traced.** Recommended: strict areas plus changes that write or migrate stored data, one trace each. The alternative is strict areas only, so data migrations are no longer traced.
-5. **Two blocking rows were added beyond your rule:** lost owner work, and a todo with nothing built. Recommended to keep both.
-6. **Inline fallback** when a todo child cannot be launched. Recommended, because the build otherwise stops on a host without children.
+Answered on 2026-11-20.
+
+1. T0 and F1 to F4 stay in the plan, with shorter text.
+2. Result review runs the project's test command once, plus the Acceptance commands of strict todos.
+3. Fixes for a rejected plan keep running through the writer persona on Fable.
+4. Flows are traced for strict areas and for changes that write or migrate stored data.
+5. Lost owner work and a todo with nothing built both block.
+6. When a todo child cannot be launched, the coordinator builds that todo itself and says so. F4 is never run inline.
