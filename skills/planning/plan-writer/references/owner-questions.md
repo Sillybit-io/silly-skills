@@ -34,11 +34,11 @@ An early-round answer is written once, in the group it belongs to. The later rou
 
 ## When to stop
 
-Do not stop before the draft file exists. In an interactive session, stop after that draft is written when at least one later-round question is still open, or when the tier is `architecture`. Do not stop when both groups contain only settled decisions and the tier is `standard`.
+Do not stop before the draft file exists. In an interactive session, stop after that draft is written when at least one later-round question is still open, or when the tier is `architecture`. The Behavior lines stay open until the owner approves them, so an interactive session also stops at the draft gate for them when nothing else is open. Do not stop when both groups contain only settled decisions and the tier is `standard`.
 
 In a non-interactive run, record each default and continue, including when the tier is `architecture`. A session that was told to ask and wait is interactive: write the draft, reply with the draft-gate block, and stop. Do not record a default and continue. A child session that another agent launched returns its open questions to that parent in the reply.
 
-The draft at this gate holds the TL;DR, Scope (including the IS/GAP ledger and the risks), the evidence index with its frontier, `## Research`, and `## Questions`. The other headings are present and empty.
+The draft at this gate holds the TL;DR, `## Behavior`, Scope (including the IS/GAP ledger and the risks), the evidence index with its frontier, `## Research`, and `## Questions`. The other headings are present and empty.
 
 ## Resume
 

@@ -360,7 +360,7 @@ A todo passes its Acceptance and every QA part, commits when it says `Commit: ye
 
 ### T2 — Validate slices and report where a slice starts
 
-- [ ] Open
+- [x] Done
 - Do: In the validator, add slice lines to the execution strategy, with every rule under "Slices" in Design: the grammar, the `SLICE` errors, the `slices`, `nextSlice` and `sliceStart` keys, the required `slice:S<n>` check on the last todo of a slice, the `--todo` lines, and the `slice:S<n>` targets with their gate-skeleton group. Give `requiredCheckIds` the plan as an optional second parameter, so every caller keeps working. Describe the grammar, the error code, the keys and the target kind in the validator contract, each in the section that already holds its kind. Add tests in a describe block named `slices`: one per rule, a resume scenario where `sliceStart` is true, stays true with `STATE_DRIFT` after a plan-only commit, and is false after a recovery receipt, a `MISSING_CHECK` error for a last todo without the slice check, and one that a fixture without slices has none of the three keys. Add a changelog line.
 - Must not: change the order of todos, the choice of `nextTodo`, drift detection, or a receipt rule. Add a key to the output of a plan without slices. Add a receipt event. Edit the expectation of an existing test.
 - Closes gap: G2
