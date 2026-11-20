@@ -23,7 +23,16 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { canonicalJson, canonicalSpecDigest, validatePlan } from "./validate-plan.ts";
+import {
+  canonicalJson,
+  canonicalSpecDigest,
+  FORMAT_1_MESSAGE,
+  parsePlan,
+  qaLabels,
+  requiredCheckIds,
+  type Todo,
+  validatePlan,
+} from "./validate-plan.ts";
 
 // Resume scenarios create git repositories and snapshots; each takes a few seconds.
 setDefaultTimeout(30_000);
@@ -136,17 +145,17 @@ function evidenceIndex(root: string): Record<string, unknown> {
   const app = read(root, "src/app.ts");
   const cli = read(root, "src/cli.ts");
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     citations: [
-      { id: "C1", kind: "source", path: "src/app.ts", startLine: 1, endLine: 3, excerpt: lines(app, 1, 3), sha256: sha(app) },
-      { id: "C2", kind: "source", path: "src/cli.ts", startLine: 1, endLine: 2, excerpt: lines(cli, 1, 2), sha256: sha(cli) },
+      { id: "C1", kind: "source", path: "src/app.ts", startLine: 1, endLine: 3, sha256: sha(app) },
+      { id: "C2", kind: "source", path: "src/cli.ts", startLine: 1, endLine: 2, sha256: sha(cli) },
       { id: "C3", kind: "self" },
       { id: "C4", kind: "planned", path: "src/new.ts", createdBy: "T2" },
       { id: "C5", kind: "external", url: "https://example.com/spec", version: "1.0", accessed: "2026-09-29", excerpt: "start registers", obligation: "MH1" },
-      { id: "C6", kind: "source", path: "src/app.ts", startLine: 5, endLine: 7, excerpt: lines(app, 5, 7), sha256: sha(app) },
+      { id: "C6", kind: "source", path: "src/app.ts", startLine: 5, endLine: 7, sha256: sha(app) },
     ],
     coverage: [
-      { id: "V1", paths: ["src/app.ts", "src/cli.ts"], searches: ["rg -n start src"], producers: ["src/app.ts"], consumers: ["src/cli.ts"], citationIds: ["C1", "C2", "C6"], state: "inspected" },
+      { id: "V1", paths: ["src/app.ts", "src/cli.ts"], citationIds: ["C1", "C2", "C6"], state: "inspected" },
     ],
     frontier: [],
     flows: [
@@ -190,14 +199,6 @@ ${LINKS}
 
 ## Scope
 
-### Affected users
-
-Fixture users.
-
-### Ideal state
-
-The fixture greets.
-
 ### IS / GAP ledger
 
 | Gap | IS today (evidence) | GAP |
@@ -219,10 +220,6 @@ The fixture greets.
 ### Must NOT have
 
 - MN1: No network access.
-
-### Coverage
-
-Recorded in the Evidence index.
 
 ### Critical flows
 
@@ -249,12 +246,6 @@ No useful public source found.
 ## Design
 
 Diagram: omitted — a two-file change.
-
-## Verification strategy
-
-| Gap | Proof | Expected |
-| --- | --- | --- |
-| G1 | \`bun test\` | passes |
 
 ## Execution strategy
 
@@ -284,6 +275,7 @@ Every todo starts with \`- [ ] Open\`.
 - References: this file.
 - Acceptance: \`test -f ${PLAN}\` exits 0.
 - QA scenario: happy — the file exists; failure — n/a.
+- Strict: no.
 - Commit: no.
 
 ### T1 — Add the greeting
@@ -296,6 +288,7 @@ Every todo starts with \`- [ ] Open\`.
 - References: \`src/app.ts:1-3\`.
 - Acceptance: \`bun test\` passes.
 - QA scenario: happy — greets; failure — empty name.
+- Strict: no.
 - Commit: no.
 
 ### T2 — Add the flag
@@ -308,6 +301,7 @@ Every todo starts with \`- [ ] Open\`.
 - References: \`src/cli.ts:1-2\`, \`src/app.ts:5-7\`, \`src/new.ts\`.
 - Acceptance: \`bun test\` passes.
 - QA scenario: happy — flag works; failure — unknown flag.
+- Strict: no.
 - Commit: no.
 
 ## Final verification wave
@@ -386,7 +380,7 @@ function gateRecord(root: string, planDigest: string, options: GateOptions = {})
     { id: "O1", targets: ALL_TARGETS, evidenceIds: ["C1", "P1"], observed: "start and register traced; probe passed", plannedQa: "Q1", status: "verified" },
   ];
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     round: options.round ?? 1,
     planDigest,
     repository: { revision: git(root, "rev-parse", "HEAD").toString().trim(), dirty: [PLAN] },
@@ -573,13 +567,16 @@ type ReceiptInput = {
   extra?: Record<string, unknown>;
 };
 
+const check = (id: string, observed = "1 passed") => ({ id, command: "bun test", exit: 0, expectedExit: 0, passed: true, observed });
+const PASSING = [check("acceptance"), check("qa:happy"), check("qa:failure")];
+
 function receipts(baseline: Ref, inputs: ReceiptInput[]) {
   const out: Record<string, unknown>[] = [];
   let end = baseline;
   for (const input of inputs) {
     const prev = out[out.length - 1];
     const after = input.after === "same" ? end : input.after ?? null;
-    const state = { start: "active", checkpoint: "active", pass: "passed", block: "blocked", recovery: "active" }[input.event];
+    const state = { pass: "passed", block: "blocked", recovery: "active", fix: "passed" }[input.event];
     out.push({
       seq: out.length + 1,
       todo: input.todo,
@@ -588,7 +585,7 @@ function receipts(baseline: Ref, inputs: ReceiptInput[]) {
       prev: prev ? sha(canon(prev)) : null,
       before: end,
       after,
-      checks: input.checks ?? (input.event === "pass" ? [{ id: "acceptance", command: "bun test", exit: 0, expectedExit: 0, passed: true, observed: "1 passed" }] : []),
+      checks: input.checks ?? (input.event === "pass" || input.event === "fix" ? PASSING : []),
       prerequisites: input.prerequisites ?? [],
       commit: input.commit ?? { none: "Commit: no" },
       note: input.note ?? "",
@@ -620,33 +617,27 @@ function setBoxes(root: string, done: string[]): void {
  * passes. Returns the pieces so tests can mutate them.
  */
 const T1_COMMIT = (t: string) =>
-  t.replace("- QA scenario: happy — greets; failure — empty name.\n- Commit: no.", "- QA scenario: happy — greets; failure — empty name.\n- Commit: yes — `feat: greet`.");
+  t.replace("- QA scenario: happy — greets; failure — empty name.\n- Strict: no.\n- Commit: no.", "- QA scenario: happy — greets; failure — empty name.\n- Strict: no.\n- Commit: yes — `feat: greet`.");
 
-function buildScenario(options: { stopAfter?: "T1-start" | "T1-checkpoint"; t1Commit?: boolean; omitCommit?: boolean; reports?: string[] } = {}) {
+function buildScenario(options: { stopAfter?: "T0"; t1Commit?: boolean; omitCommit?: boolean; reports?: string[] } = {}) {
   const root = makeProject();
   const text = reviewedPlan(root, { mutatePlan: options.t1Commit ? T1_COMMIT : undefined });
   const spec = specOf(root, text);
   const gateDigest = sha(canon(JSON.parse(read(root, GATE))));
   const baseline = saveSnapshot(root, snapshot(root, "silly-skills/plan-builds/run/baseline", { reports: options.reports }), spec);
   const carry = JSON.parse(readFileSync(join(root, ".git", baseline.snapshot, "manifest.json"), "utf8")).paths.map((p: { path: string }) => p.path);
-  const inputs: ReceiptInput[] = [
-    { todo: "T0", event: "start" },
-    { todo: "T0", event: "pass", after: "same" },
-    { todo: "T1", event: "start", prerequisites: [{ targets: ["T1.start"], sources: [{ path: "src/app.ts", sha256: sha(APP) }], status: "holds", observed: "unchanged since baseline" }] },
-  ];
+  const inputs: ReceiptInput[] = [{ todo: "T0", event: "pass", after: "same", checks: [check("acceptance"), check("qa:happy")] }];
   let after: Ref | null = null;
-  if (options.stopAfter !== "T1-start") {
+  if (options.stopAfter !== "T0") {
     writeFileSync(join(root, "src/app.ts"), APP.replace("return register(config);", "return register(`hello ${config}`);"));
     if (options.t1Commit) git(root, "commit", "-q", "-am", "T1");
     after = saveSnapshot(root, snapshot(root, "silly-skills/plan-builds/run/T1", { carry, reports: options.reports }), spec);
-    inputs.push({ todo: "T1", event: "checkpoint", after });
-    if (options.stopAfter !== "T1-checkpoint") {
-      const commit = options.t1Commit && !options.omitCommit ? { sha: git(root, "rev-parse", "HEAD").toString().trim() } : undefined;
-      inputs.push({ todo: "T1", event: "pass", after: "same", commit });
-    }
+    const commit = options.t1Commit && !options.omitCommit ? { sha: git(root, "rev-parse", "HEAD").toString().trim() } : undefined;
+    const prerequisites = [{ targets: ["T1.start"], sources: [{ path: "src/app.ts", sha256: sha(APP) }], status: "holds", observed: "unchanged since baseline" }];
+    inputs.push({ todo: "T1", event: "pass", after, commit, prerequisites });
   }
   const record = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     runId: "fixture-run",
     runDir: "silly-skills/plan-builds/run",
     repository: repoIdentity(root),
@@ -892,7 +883,7 @@ describe("plan mode", () => {
   test("a malformed evidence index and wrong frontmatter keys fail", () => {
     const root = makeProject();
     writePlan(root, planText(root));
-    write(root, EVIDENCE, read(root, EVIDENCE).replace('"schemaVersion": 1,', '"schemaVersion": 1,,'));
+    write(root, EVIDENCE, read(root, EVIDENCE).replace('"schemaVersion": 2,', '"schemaVersion": 2,,'));
     expect(codes(run(root))).toContain("EVIDENCE_INDEX");
     writePlan(root, planText(root).replace("review: optional\n", ""));
     expect(codes(run(root))).toContain("FRONTMATTER");
@@ -905,7 +896,7 @@ describe("plan mode", () => {
     const expected = codes(run(root));
     const index = evidenceIndex(root) as Record<string, unknown[]>;
     write(root, EVIDENCE, evidenceText([
-      { schemaVersion: 1, citations: [], coverage: [], frontier: [], flows: [], baseline: index.baseline },
+      { schemaVersion: 2, citations: [], coverage: [], frontier: [], flows: [], baseline: index.baseline },
       ...(index.citations as unknown[]).map((c) => ({ citations: [c] })),
       ...(index.coverage as unknown[]).map((c) => ({ coverage: [c] })),
       ...(index.flows as unknown[]).map((f) => ({ flows: [f] })),
@@ -924,7 +915,7 @@ describe("plan mode", () => {
 
   test("a leftover skeleton placeholder fails in a planned plan but not in a draft", () => {
     const root = makeProject();
-    const withPlaceholder = planText(root).replace("### Affected users\n", "### Affected users\n\n<!-- todo: affected users -->\n");
+    const withPlaceholder = planText(root).replace("### Risks\n", "### Risks\n\n<!-- todo: risks -->\n");
     writePlan(root, withPlaceholder);
     expect(codes(run(root))).toContain("PLACEHOLDER");
     writePlan(root, withPlaceholder.replace(/^status: .*$/m, "status: draft"));
@@ -943,7 +934,7 @@ describe("OpenDesign block", () => {
   const block = (folder: string, link: string, project = `Fixture UI (\`${OD_ID}\`)`) =>
     `### OpenDesign\n\n- Project: ${project}\n- Folder: \`${folder}\`\n- Link: <${link}> — local; opens while OpenDesign runs\n\n`;
   const withBlock = (root: string, text: string) =>
-    planText(root, { mutate: (t) => t.replace("## Verification strategy\n", `${text}## Verification strategy\n`) });
+    planText(root, { mutate: (t) => t.replace("## Execution strategy\n", `${text}## Execution strategy\n`) });
   const odErrors = (root: string) => run(root).errors.filter((e) => e.code === "OPENDESIGN").map((e) => e.message);
 
   test("a plan that never mentions OpenDesign needs no block", () => {
@@ -1017,8 +1008,6 @@ describe("field caps", () => {
       ["MH1 bullet", (t) => t.replace("- MH1: A greeting.", `- MH1: ${words(41)}.`)],
       ["TL;DR bullet", (t) => t.replace("- Effort: S — fixture.", `- Effort: ${words(61)}.`)],
       ["G1 ledger cell 3", (t) => t.replace("| No greeting |", `| ${words(61)} |`)],
-      ["Coverage paragraph", (t) => t.replace("Recorded in the Evidence index.", words(121))],
-      ["Verification strategy G1 cell 3", (t) => t.replace("| G1 | `bun test` | passes |", `| G1 | \`bun test\` | ${words(31)} |`)],
       ["Success criteria G1 cell 3", (t) => t.replace("| G1 | T1 | tests |", `| G1 | T1 | ${words(31)} |`)],
     ];
     for (const [label, mutate] of cases) {
@@ -1380,11 +1369,10 @@ describe("resume mode", () => {
   });
 
   test("starting a todo before its dependency passed fails", () => {
-    const { root, record, baseline } = buildScenario({ stopAfter: "T1-start" });
+    const { root, record, baseline } = buildScenario({ stopAfter: "T0" });
     record.receipts = receipts(baseline, [
-      { todo: "T0", event: "start" },
-      { todo: "T0", event: "pass", after: "same" },
-      { todo: "T2", event: "start" },
+      { todo: "T0", event: "pass", after: "same", checks: [check("acceptance"), check("qa:happy")] },
+      { todo: "T2", event: "pass", after: "same" },
     ]);
     writeBuild(root, record);
     expect(codes(run(root, ["--review", "--resume"]))).toContain("DEPENDENCY_ORDER");
@@ -1403,11 +1391,9 @@ describe("resume mode", () => {
   });
 
   test("a receipt key outside the schema, such as changedPaths, is refused", () => {
-    const { root, record, baseline } = buildScenario({ stopAfter: "T1-start" });
+    const { root, record, baseline } = buildScenario({ stopAfter: "T0" });
     record.receipts = receipts(baseline, [
-      { todo: "T0", event: "start", extra: { changedPaths: [] } },
-      { todo: "T0", event: "pass", after: "same" },
-      { todo: "T1", event: "start", extra: { log: "silly-skills/plan-builds/run/logs/t1.log" } },
+      { todo: "T0", event: "pass", after: "same", checks: [check("acceptance"), check("qa:happy")], extra: { changedPaths: [], log: "silly-skills/plan-builds/run/logs/t0.log" } },
     ]);
     writeBuild(root, record);
     const errors = run(root, ["--review", "--resume"]).errors.filter((e) => e.code === "RECEIPT_FIELD");
@@ -1418,11 +1404,9 @@ describe("resume mode", () => {
 
   test("receipt prose is capped: a long observed is a gap, a very long one an error", () => {
     for (const [size, expectError] of [[250, false], [401, true]] as const) {
-      const { root, record, baseline } = buildScenario({ stopAfter: "T1-start" });
+      const { root, record, baseline } = buildScenario({ stopAfter: "T0" });
       record.receipts = receipts(baseline, [
-        { todo: "T0", event: "start" },
-        { todo: "T0", event: "pass", after: "same", checks: [{ id: "acceptance", command: "bun test", exit: 0, expectedExit: 0, passed: true, observed: "x".repeat(size) }] },
-        { todo: "T1", event: "start" },
+        { todo: "T0", event: "pass", after: "same", checks: [check("acceptance", "x".repeat(size)), check("qa:happy")] },
       ]);
       writeBuild(root, record);
       const result = run(root, ["--review", "--resume"]);
@@ -1455,8 +1439,15 @@ describe("resume mode", () => {
     expect(noBuild.errors.some((e) => e.code === "BUILD_RECORD" && e.file === BUILD)).toBe(true);
   });
 
-  test("an active checkpoint that matches the workspace resumes only that todo", () => {
-    const { root } = buildScenario({ stopAfter: "T1-checkpoint" });
+  test("a recovery receipt that matches the workspace resumes only that todo", () => {
+    const { root, record, baseline, spec, carry } = buildScenario({ stopAfter: "T0" });
+    writeFileSync(join(root, "src/app.ts"), `${APP}// partial\n`);
+    const partial = saveSnapshot(root, snapshot(root, "silly-skills/plan-builds/run/T1-recovery", { carry }), spec);
+    record.receipts = receipts(baseline, [
+      { todo: "T0", event: "pass", after: "same", checks: [check("acceptance"), check("qa:happy")] },
+      { todo: "T1", event: "recovery", after: partial, note: "T1 edits from an interrupted attempt; kept" },
+    ]);
+    writeBuild(root, record);
     const result = run(root, ["--review", "--resume"]);
     expect(result.errors).toEqual([]);
     expect(result.resumeEligible).toBe(true);
@@ -1464,24 +1455,19 @@ describe("resume mode", () => {
     expect(result.nextTodo).toBe("T1");
   });
 
-  test("effects after a start receipt with no checkpoint require recovery", () => {
-    const { root } = buildScenario({ stopAfter: "T1-start" });
+  test("edits with no receipt after them require recovery before the next todo", () => {
+    const { root } = buildScenario({ stopAfter: "T0" });
     writeFileSync(join(root, "src/app.ts"), `${APP}// partial\n`);
     const result = run(root, ["--review", "--resume"]);
     expect(result.resumeEligible).toBe(false);
     expect(result.recoveryRequired).toBe(true);
-    expect(result.activeTodo).toBe("T1");
+    expect(result.activeTodo).toBeNull();
+    expect(result.nextTodo).toBe("T1");
     expect(result.unresolvedAction).toContain("recovery receipt");
   });
 
   test("a commit whose receipt was lost is drift, not a completed todo", () => {
-    const { root, record, baseline } = buildScenario({ stopAfter: "T1-start" });
-    record.receipts = receipts(baseline, [
-      { todo: "T0", event: "start" },
-      { todo: "T0", event: "pass", after: "same" },
-      { todo: "T1", event: "start" },
-    ]);
-    writeBuild(root, record);
+    const { root } = buildScenario({ stopAfter: "T0" });
     writeFileSync(join(root, "src/app.ts"), `${APP}// committed\n`);
     git(root, "commit", "-q", "-am", "unrecorded");
     const result = run(root, ["--review", "--resume"]);
@@ -1506,12 +1492,9 @@ describe("resume mode", () => {
     for (const status of ["fails", "holds"]) {
       const { root, record, baseline, after } = buildScenario();
       record.receipts = receipts(baseline, [
-        { todo: "T0", event: "start" },
-        { todo: "T0", event: "pass", after: "same" },
-        { todo: "T1", event: "start" },
-        { todo: "T1", event: "checkpoint", after: after as Ref },
-        { todo: "T1", event: "pass", after: "same" },
-        { todo: "T2", event: "start", prerequisites: [{ targets: ["T2.start"], sources: [{ path: "src/app.ts", sha256: sha(readFileSync(join(root, "src/app.ts"))) }], status, observed: "register signature" }] },
+        { todo: "T0", event: "pass", after: "same", checks: [check("acceptance"), check("qa:happy")] },
+        { todo: "T1", event: "pass", after: after as Ref },
+        { todo: "T2", event: "recovery", after: "same", note: "recheck before T2", prerequisites: [{ targets: ["T2.start"], sources: [{ path: "src/app.ts", sha256: sha(readFileSync(join(root, "src/app.ts"))) }], status, observed: "register signature" }] },
       ]);
       writeBuild(root, record);
       const result = run(root, ["--review", "--resume"]);
@@ -1527,11 +1510,9 @@ describe("resume mode", () => {
   });
 
   test("a blocked receipt is a valid checkpoint that does not permit advancement", () => {
-    const { root, record, baseline } = buildScenario({ stopAfter: "T1-start" });
+    const { root, record, baseline } = buildScenario({ stopAfter: "T0" });
     record.receipts = receipts(baseline, [
-      { todo: "T0", event: "start" },
-      { todo: "T0", event: "pass", after: "same" },
-      { todo: "T1", event: "start" },
+      { todo: "T0", event: "pass", after: "same", checks: [check("acceptance"), check("qa:happy")] },
       { todo: "T1", event: "block", after: "same", note: "needs a credential" },
     ]);
     writeBuild(root, record);
@@ -1543,11 +1524,169 @@ describe("resume mode", () => {
   });
 });
 
+describe("format 2", () => {
+  test("format 1 evidence indexes, gate records, and build records are refused with one message", () => {
+    const root = makeProject();
+    writePlan(root, planText(root, { mutateIndex: (i) => (i.schemaVersion = 1) }));
+    const plan = run(root);
+    expect(plan.errors.some((e) => e.code === "FORMAT_1" && e.message === FORMAT_1_MESSAGE)).toBe(true);
+    const root2 = makeProject();
+    reviewedPlan(root2, { mutateGate: (g) => (g.schemaVersion = 1) });
+    expect(codes(run(root2, ["--review"]))).toContain("FORMAT_1");
+    const { root: root3, record } = buildScenario();
+    writeBuild(root3, { ...record, schemaVersion: 1 });
+    expect(codes(run(root3, ["--review", "--resume"]))).toContain("FORMAT_1");
+  });
+
+  test("a source citation needs no excerpt but needs a stamped sha256", () => {
+    const root = makeProject();
+    writePlan(root, planText(root));
+    expect(run(root).errors).toEqual([]);
+    writePlan(root, planText(root, { mutateIndex: (i) => ((i.citations as Record<string, unknown>[])[0].sha256 = "") }));
+    expect(run(root).errors.some((e) => e.code === "CITATION" && e.message.includes("stamp-evidence.ts"))).toBe(true);
+  });
+
+  test("a todo needs a Strict field that names no or a known strict area", () => {
+    const root = makeProject();
+    writePlan(root, planText(root, { mutate: (t) => t.replace("- Do: add the flag.", "- Do: add the flag.\n- Strict: security, production.").replace(/(flag works; failure — unknown flag\.\n)- Strict: no\.\n/, "$1") }));
+    expect(run(root).errors).toEqual([]);
+    writePlan(root, planText(root, { mutate: (t) => t.replace(/(flag works; failure — unknown flag\.\n)- Strict: no\./, "$1- Strict: billing.") }));
+    expect(run(root).errors.some((e) => e.code === "TODO" && e.message.includes("unknown strict area 'billing'"))).toBe(true);
+    writePlan(root, planText(root, { mutate: (t) => t.replace(/(flag works; failure — unknown flag\.\n)- Strict: no\.\n/, "$1") }));
+    expect(run(root).errors.some((e) => e.code === "TODO" && e.message.includes("T2 is missing '- Strict:'"))).toBe(true);
+  });
+
+  test("a pass receipt needs a passing acceptance check and one passing check per QA part that is not n/a", () => {
+    const { root, record, baseline, after } = buildScenario();
+    record.receipts = receipts(baseline, [
+      { todo: "T0", event: "pass", after: "same", checks: [check("acceptance"), check("qa:happy")] },
+      { todo: "T1", event: "pass", after: after as Ref, checks: [check("acceptance"), check("qa:happy")] },
+    ]);
+    writeBuild(root, record);
+    const result = run(root, ["--review", "--resume"]);
+    expect(result.errors.some((e) => e.code === "MISSING_CHECK" && e.message.includes("'qa:failure'"))).toBe(true);
+    expect(result.resumeEligible).toBe(false);
+  });
+
+  test("a fix receipt follows the last todo, names a final gate, and needs passing checks", () => {
+    const build = () => {
+      const s = buildScenario();
+      setBoxes(s.root, ["T0", "T1", "T2"]);
+      return s;
+    };
+    const ok = build();
+    ok.record.receipts = receipts(ok.baseline, [
+      ...ok.inputs.slice(0, 1),
+      { todo: "T1", event: "pass", after: ok.after as Ref },
+      { todo: "T2", event: "pass", after: "same" },
+      { todo: "F4", event: "fix", after: "same", checks: [check("blocking:D1")] },
+    ]);
+    writeBuild(ok.root, ok.record);
+    const good = run(ok.root, ["--review", "--resume"]);
+    expect(good.errors).toEqual([]);
+    expect(good.resumeEligible).toBe(true);
+    const early = build();
+    early.record.receipts = receipts(early.baseline, [...early.inputs.slice(0, 1), { todo: "F4", event: "fix", after: "same", checks: [check("blocking:D1")] }]);
+    writeBuild(early.root, early.record);
+    expect(run(early.root, ["--review", "--resume"]).errors.some((e) => e.code === "RECEIPT_ORDER" && e.message.includes("before T1, T2 passed"))).toBe(true);
+  });
+
+  test("qaLabels and requiredCheckIds read labelled QA parts and skip n/a", () => {
+    const parsed = parsePlan(planText(makeProject()));
+    const t0 = parsed.todos.find((t) => t.id === "T0") as Todo;
+    const t1 = parsed.todos.find((t) => t.id === "T1") as Todo;
+    expect(qaLabels(t0)).toEqual(["happy"]);
+    expect(requiredCheckIds(t1)).toEqual(["acceptance", "qa:happy", "qa:failure"]);
+    expect(requiredCheckIds({ ...t1, fields: { ...t1.fields, "QA scenario": "open the page and see the list" } })).toEqual(["acceptance", "qa"]);
+  });
+});
+
+describe("stamp-evidence", () => {
+  const stamp = join(repo, "skills/planning/plan-review/scripts/stamp-evidence.ts");
+
+  test("fills empty source hashes in split blocks, keeps one-line blocks on one line, and the plan then validates", () => {
+    const root = makeProject();
+    writePlan(root, planText(root));
+    const index = evidenceIndex(root) as Record<string, Record<string, unknown>[]>;
+    const filled = index.citations[1].sha256;
+    index.citations[0].sha256 = "";
+    delete index.citations[5].sha256;
+    const blocks = [
+      { ...index, citations: index.citations.slice(0, 5) },
+      { citations: [index.citations[5]] },
+    ];
+    write(root, EVIDENCE, `# Evidence index: Fixture plan\n\n\`\`\`json\n${JSON.stringify(blocks[0], null, 2)}\n\`\`\`\n\n\`\`\`json\n${JSON.stringify(blocks[1])}\n\`\`\`\n`);
+    expect(codes(run(root))).toContain("CITATION");
+    const p = spawnSync("bun", [stamp, PLAN, "--root", root], { encoding: "utf8" });
+    expect(p.status).toBe(0);
+    expect(p.stdout).toContain("stamped 2 citation(s): C1, C6");
+    const after = read(root, EVIDENCE);
+    expect(after).toContain(`{"citations":[{"id":"C6","kind":"source","path":"src/app.ts","startLine":5,"endLine":7,"sha256":"${sha(APP)}"}]}`);
+    expect(after).toContain(filled as string);
+    expect(run(root).errors).toEqual([]);
+    const again = spawnSync("bun", [stamp, PLAN, "--root", root], { encoding: "utf8" });
+    expect(again.stdout).toContain("stamped 0 citation(s)");
+    expect(read(root, EVIDENCE)).toBe(after);
+  });
+
+  test("a missing or unsafe cited file stays empty and exits 1", () => {
+    const root = makeProject();
+    writePlan(root, planText(root, {
+      mutateIndex: (i) => (i.citations as Record<string, unknown>[]).push({ id: "C7", kind: "source", path: "../outside.ts", startLine: 1, endLine: 1, sha256: "" }),
+    }));
+    const p = spawnSync("bun", [stamp, PLAN, "--root", root], { encoding: "utf8" });
+    expect(p.status).toBe(1);
+    expect(p.stdout).toContain("unreadable: C7 (../outside.ts)");
+  });
+});
+
 describe("CLI", () => {
   function cli(script: string, args: string[]) {
     const p = spawnSync("bun", [script, ...args], { encoding: "utf8" });
     return { code: p.status, out: p.stdout, err: p.stderr };
   }
+
+  test("--todo prints one todo with its gaps, dependencies, strict areas, and required checks", () => {
+    const root = makeProject();
+    writePlan(root, planText(root));
+    const result = cli(rootCli, [PLAN, "--todo", "T2", "--root", root]);
+    expect(result.code).toBe(0);
+    expect(result.out).toContain("### T2 — Add the flag");
+    expect(result.out).toContain("| G2 |");
+    expect(result.out).toContain("Depends on: T1 — Add the greeting");
+    expect(result.out).toContain("Strict areas: none");
+    expect(result.out).toContain("`acceptance`, `qa:happy`, `qa:failure`");
+    expect(result.out).not.toContain("### T1 — Add the greeting");
+    expect(cli(rootCli, [PLAN, "--todo", "F3", "--root", root]).out).toContain("### F3 — Scenario QA");
+    expect(cli(rootCli, [PLAN, "--todo", "T7", "--root", root]).code).toBe(2);
+    expect(cli(rootCli, [PLAN, "--todo", "nope", "--root", root]).code).toBe(2);
+  });
+
+  test("--gate-skeleton covers every required target, and filling it in yields an eligible OKAY", () => {
+    const root = makeProject();
+    const text = planText(root, { status: "reviewed", reviewRound: 1 });
+    writePlan(root, text);
+    const result = cli(rootCli, [PLAN, "--gate-skeleton", "--root", root]);
+    expect(result.code).toBe(0);
+    const gate = JSON.parse(result.out);
+    expect(gate.schemaVersion).toBe(2);
+    expect(gate.round).toBe(2);
+    expect(gate.planDigest).toBe(specOf(root, text));
+    expect(gate.obligations.flatMap((o: Obligation) => o.targets).sort()).toEqual([...ALL_TARGETS].sort());
+    expect(gate.obligations.find((o: Obligation) => o.targets.includes("T2.start")).targets).toEqual(["T2.start", "T2.acceptance", "T2.qa", "dep:T2:T1"]);
+    writePlan(root, text.replace("review_round: 1", "review_round: 2"));
+    gate.planDigest = specOf(root, read(root, PLAN));
+    gate.evidence = [{ id: "P1", kind: "probe", command: "bun -e 'start(\"x\")'", inputs: "fixture", exit: 0, result: "registered:x", omissions: "none" }];
+    for (const o of gate.obligations) Object.assign(o, { status: "verified", evidenceIds: ["C1"], observed: "traced" });
+    for (const f of gate.flows) Object.assign(f, { status: "verified", counterexample: "empty config name", evidenceIds: ["P1"] });
+    for (const c of Object.values(gate.checks) as Record<string, unknown>[]) Object.assign(c, { status: "verified", evidenceIds: ["C1"], observed: "done" });
+    gate.verdict = "OKAY";
+    writeGate(root, gate);
+    writeReviews(root, historyTable([[2, "OKAY", 0]]), [renderRound(gate)]);
+    const review = run(root, ["--review"]);
+    expect(review.errors).toEqual([]);
+    expect(review.gateEligible).toBe(true);
+  });
 
   test("--help exits 0 and lists every flag", () => {
     const result = cli(rootCli, ["--help"]);

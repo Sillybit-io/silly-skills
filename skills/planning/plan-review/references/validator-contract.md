@@ -4,9 +4,20 @@ Read this file when you write or check the machine-readable parts of a plan: the
 
 ```text
 bun <plan-review-base>/scripts/validate-plan.ts <plan> [--review [--resume]] [--root <project>] [--json]
+bun <plan-review-base>/scripts/validate-plan.ts <plan> --todo <T<n>|F<n>> [--root <project>]
+bun <plan-review-base>/scripts/validate-plan.ts <plan> --gate-skeleton [--root <project>]
+bun <plan-review-base>/scripts/stamp-evidence.ts <plan> [--root <project>]
 ```
 
 In this repository, `bun run validate-plan <plan> ...` runs the same code.
+
+- `--todo` prints one todo or final gate, the gap rows it closes, its dependencies' titles, its strict areas, the check ids its pass receipt must record, and the Must Have and Must NOT Have lines. A todo child reads this instead of the whole spec. It does not validate.
+- `--gate-skeleton` prints a gate record for the next round: every required target already in an obligation (one per requirement, one per todo with its dependencies, one per final gate, flow, contract, and check), every status `unverified`, and `verdict: INCOMPLETE`. The reviewer fills in evidence and statuses, and splits an obligation when its targets' evidence or status differs. It does not validate.
+- `stamp-evidence.ts` fills the empty `sha256` of every source citation with the SHA-256 of the cited file as it is now. It never changes a filled hash or any other file. Exit 1 names a cited file it could not read.
+
+## Format 1
+
+This contract is format 2: the evidence index, the gate record, and the build record carry `schemaVersion: 2`. A format 1 record is a `FORMAT_1` error: "This plan uses format 1. Finish it with the plan skills from before 2.0.0, or write it again." The build snapshot manifest keeps its own `schemaVersion: 1`.
 
 ## Plan files
 
@@ -61,13 +72,13 @@ Every digest of a JSON value hashes its canonical JSON. Object keys are sorted, 
 ## Plan grammar
 
 - **Frontmatter:** exactly `title`, `request`, `source`, `date`, `status`, `tier`, `intent`, `branch`, `ui`, `review`, `review_round`.
-- **Top-level sections, in order:** TL;DR, Scope, Research, Questions, Design, Verification strategy, Execution strategy, Todos, Final verification wave, Success criteria. `## Review`, `## Result review`, and `## Build` in the spec are `SECTION` errors; they live in the sibling files.
-- **Scope subsections:** Affected users, Ideal state, IS / GAP ledger, Risks, Must have, Must NOT have, Coverage, Critical flows, Baseline. A `### Evidence index` in the spec is a `SECTION` error.
+- **Top-level sections, in order:** TL;DR, Scope, Research, Questions, Design, Execution strategy, Todos, Final verification wave, Success criteria. `## Review`, `## Result review`, and `## Build` in the spec are `SECTION` errors; they live in the sibling files.
+- **Scope subsections:** IS / GAP ledger, Risks, Must have, Must NOT have, Critical flows, Baseline. A `### Evidence index` in the spec is a `SECTION` error.
 - **Identifiers:** gap rows start with `G<n>`. Must have bullets start `- MH<n>:` and Must NOT have bullets start `- MN<n>:`.
 - **Questions:** `### Product` before `### Technical`, neither empty.
 - **Design:** a `mermaid` fence whose first line starts with `flowchart`, `sequenceDiagram`, or `stateDiagram`, or the line `Diagram: omitted — <reason>`.
 - **OpenDesign:** only when the spec mentions OpenDesign outside a fence, and not in a draft. `## Design` then holds `### OpenDesign` with `- Project:` and the project id in backticks, `- Folder:` starting with `~/`, and `- Link:` with an `http` or `https` URL ending in `/projects/<id>` and no `/conversations/` part. Any miss is an `OPENDESIGN` error.
-- **Todos:** `### T<n> — <title>`, T0 first. The first line is `- [ ] Open` or `- [x] Done`. The fields are `Do`, `Must not`, `Closes gap`, `Depends on`, `References`, `Acceptance`, `QA scenario`, and `Commit`. Every gap is closed by a todo other than T0, and every todo other than T0 closes a gap.
+- **Todos:** `### T<n> — <title>`, T0 first. The first line is `- [ ] Open` or `- [x] Done`. The fields are `Do`, `Must not`, `Closes gap`, `Depends on`, `References`, `Acceptance`, `QA scenario`, `Strict`, and `Commit`. `Strict` is `no`, or the strict areas the todo touches, comma-separated: `security` (security, sign-in, and permissions) and `production` (production and shared services). The labelled parts of `QA scenario`, such as `happy — ...; failure — ...`, name the checks a pass receipt must record; a part whose text is `n/a` is not run. Every gap is closed by a todo other than T0, and every todo other than T0 closes a gap.
 - **Waves:** `- Wave <n>: T<a>, T<b> — <note>`. Waves count up from 1. T0 runs alone first. A dependency must sit in an earlier wave. Cycles, same-wave dependencies, and missing producers are errors.
 - **Final wave:** `### F1 —` through `### F4 —` in order, each with a box. With `ui: yes`, `### Automated UI QA` is the last gate.
 - **Success criteria:** every gap has a row, and a named todo closes it.
@@ -87,8 +98,7 @@ Each capped field has a soft cap and a hard cap at twice the soft one. Past the 
 | `MH<n>` / `MN<n>` bullet | 40 words | 80 |
 | TL;DR bullet | 60 words | 120 |
 | IS / GAP ledger cell | 60 words | 120 |
-| `### Coverage` paragraph | 120 words | 240 |
-| Verification strategy and Success criteria proof cells | 30 words | 60 |
+| Success criteria proof cell | 30 words | 60 |
 | Gate record `observed` and evidence `result`; receipt `note`, check and prerequisite `observed` | 200 characters | 400 |
 | A numbered blocker paragraph in a review round | 120 words | 240 |
 
@@ -100,18 +110,16 @@ The evidence index file holds one fenced `json` object, or several fenced `json`
 
 ```json
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "citations": [
-    { "id": "C1", "kind": "source", "path": "src/app.ts", "startLine": 10, "endLine": 12,
-      "excerpt": "export function start() {", "sha256": "<64 hex>" },
+    { "id": "C1", "kind": "source", "path": "src/app.ts", "startLine": 10, "endLine": 12, "sha256": "<64 hex>" },
     { "id": "C2", "kind": "planned", "path": "src/new.ts", "createdBy": "T2" },
     { "id": "C3", "kind": "self" },
     { "id": "C4", "kind": "external", "url": "https://example.com/docs/v2", "version": "2.1",
       "accessed": "2026-09-29", "excerpt": "<quoted contract>", "obligation": "MH1" }
   ],
   "coverage": [
-    { "id": "V1", "paths": ["src/app.ts"], "searches": ["rg -n start src"], "producers": ["src/app.ts"],
-      "consumers": ["src/cli.ts"], "citationIds": ["C1"], "state": "inspected" }
+    { "id": "V1", "paths": ["src/app.ts", "src/cli.ts"], "citationIds": ["C1"], "state": "inspected" }
   ],
   "frontier": [],
   "flows": [
@@ -123,7 +131,8 @@ The evidence index file holds one fenced `json` object, or several fenced `json`
 }
 ```
 
-- A `source` excerpt is either the whole cited range or an anchor: one to three consecutive whole lines inside the range, with at least ten non-blank characters. Both compare after trimming leading and trailing whitespace and normalizing line endings. Internal whitespace must match. Quote a range of three lines or fewer whole; anchor a longer one. The `sha256` covers the whole file, so neither tolerance can hide drift.
+- A `source` citation needs `path`, `startLine`, `endLine`, and `sha256`, the SHA-256 of the whole cited file. The writer leaves `sha256` empty and runs `stamp-evidence.ts` once; an empty hash is a `CITATION` error. The cited range must exist in the file. An `excerpt` is optional; when present it is either the whole cited range or an anchor of one to three consecutive whole lines inside it, with at least ten non-blank characters, compared after trimming the ends and normalizing line endings.
+- A coverage row needs `paths` and `citationIds` arrays. `searches`, `producers`, and `consumers` are optional.
 - Paths are project-relative. Absolute paths, `..`, and symlinks that resolve outside the project are errors.
 - A `planned` path must not exist yet, unless the build file exists. Existing code cannot be relabelled as planned to avoid reading it.
 - Coverage `state` is `inspected` (needs at least one citation), `excluded` (needs a boundary `reason`), or `pending`. Pending rows and a non-empty `frontier` are allowed only in a draft.
@@ -135,7 +144,7 @@ The evidence index file holds one fenced `json` object, or several fenced `json`
 
 ```json
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "round": 2,
   "planDigest": "<canonical spec digest>",
   "repository": { "revision": "<commit>", "dirty": ["docs/plans/x.md"] },
@@ -178,7 +187,7 @@ The recorded verdict must equal the expected verdict. OKAY sets `status: reviewe
 
 ```json
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "runId": "2026-09-29-feature-r1",
   "runDir": "silly-skills/plan-builds/2026-09-29-feature-r1",
   "repository": { "kind": "git", "rootCommits": ["<commit>"], "branch": "feat/x" },
@@ -213,7 +222,18 @@ A receipt:
 }
 ```
 
-A receipt holds only `seq`, `todo`, `event`, `state`, `prev`, `before`, `after`, `checks`, `prerequisites`, `commit`, `note`, and `log`; any other key is `RECEIPT_FIELD`. What changed is the difference between the `before` and `after` snapshots, so a receipt never lists it. `log` is optional. `event` is `start`, `checkpoint`, `pass`, `block`, or `recovery`. `state` is `active`, `passed`, or `blocked`. `prev` is the SHA-256 of the previous receipt's canonical JSON, or `null` for the first receipt. A todo with no commit records `{"none": "<reason>"}`.
+A receipt holds only `seq`, `todo`, `event`, `state`, `prev`, `before`, `after`, `checks`, `prerequisites`, `commit`, `note`, and `log`; any other key is `RECEIPT_FIELD`. What changed is the difference between the `before` and `after` snapshots, so a receipt never lists it. `log` is optional. `prev` is the SHA-256 of the previous receipt's canonical JSON, or `null` for the first receipt. A todo with no commit records `{"none": "<reason>"}`. Every receipt has an `after` snapshot.
+
+One record per todo. `event` is one of:
+
+| Event | State | Meaning |
+| --- | --- | --- |
+| `pass` | `passed` | The todo's Acceptance and every QA part passed and its commit landed. It may be the todo's first receipt, once every dependency passed. `checks` holds a passing `acceptance` check and one passing `qa:<label>` check per QA part that is not `n/a` (`qa` when the scenario has no labels); a missing one is `MISSING_CHECK`. |
+| `block` | `blocked` | The todo cannot finish. `note` names what is missing. Resume is not eligible after it. |
+| `recovery` | `active` | State the record did not explain, investigated and recorded. It makes its todo active until that todo passes or blocks. |
+| `fix` | `passed` | A fix child repaired blocking result-review differences. Its `todo` is a final gate such as `F4`, every todo has passed before it, and its checks all pass. |
+
+`start` and `checkpoint` belong to format 1.
 
 ## Resume rules
 
@@ -223,13 +243,13 @@ A receipt holds only `seq`, `todo`, `event`, `state`, `prev`, `before`, `after`,
 - The live plan is `status: reviewed`, its latest round and the gate record file's `round` are `approval.round`, the gate record digest equals `approval.gateRecordDigest`, and its verdict is OKAY. A later REJECT, INCOMPLETE, or superseding round blocks resume.
 - The baseline and every receipt snapshot exist, match their recorded manifest digests, and verify: every object's length and digest, and the recomputed `stateDigest`. The baseline's repository matches the build record and the current project, and the baseline declares the reviews and build files as reports.
 - The gate record's sources and the evidence index citations match the baseline bytes, not the current files.
-- The receipts chain: sequential `seq`, correct `prev`, and each `before` equals the previous end state. One todo is active at a time. A todo starts only after its dependencies passed.
+- The receipts chain: sequential `seq`, correct `prev`, and each `before` equals the previous end state. One todo is active at a time. A todo's first receipt comes only after its dependencies passed, and a todo has no receipt after its pass.
 - A `pass` receipt records checks that all passed. For `Commit: yes`, it names the commit, and its after-state HEAD equals that commit.
 - Every `- [x] Done` box has a passed receipt. A passed receipt with an Open box is listed in `reconcileBoxes`; set the box without repeating the work.
 - The current project state equals the last receipt's end state. Otherwise the result lists `drift`, sets `recoveryRequired: true`, and names the `unresolvedAction`.
 - No recorded prerequisite recheck for a pending todo says `fails`. Pending todos whose referenced paths changed get `requiredRechecks`. Record those rechecks in that todo's start receipt.
 
-`nextTodo` is the active todo, or else the first todo without a passed receipt in T0-then-wave order, or else the first open final gate. A `recovery` receipt records observed effects after drift, or after effects that began before a start receipt. It makes its todo active.
+`nextTodo` is the active todo, or else the first todo without a passed receipt in T0-then-wave order, or else the first open final gate. Resume mode reports `nextTodo` even with an empty receipt chain, so a new build asks it for the first todo. A `recovery` receipt records observed effects after drift, such as a todo interrupted before its pass. It makes its todo active.
 
 ## Error codes
 
@@ -247,6 +267,7 @@ A receipt holds only `seq`, `todo`, `event`, `state`, `prev`, `before`, `after`,
 | STALE_REVIEW, SOURCE_DRIFT | The review no longer matches the current plan or sources |
 | BUILD_RECORD, SNAPSHOT_MISSING, SNAPSHOT_CORRUPT, REPOSITORY_MISMATCH, APPROVAL_BASELINE_MISMATCH | Build file and snapshots |
 | SPEC_CHANGED, APPROVAL_CHANGED | The approval a build started from no longer holds |
-| RECEIPT_CHAIN, RECEIPT_ORDER, RECEIPT_FIELD, DEPENDENCY_ORDER, PASS_WITHOUT_CHECKS, COMMIT, DONE_WITHOUT_RECEIPT | Receipts |
+| RECEIPT_CHAIN, RECEIPT_ORDER, RECEIPT_FIELD, DEPENDENCY_ORDER, PASS_WITHOUT_CHECKS, MISSING_CHECK, COMMIT, DONE_WITHOUT_RECEIPT | Receipts |
+| FORMAT_1 | A format 1 record; finish it on the old install |
 | STATE_DRIFT, PREREQUISITE_FAILED | The current state or a premise no longer matches the record |
 | UNREADABLE | The plan cannot be read |

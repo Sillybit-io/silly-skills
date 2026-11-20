@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- `plan-review` 2.0.0, validator: plan format 2. The evidence index, gate record, and build record carry `schemaVersion: 2`, and a format 1 record is a `FORMAT_1` error that says to finish it on the old install. The spec drops Affected users, Ideal state, the Coverage paragraph, and Verification strategy. Every todo has a `Strict:` field (`no`, `security`, or `production`). A source citation needs no excerpt; the new `stamp-evidence.ts` fills its `sha256` in one run. Receipts are one per todo: `pass`, `block`, `recovery`, and `fix`. A pass receipt without a passing `acceptance` check and one passing check per QA part is a `MISSING_CHECK` error. New `--todo` prints one todo for a todo child, and `--gate-skeleton` prints a gate record with every required target already grouped.
 - `plan-writer` 1.1.1: suggests `anthropic/claude-fable-5-2` at `xhigh` effort, down from `anthropic/claude-fable-5-1` at `max`. Thinking and replies were about a fifth of the input of a measured writer session, and every later request re-reads them.
 - `plan-writer` 1.2.0: a `soft cap:` gap is advice. The writer shortens the field in the same pass as its error fixes when that is easy, and never runs the validator again only to clear gaps. In a measured session, three extra validator runs near the end of the session removed 3, 5, and 14 words.
 - `plan-scout` 0.1.1 and `plan-loop` 0.2.1: suggest `anthropic/claude-sonnet-5-5`.
