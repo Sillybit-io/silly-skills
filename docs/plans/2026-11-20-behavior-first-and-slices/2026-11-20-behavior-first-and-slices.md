@@ -412,7 +412,7 @@ A todo passes its Acceptance and every QA part, commits when it says `Commit: ye
 
 ### T6 — Check Behavior lines and slices in the result review
 
-- [ ] Open
+- [x] Done
 - Do: Change the result review as "Result review rules" in Design says. In the helper, `--brief` adds `behavior` and `slices` to its JSON and one text section for each, read from the validator's parsed plan, only when the plan has them. Add a test for a fixture with both parts, and assert that the brief of the existing fixture has neither key. In the skill, extend the step that maps requirements and the step that checks the branch. In the differences reference, add the clause form, the weight row, and the two cases that are not differences. Name the two parts where the inventory reference describes the brief. Bump `plan-result-review` to 2.1.0 and add a changelog line.
 - Must not: renumber a step. Add a difference kind or a verdict. Add a result review per slice. Change the brief of a plan without the new parts. Change how a path is attributed to a todo.
 - Closes gap: G7
