@@ -3,7 +3,11 @@
  * inventory-changes — lists every path whose HEAD, index, or working-tree
  * layer differs from a plan-builder baseline snapshot, with content diffs.
  *
- *   bun inventory-changes.ts <plan> [--root <project>] [--baseline <snapshot>] [--base <revision>] [--json]
+ *   bun inventory-changes.ts <plan> [--root <project>] [--baseline <snapshot>] [--base <revision>] [--brief] [--json]
+ *
+ * --brief prints a short summary for a result reviewer instead of diffs: the
+ * requirements, each todo with its strict areas, recorded checks, and commit,
+ * and each changed path with the todo whose receipt interval changed it.
  *
  * Read-only. It uses the validator bundled with the plan-review skill, found
  * beside this skill (`../../plan-review/scripts/validate-plan.ts`), for
@@ -25,13 +29,15 @@ type Row = { path: string; head: Layer; index: Layer; worktree: Layer };
 
 const VALIDATOR = resolve(dirname(import.meta.path), "../../plan-review/scripts/validate-plan.ts");
 
-export const USAGE = `Usage: inventory-changes <plan> [--root <project>] [--baseline <snapshot>] [--base <revision>] [--json]
+export const USAGE = `Usage: inventory-changes <plan> [--root <project>] [--baseline <snapshot>] [--base <revision>] [--brief] [--json]
 
 Lists every path whose HEAD, index, or working-tree layer changed since the
 build baseline recorded in the plan's build file, or since --baseline.
 The plan's own directory is left out: the build commits it by design.
 With only --base, lists committed and current changes without owner-work
-attribution. Read-only; needs the plan-review skill installed beside this one.`;
+attribution. --brief prints requirements, todos with their recorded checks and
+commits, and changed paths with the todo that changed them, without diffs.
+Read-only; needs the plan-review skill installed beside this one.`;
 
 function git(root: string, args: string[]): { code: number; out: string } {
   const p = spawnSync("git", args, { cwd: root, env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" }, encoding: "utf8", maxBuffer: 1 << 30 });
@@ -81,6 +87,7 @@ export function main(argv: string[], write: (s: string) => void = (s) => console
   let baselineArg: string | null = null;
   let base: string | null = null;
   let json = false;
+  let brief = false;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--help" || a === "-h") {
@@ -91,6 +98,7 @@ export function main(argv: string[], write: (s: string) => void = (s) => console
     else if (a === "--baseline") baselineArg = argv[++i];
     else if (a === "--base") base = argv[++i];
     else if (a === "--json") json = true;
+    else if (a === "--brief") brief = true;
     else if (a.startsWith("-") || plan) {
       write(`error: unexpected argument '${a}'\n${USAGE}`);
       return 2;
@@ -150,16 +158,23 @@ export function main(argv: string[], write: (s: string) => void = (s) => console
   // Receipt snapshots add paths that later appeared and disappeared.
   const carry = new Set<string>(baselineManifest?.paths.map((r) => r.path) ?? []);
   const includes = new Set<string>(baselineManifest?.includes ?? []);
-  for (const r of (recordValue?.receipts as Record<string, unknown>[] | undefined) ?? []) {
-    for (const side of ["before", "after"]) {
-      const ref = r[side] as Record<string, string> | null;
-      if (!ref?.snapshot) continue;
+  const manifests = new Map<string, Map<string, Row> | null>();
+  const manifestOf = (ref: Record<string, string> | null | undefined): Map<string, Row> | null => {
+    if (!ref?.snapshot) return null;
+    if (!manifests.has(ref.snapshot)) {
       try {
         const m = v.verifySnapshot(v.resolveSnapshot(root, ref.snapshot, inGit)).manifest;
-        for (const row of m.paths as Row[]) carry.add(row.path);
+        manifests.set(ref.snapshot, new Map((m.paths as Row[]).map((row) => [row.path, row])));
       } catch {
         // A receipt snapshot that cannot be read only narrows the carried path set.
+        manifests.set(ref.snapshot, null);
       }
+    }
+    return manifests.get(ref.snapshot) ?? null;
+  };
+  for (const r of (recordValue?.receipts as Record<string, unknown>[] | undefined) ?? []) {
+    for (const side of ["before", "after"]) {
+      for (const path of manifestOf(r[side] as Record<string, string> | null)?.keys() ?? []) carry.add(path);
     }
   }
   let current: { body: { headRevision: string | null; paths: Row[] }; blobs: Map<string, Buffer> };
@@ -240,6 +255,11 @@ export function main(argv: string[], write: (s: string) => void = (s) => console
     commit: r.commit,
   }));
 
+  if (brief) {
+    const out = resultBrief(v, readFileSync(planAbs, "utf8"), report, (recordValue?.receipts as Record<string, unknown>[] | undefined) ?? [], manifestOf);
+    write(json ? JSON.stringify(out.json, null, 2) : out.text);
+    return 0;
+  }
   if (json) write(JSON.stringify(report, null, 2));
   else {
     write(`plan ${planRel} (plan directory ${files.dir}/ not listed); baseline ${report.baseline ? (report.baseline as Record<string, string>).snapshot : "none (revision-only)"}; base ${baseRevision ?? "none"}; HEAD ${report.headRevision ?? "none"}`);
@@ -263,6 +283,97 @@ export function main(argv: string[], write: (s: string) => void = (s) => console
     for (const c of (report.commits as Record<string, unknown>[] | undefined) ?? []) write(`commit ${String(c.sha).slice(0, 12)} ${c.subject}: ${(c.files as string[]).join(", ")}`);
   }
   return 0;
+}
+
+type Brief = { json: Record<string, unknown>; text: string };
+
+/**
+ * The navigation summary a result reviewer reads first: requirements, todos
+ * with their recorded checks and commits, and each changed path attributed to
+ * the todo whose receipt interval changed it. It is not a verdict.
+ */
+function resultBrief(
+  v: any,
+  planText: string,
+  report: Record<string, unknown>,
+  receipts: Record<string, unknown>[],
+  manifestOf: (ref: Record<string, string> | null | undefined) => Map<string, Row> | null,
+): Brief {
+  const plan = v.parsePlan(planText);
+  const lineOf = (n: number) => plan.lines[n - 1].text as string;
+  const changedBy = new Map<string, Set<string>>();
+  for (const r of receipts) {
+    const before = manifestOf(r.before as Record<string, string>);
+    const after = manifestOf(r.after as Record<string, string>);
+    if (!before || !after) continue;
+    for (const path of new Set([...before.keys(), ...after.keys()])) {
+      const a = before.get(path);
+      const b = after.get(path);
+      if ((["head", "index", "worktree"] as const).some((l) => !same(a?.[l], b?.[l]))) {
+        if (!changedBy.has(path)) changedBy.set(path, new Set());
+        changedBy.get(path)?.add(String(r.todo));
+      }
+    }
+  }
+  const commits = new Map(((report.commits as Record<string, unknown>[] | undefined) ?? []).map((c) => [String(c.sha), c]));
+  const named = new Set<string>();
+  const todos = (plan.todos as { id: string; title: string; box: string | null; strict: string[] }[]).map((t) => {
+    const own = receipts.filter((r) => r.todo === t.id);
+    const pass = [...own].reverse().find((r) => r.event === "pass");
+    const sha = pass && typeof pass.commit === "object" && pass.commit ? String((pass.commit as Record<string, unknown>).sha ?? "") : "";
+    if (sha) named.add(sha);
+    return {
+      id: t.id,
+      title: t.title,
+      box: t.box,
+      strict: t.strict,
+      events: own.map((r) => r.event),
+      checks: ((pass?.checks as Record<string, unknown>[] | undefined) ?? []).map((c) => ({ id: c.id, exit: c.exit, passed: c.passed !== false })),
+      commit: sha ? { sha, files: (commits.get(sha)?.files as string[] | undefined) ?? [] } : null,
+    };
+  });
+  const fixes = receipts.filter((r) => r.event === "fix").map((r) => {
+    const sha = typeof r.commit === "object" && r.commit ? String((r.commit as Record<string, unknown>).sha ?? "") : "";
+    if (sha) named.add(sha);
+    return { gate: r.todo, seq: r.seq, commit: sha || null };
+  });
+  const changes = ((report.changes as Record<string, unknown>[] | undefined) ?? []).map((c) => ({
+    path: c.path,
+    layers: c.changedLayers,
+    todos: [...(changedBy.get(String(c.path)) ?? [])],
+    ownerWorkChanged: c.ownerWorkAtBaseline === true && c.ownerWorkPreserved === false,
+    removed: c.removed === true,
+  }));
+  const unnamedCommits = [...commits.values()].filter((c) => !named.has(String(c.sha))).map((c) => ({ sha: c.sha, subject: c.subject }));
+  const json = {
+    plan: report.plan,
+    baseline: report.baseline,
+    headRevision: report.headRevision,
+    ownerWorkCertifiable: report.ownerWorkCertifiable,
+    requirements: [...plan.mustHave, ...plan.mustNotHave].map((m: { line: number }) => lineOf(m.line)),
+    todos,
+    fixes,
+    changes,
+    unnamedCommits,
+  };
+  const t: string[] = [`# Result brief: ${plan.frontmatter.title ?? report.plan}`, ""];
+  const base = report.baseline as Record<string, string> | null;
+  t.push(`Baseline: ${base ? base.snapshot : "none (revision-only)"}. HEAD: ${report.headRevision ?? "none"}. Owner work certifiable: ${report.ownerWorkCertifiable}.`, "");
+  t.push("## Requirements", "", ...json.requirements, "", "## Todos", "");
+  for (const todo of todos) {
+    const checks = todo.checks.map((c) => `${c.id} ${c.passed && c.exit === 0 ? "passed" : `exit ${c.exit}`}`).join(", ") || "none recorded";
+    const commit = todo.commit ? `${todo.commit.sha.slice(0, 12)} (${todo.commit.files.join(", ") || "no files"})` : "none";
+    t.push(`- ${todo.id} — ${todo.title} [${todo.box ?? "no box"}]; strict: ${todo.strict.join(", ") || "no"}; receipts: ${todo.events.join(", ") || "none"}; checks: ${checks}; commit: ${commit}`);
+  }
+  if (fixes.length > 0) t.push("", "## Fix receipts", "", ...fixes.map((f) => `- ${f.gate} seq ${f.seq}; commit: ${f.commit ?? "none"}`));
+  t.push("", "## Changed paths", "");
+  for (const c of changes) {
+    const flags = [c.todos.length > 0 ? `by ${c.todos.join(", ")}` : "unattributed", c.ownerWorkChanged ? "OWNER WORK CHANGED" : "", c.removed ? "removed" : ""].filter(Boolean);
+    t.push(`- ${c.path} (${(c.layers as string[]).join("+")}): ${flags.join("; ")}`);
+  }
+  if (changes.length === 0) t.push("none");
+  if (unnamedCommits.length > 0) t.push("", "## Commits no receipt names", "", ...unnamedCommits.map((c) => `- ${String(c.sha).slice(0, 12)} ${c.subject}`));
+  return { json, text: t.join("\n") };
 }
 
 if (import.meta.main) {

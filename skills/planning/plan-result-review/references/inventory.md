@@ -17,8 +17,10 @@ A revision-only comparison covers committed changes but cannot certify that the 
 The helper ships with this skill. It needs Bun and the `plan-review` skill installed beside this one:
 
 ```text
-bun <plan-result-review-base>/scripts/inventory-changes.ts <plan> --root <project> [--baseline <snapshot>] [--base <revision>] [--json]
+bun <plan-result-review-base>/scripts/inventory-changes.ts <plan> --root <project> [--baseline <snapshot>] [--base <revision>] [--brief] [--json]
 ```
+
+With `--brief`, it prints the summary the review starts from instead of diffs: the Must Haves and Must NOT Haves, each todo with its box, strict areas, receipts, recorded checks, and commit, each changed path with the todo whose receipt interval changed it or `unattributed`, and any commit no receipt names. Read it first, then the full inventory for the diffs.
 
 It verifies the baseline snapshot, reads the current HEAD, index, and working tree for every path the baseline, the receipts, or git knows about, and prints each path whose layers changed. For each path, it prints:
 
@@ -47,6 +49,6 @@ Use NUL-separated output so paths with spaces and newlines survive. Read content
 
 ## Read what you inventoried
 
-For every changed path, read the diff and enough of the file to judge its behavior. For every requirement, read the code that should satisfy it, including callers and consumers the plan's evidence index names. Checks that execute code run in a disposable copy of the project, never in the project itself.
+For every changed path, read the diff and enough of the file to judge its behavior. For every requirement, read the code that should satisfy it. Checks that execute code run in a disposable copy of the project, never in the project itself.
 
 A file inside the plan directory that is not one of its five files is not hidden by the exclusion: check `docs/plans/<stem>/` for anything else, and treat it as an extra.
