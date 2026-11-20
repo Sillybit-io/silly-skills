@@ -3,7 +3,7 @@ name: plan-builder
 description: Builds a reviewed plan from the main session, which coordinates while a fresh child session builds each todo, keeping a durable, resumable record of one receipt per todo. Captures a byte-exact baseline snapshot before touching anything, requires each todo's real Acceptance and QA, commits only that todo's owned paths, and never claims Done without a passed receipt. Resumes an interrupted build from its last record. Runs an independent result review with at most two rounds before reporting complete. Use when asked to build this plan, implement this reviewed plan, or resume this plan.
 license: CC-BY-ND-4.0
 metadata:
-  version: "2.0.0"
+  version: "2.1.0"
   category: planning
   suggested-model: anthropic/claude-opus-5-5
   suggested-effort: max
@@ -37,9 +37,10 @@ Do NOT use plan-builder when you:
 ### Coordinator, in the main session
 
 1. Resolve the plan path from the request or conversation: `docs/plans/<stem>/<stem>.md`. Read [references/receipts.md](references/receipts.md). Do not read the spec whole; the validator and `--todo` give you what you need.
-2. **New build** (no build file). Run `bun <plan-review-base>/scripts/validate-plan.ts <plan> --review --root <project> --json`, where `<plan-review-base>` is the plan-review skill directory installed beside this one. Require `gateEligible: true`; otherwise report the validator's errors and stop. A `FORMAT_1` error means the plan finishes on the old install: say so and stop. Then capture the baseline with `capture-build-state.ts` to a fresh, durable run directory, write `<stem>.build.md` as the reference describes, and run T0 yourself: copy the plan directory into `docs/plans/` only when needed, commit it as `docs(plans): add <slug> plan`, append its pass receipt, and set its box to Done. These are the only project writes you make yourself.
+2. **New build** (no build file). Run `bun <plan-review-base>/scripts/validate-plan.ts <plan> --review --root <project> --json`, where `<plan-review-base>` is the plan-review skill directory installed beside this one. Require `gateEligible: true`; otherwise report the validator's errors and stop. A `FORMAT_1` error means the plan finishes on the old install: say so and stop. When the JSON lists `slices`, check the first slice's branch by the reference's Slices section. Then capture the baseline with `capture-build-state.ts` to a fresh, durable run directory, write `<stem>.build.md` as the reference describes, and run T0 yourself: copy the plan directory into `docs/plans/` only when needed, commit it as `docs(plans): add <slug> plan`, append its pass receipt, and set its box to Done. These are the only project writes you make yourself.
 3. **Each step.** Run the same command with `--resume` added and act on its JSON:
    - `reconcileBoxes` not empty: set those boxes to Done yourself, without repeating any work.
+   - `sliceStart` true: follow the reference's Slices section before you launch a child.
    - `recoveryRequired`: launch a todo child for `nextTodo` in recovery mode, with the `drift` list.
    - `nextTodo` is a todo: launch a todo child with the plan path, the project root, the todo id, the run directory, and any `requiredRechecks` for it. Nothing else.
    - `nextTodo` is a final gate: go to step 5.
@@ -72,6 +73,7 @@ The coordinator's reply starts with exactly one verdict line:
 
 ```text
 PLAN-BUILD: DONE
+PLAN-BUILD: SLICE (S<n> built; next S<m>)
 PLAN-BUILD: CHECKPOINT (<todo or gate>; <reason>)
 PLAN-BUILD: STOPPED (<n> blocking differences after two result rounds)
 PLAN-BUILD: BLOCKED (<missing input>)
@@ -81,6 +83,11 @@ PLAN-BUILD: HANDBACK (<why the result reviewer could not be launched>)
 ```markdown
 PLAN-BUILD: DONE
 <plan path>. All todos and final gates are Done. F4 result review: PLAN-RESULT: <MATCH | ACCEPTED (<n> recorded)> (round <n>). Baseline: `<snapshot>`. Branch: `<branch>`. Commits: <n>, the last `docs(plans): complete <slug> build`. <Todos built inline because no child was available: none | T<n>, ...>
+```
+
+```markdown
+PLAN-BUILD: SLICE (S<n> built; next S<m>)
+<plan path>. <n> of <total> todos Done. Slice commit: <sha | none, nothing to commit>. Next: S<m> — <name>, on <`<branch>` | the current branch>. The build resumes in this clone, whose Git directory holds the snapshots.
 ```
 
 ```markdown
@@ -131,6 +138,7 @@ NEVER:
 - NEVER run F4 inline, report a result review that did not run, or reuse a stale one after further changes.
 - NEVER replay a commit or another irreversible command because its outcome was not recorded; investigate the real current state first.
 - NEVER push.
+- NEVER create, switch, or push a branch; the owner does that between slices.
 - NEVER mark a todo Done without its own durable passed receipt.
 - NEVER rely on temporary storage, an unreferenced Git blob, or any location that will not survive a session end for a baseline or a receipt snapshot.
 

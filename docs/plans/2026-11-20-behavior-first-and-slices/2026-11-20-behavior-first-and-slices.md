@@ -386,7 +386,7 @@ A todo passes its Acceptance and every QA part, commits when it says `Commit: ye
 
 ### T4 — Teach the plan review the two new parts
 
-- [ ] Open
+- [x] Done
 - Do: Change the review skill as "Review rules" in Design says. Add the four blockers and the "Behavior B2" wording rule to Check J in the writer contract reference. Add `behavior:B<n>` and `slice:S<n>` to both lists of gate-record targets in the skill. Add the two "Not a blocker" lines to the evidence gate reference. Add a changelog line. The version is already 2.1.0.
 - Must not: add a check letter. Make a missing Behavior section or missing slices a blocker. Make a vague word a blocker. Renumber a step. Repeat the validator's grammar rules in the skill.
 - Closes gap: G5
