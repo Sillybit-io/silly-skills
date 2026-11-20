@@ -107,18 +107,22 @@ Claude Code runs Claude models only, so a wrapper for a skill that suggests a no
 
 | Skill | Suggested model | Effort | Cheaper alternative |
 | --- | --- | --- | --- |
-| plan-writer | `anthropic/claude-fable-5-1` | max | `anthropic/claude-opus-5-5` at xhigh |
+| plan-writer | `anthropic/claude-fable-5-2` | xhigh | `anthropic/claude-opus-5-5` at xhigh |
 | plan-review | `openai/gpt-6-astra` | max | `anthropic/claude-opus-5-5` at xhigh |
-| ui-engineering | `anthropic/claude-opus-5-5` | max | `anthropic/claude-sonnet-5` at high |
-| tech-writing | `anthropic/claude-fable-5-1` | medium | `anthropic/claude-sonnet-5` at medium |
+| plan-scout | `anthropic/claude-sonnet-5-5` | none set | none |
+| plan-loop | `anthropic/claude-sonnet-5-5` | high | none |
+| plan-builder | `anthropic/claude-opus-5-5` | max | `anthropic/claude-opus-5-5` at xhigh |
+| plan-result-review | `openai/gpt-6-astra` | max | `anthropic/claude-opus-5-5` at xhigh |
+| ui-engineering | `anthropic/claude-opus-5-5` | max | `anthropic/claude-sonnet-5-5` at high |
+| tech-writing | `anthropic/claude-fable-5-2` | medium | `anthropic/claude-sonnet-5-5` at medium |
 
 ### Models these skills were designed around
 
 | Model | Tier | Effort levels | Best for |
 | --- | --- | --- | --- |
 | `anthropic/claude-opus-5-5` | Flagship, long-running agentic work | low – max | Coding and agentic work |
-| `anthropic/claude-fable-5-1` | Deepest reasoning, slowest | low – max | Long-horizon reasoning and research |
-| `anthropic/claude-sonnet-5` | Speed and intelligence balance | low – max | Everyday coding and writing |
+| `anthropic/claude-fable-5-2` | Deepest reasoning, slowest | low – max | Long-horizon reasoning and research |
+| `anthropic/claude-sonnet-5-5` | Speed and intelligence balance | low – max | Everyday coding and writing |
 | `openai/gpt-6-astra` | Flagship | low – max | Complex reasoning and coding |
 | `openai/gpt-6-sol` | Coding and agentic workflows | none – max | Coding and agentic workflows |
 | `openai/gpt-6-luna` | Cheapest, most efficient | none – max | Fast, high-volume tasks |

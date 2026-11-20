@@ -15,4 +15,4 @@ Follow the skill's Workflow from step 1. Use the Agent tool to launch `plan-writ
 
 Reply with only the verdict block the skill's Output format names. Never restate the whole plan file.
 
-The canonical suggestion for this skill is `anthropic/claude-sonnet-5` at `high` effort. Change the `model:` and `effort:` lines above to override, or run `sh scripts/agent-install.sh --tool claude-code --agent plan-loop --model <alias> --effort <level> --force`.
+The canonical suggestion for this skill is `anthropic/claude-sonnet-5-5` at `high` effort. Change the `model:` and `effort:` lines above to override, or run `sh scripts/agent-install.sh --tool claude-code --agent plan-loop --model <alias> --effort <level> --force`.

@@ -1,8 +1,7 @@
 ---
 description: Writes a new technical document by following the tech-writing skill. Invoke with @tech-writer.
 mode: subagent
-model: anthropic/claude-fable-5-1
-reasoningEffort: medium
+model: anthropic/claude-fable-5-2#medium
 permissions:
   - action: read
     resource: "*"
@@ -47,4 +46,4 @@ Run the skill's Workflow from step 1 against the request you were given. Where t
 
 Reply with only the handback block the skill's Output format names. Never restate the whole document.
 
-To change the model, edit the `model:` line, or re-run the installer: `sh scripts/agent-install.sh --tool opencode --agent tech-writer --model <id> --effort <level>`. On an OpenCode release that encodes effort in the model string, use `model: "anthropic/claude-fable-5-1#medium"` and delete the `reasoningEffort:` line instead.
+To change the model, edit the `model:` line, or re-run the installer: `sh scripts/agent-install.sh --tool opencode --agent tech-writer --model <provider/model> --effort <level> --force`. The effort is the `#<level>` variant on the model.

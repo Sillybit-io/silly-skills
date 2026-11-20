@@ -1,7 +1,7 @@
 ---
 name: plan-loop
 description: Drives a plan to a reviewed state by launching fresh plan-writer and plan-reviewer children in turn. Use to write and review a plan until it passes, or to loop an existing draft or planned file to a reviewed state.
-model: claude-sonnet-5[effort=high]
+model: claude-sonnet-5-5[effort=high]
 readonly: true
 ---
 

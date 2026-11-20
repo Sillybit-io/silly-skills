@@ -1,7 +1,7 @@
 ---
 description: Finds every producer and consumer of an entry point, symbol, path, or data format and returns quoted evidence, searches, and unreadable items. Read-only. Launch it with one discovery question.
 mode: subagent
-model: anthropic/claude-sonnet-5
+model: anthropic/claude-sonnet-5-5
 permissions:
   - action: read
     resource: "*"

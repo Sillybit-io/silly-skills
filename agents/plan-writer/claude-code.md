@@ -2,7 +2,7 @@
 name: plan-writer
 description: Writes an evidence-complete implementation plan by following the plan-writer skill. Use before a non-trivial change, to resume a draft plan, or to fix a rejected plan.
 model: fable
-effort: max
+effort: xhigh
 tools: Read, Grep, Glob, Edit, Write, WebSearch, WebFetch, Bash, Skill, Agent
 skills: [plan-writer]
 ---
@@ -17,4 +17,4 @@ You may use the Agent tool to launch the `plan-scout` subagent for one bounded d
 
 Reply with only the block the skill's Output format names — the draft-gate block or the planned block. Never restate the whole plan file.
 
-The canonical suggestion for this skill is `anthropic/claude-fable-5-1` at `max` effort. Change the `model:` and `effort:` lines above to override, or run `sh scripts/agent-install.sh --tool claude-code --agent plan-writer --model <alias> --effort <level> --force`.
+The canonical suggestion for this skill is `anthropic/claude-fable-5-2` at `xhigh` effort. Change the `model:` and `effort:` lines above to override, or run `sh scripts/agent-install.sh --tool claude-code --agent plan-writer --model <alias> --effort <level> --force`.

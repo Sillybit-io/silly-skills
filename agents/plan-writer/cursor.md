@@ -1,7 +1,7 @@
 ---
 name: plan-writer
 description: Writes an evidence-complete implementation plan by following the plan-writer skill. Use before a non-trivial change, to resume a draft plan, or to fix a rejected plan.
-model: claude-fable-5-1[effort=max]
+model: claude-fable-5-2[effort=xhigh]
 readonly: false
 ---
 

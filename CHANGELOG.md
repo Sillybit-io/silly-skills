@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- `plan-writer` 1.1.1: suggests `anthropic/claude-fable-5-2` at `xhigh` effort, down from `anthropic/claude-fable-5-1` at `max`. Thinking and replies were about a fifth of the input of a measured writer session, and every later request re-reads them.
+- `plan-scout` 0.1.1 and `plan-loop` 0.2.1: suggest `anthropic/claude-sonnet-5-5`.
+- `tech-writing` 0.1.1: suggests `anthropic/claude-fable-5-2`. Its OpenCode persona now carries the effort as a `#medium` variant instead of a separate `reasoningEffort` line.
+- `skill-writer` 0.4.1: the `suggested-model` example names `anthropic/claude-fable-5-2`.
+- README: the suggested-model table lists every skill that sets a hint, and the model table names the current Fable and Sonnet versions.
+
 ## [0.12.0] - 2026-11-03
 
 ### Added

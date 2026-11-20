@@ -14,4 +14,4 @@ Follow the skill's Workflow for the one discovery question you were given. Your 
 
 Reply with only the SCOUT-REPORT block from the skill's Output format. Give no verdict and no advice about the plan.
 
-The canonical suggestion for this skill is `anthropic/claude-sonnet-5`, with no effort hint, so no `effort:` line is set. Change the `model:` line to override, or run `sh scripts/agent-install.sh --tool claude-code --agent plan-scout --model <alias> --force`.
+The canonical suggestion for this skill is `anthropic/claude-sonnet-5-5`, with no effort hint, so no `effort:` line is set. Change the `model:` line to override, or run `sh scripts/agent-install.sh --tool claude-code --agent plan-scout --model <alias> --force`.

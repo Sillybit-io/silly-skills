@@ -3,10 +3,10 @@ name: plan-writer
 description: Writes an implementation plan after investigating the codebase to closure. Classifies the request, follows producers and consumers until no relevant edge is unread, verifies external contracts at the target version, and asks product questions before technical ones. Writes a plan directory, docs/plans/<date>-<slug>/, with quoted citations, critical flows, a baseline, todos tested one at a time, and a final verification wave, then validates it. Resumes a draft from its open frontier. Use when writing a plan, planning a feature or refactor, making an implementation plan, breaking work into tasks, resuming a draft plan, or fixing a rejected plan.
 license: CC-BY-ND-4.0
 metadata:
-  version: "1.1.0"
+  version: "1.1.1"
   category: planning
-  suggested-model: anthropic/claude-fable-5-1
-  suggested-effort: max
+  suggested-model: anthropic/claude-fable-5-2
+  suggested-effort: xhigh
 ---
 
 # plan-writer

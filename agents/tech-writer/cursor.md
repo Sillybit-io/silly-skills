@@ -1,7 +1,7 @@
 ---
 name: tech-writer
 description: Writes a new technical document by following the tech-writing skill.
-model: claude-fable-5-1[effort=medium]
+model: claude-fable-5-2[effort=medium]
 readonly: false
 ---
 

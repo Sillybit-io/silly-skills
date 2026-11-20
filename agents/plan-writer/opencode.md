@@ -1,7 +1,7 @@
 ---
 description: Writes an evidence-complete implementation plan by following the plan-writer skill. Switch to it to talk through a plan, or launch it as a child with a request or a plan path to fix.
 mode: all
-model: anthropic/claude-fable-5-1#max
+model: anthropic/claude-fable-5-2#xhigh
 permissions:
   - action: read
     resource: "*"

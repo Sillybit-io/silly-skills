@@ -3,9 +3,9 @@ name: plan-scout
 description: Finds every producer and consumer of a named entry point, file, symbol, or format for a planning agent, and returns paths, quoted excerpts, the searches it ran, boundary reasons, and what it could not read. Follows imports, string registrations, path strings, data formats, configuration, docs, ops scripts, and tests. Never edits, runs commands, delegates, or judges a plan. Use when a plan writer or reviewer needs discovery, when asked to find all consumers of something, or to map what a change could break.
 license: CC-BY-ND-4.0
 metadata:
-  version: "0.1.0"
+  version: "0.1.1"
   category: planning
-  suggested-model: anthropic/claude-sonnet-5
+  suggested-model: anthropic/claude-sonnet-5-5
 ---
 
 # plan-scout
