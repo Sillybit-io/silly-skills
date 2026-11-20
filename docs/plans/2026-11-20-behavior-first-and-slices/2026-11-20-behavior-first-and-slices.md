@@ -373,7 +373,7 @@ A todo passes its Acceptance and every QA part, commits when it says `Commit: ye
 
 ### T3 — Teach the writer Behavior lines and slices
 
-- [ ] Open
+- [x] Done
 - Do: Change the writer skill as "Writer rules" in Design says: the skeleton, the Output format template, steps 9, 10, 15 and 16, the draft-gate reply, and the planned reply. Create `skills/planning/plan-writer/references/behavior.md` with the line form, two or three bad and good pairs, and the scenario scan, in under 40 lines. One bad example names a file. Link the reference only from step 9. Put the stop rule for unapproved Behavior lines in the owner-questions reference under "When to stop", and add `## Behavior` to its list of what the draft holds. Bump `plan-writer` to 2.1.0 and add a changelog line.
 - Must not: renumber a step. Lengthen the description. Repeat a validator rule in prose where the template already shows the form. Tell the writer to add slices to a small plan.
 - Closes gap: G3, G4
