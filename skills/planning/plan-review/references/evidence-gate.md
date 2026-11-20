@@ -4,7 +4,7 @@ Read this file when building the coverage ledger and before deciding a verdict. 
 
 ## Build the ledger
 
-Give each obligation a stable `O<n>` id. Cover every required target validator-contract.md names: each `MH<n>` and `MN<n>`; every todo's `.start`, `.acceptance`, and `.qa`; every `dep:T<a>:T<b>`; every `F<n>.acceptance`; every evidence index flow's `flow:<id>`; every external citation's `contract:<id>`; and `check:A` through `check:J`. Group targets into one obligation only when the same evidence supports all of them. Map each row to its owning todos and planned QA. Also account for Checks A–J.
+Start from `validate-plan.ts <plan> --gate-skeleton`, which already gives each target an obligation with a stable `O<n>` id. It covers every required target validator-contract.md names: each `MH<n>` and `MN<n>`; every todo's `.start`, `.acceptance`, and `.qa`; every `dep:T<a>:T<b>`; every `F<n>.acceptance`; every evidence index flow's `flow:<id>`; every external citation's `contract:<id>`; and `check:A` through `check:J`. Targets stay in one obligation only when the same evidence supports all of them; split the skeleton's obligation otherwise. Map each row to its owning todos and planned QA. Also account for Checks A–J.
 
 Record three things separately:
 
@@ -16,7 +16,9 @@ Versioned documentation can verify an external contract. Plan inspection can ver
 
 For each behavioral guarantee, identify the existing behavior and the specific planned change that makes the guarantee true. A future assertion such as "existing backups stay unchanged" is not that change. If the source violates the guarantee and the plan leaves the controlling behavior unchanged, mark the obligation contradicted. A generic "fix checks until they pass" instruction cannot supply a missing implementation decision.
 
-For an addition, removal, or rename, independently search consumers of the changed inventory: enumeration, registrations, counts, generated lists, and assertions or snapshots. Challenge the writer's exclusions by reading the consuming code, including aggregate checks inside files with another main purpose. A filename or an unchanged neighboring feature does not justify exclusion. Confirm that each affected consumer has an explicit planned change. Record the evidence under Check A; use the existing verdict rules and report fields.
+For an addition, removal, or rename, independently search consumers of the changed inventory: enumeration, registrations, counts, generated lists, and assertions or snapshots. This search is part of every review, whatever the depth elsewhere. Challenge the writer's exclusions by reading the consuming code. A filename or an unchanged neighboring feature does not justify exclusion. Confirm that each affected consumer has an explicit planned change. Record the evidence under Check A; use the existing verdict rules and report fields.
+
+A format 2 citation is a path, a line range, and a hash, with no excerpt. The validator proves the lines exist and the file has not changed since it was stamped. It does not prove the writer read the right lines, so open every citation a todo relies on before you mark that todo's start obligation verified.
 
 Assign each required row one status:
 
@@ -30,7 +32,7 @@ Mark optional observations `Required? no` and keep them out of approval totals. 
 
 ## Select critical flows
 
-A flow is critical when its failure prevents a Must Have, loses or misattributes data, strands a user after a state change, or breaks a necessary integration. Trace every such flow across todo boundaries. Small file-only changes can have zero critical runtime flows; record why. Do not manufacture migration, network, or UI checks for a plan that has none.
+The plan traces the flows in a strict area and the flows that write or migrate stored data. Trace each of them across todo boundaries. When the plan touches a strict area or stored data and traces no flow there, that is a blocker. Small file-only changes can have zero flows; the evidence index says why. Do not manufacture migration, network, or UI checks for a plan that has none.
 
 For each applicable flow, record the entry point, starting state, preconditions, ordered reads and writes, external effects, result, and recovery. Try a concrete counterexample before calling the flow verified. Record the counterexample and the evidence that confirms or refutes it. A source trace is sufficient when it resolves the question. If ordering or state remains uncertain, use a disposable probe; if that cannot resolve it, keep the flow unverified.
 
@@ -77,6 +79,8 @@ These are recorded as Notes, if at all. None of them stops a capable developer:
 - A commit subject whose wording differs from what the reviewer would write. Check the type, the scope, and that it says what the todo changes; the builder may shorten a subject.
 - A todo that does not predict the exact compiler or linter diagnostic code a failure will print. A plan names the failing command and the expected outcome; the code is the builder's observation.
 - A field past its soft cap. The validator lists it as a gap; it is a writing note, not an execution defect.
+- A consumer more than one step from the changed code, outside a strict area and the changed inventory, that the writer did not trace, unless the review shows the change breaks it.
+- The exact wording of T0, the standard gates, or the two standard builder sentences, as long as each says what writer-contract.md requires.
 - Anything the validator already accepts as structurally correct, raised again as a matter of form.
 
 Before saving OKAY, reconcile the ledger, critical-flow records, Checks A–J, blocker count, and frontmatter. After saving, re-read the review and confirm that its verdict and identity still match the evidence. If writing is unavailable, return the review with the limitation and do not claim that the plan file was updated.

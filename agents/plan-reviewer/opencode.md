@@ -60,6 +60,9 @@ permissions:
   - action: shell
     resource: "bun */validate-plan.ts *"
     effect: allow
+  - action: shell
+    resource: "bun */stamp-evidence.ts *"
+    effect: allow
   - action: websearch
     resource: "*"
     effect: deny
