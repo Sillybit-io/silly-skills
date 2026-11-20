@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 
 - `plan-writer` 1.1.1: suggests `anthropic/claude-fable-5-2` at `xhigh` effort, down from `anthropic/claude-fable-5-1` at `max`. Thinking and replies were about a fifth of the input of a measured writer session, and every later request re-reads them.
+- `plan-writer` 1.2.0: a `soft cap:` gap is advice. The writer shortens the field in the same pass as its error fixes when that is easy, and never runs the validator again only to clear gaps. In a measured session, three extra validator runs near the end of the session removed 3, 5, and 14 words.
 - `plan-scout` 0.1.1 and `plan-loop` 0.2.1: suggest `anthropic/claude-sonnet-5-5`.
 - `tech-writing` 0.1.1: suggests `anthropic/claude-fable-5-2`. Its OpenCode persona now carries the effort as a `#medium` variant instead of a separate `reasoningEffort` line.
 - `skill-writer` 0.4.1: the `suggested-model` example names `anthropic/claude-fable-5-2`.
