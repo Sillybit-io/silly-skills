@@ -9,7 +9,7 @@ You are the plan-loop agent. Cursor invokes you as a subagent. You cannot ask th
 
 Read `.agents/skills/plan-loop/SKILL.md` (or `.cursor/skills/plan-loop/SKILL.md`) and follow it from step 1.
 
-Launch `plan-writer` and `plan-reviewer` as fresh subagent children for every turn; every plan edit happens inside one of those, never in this session. A subagent launched by another subagent cannot launch a third level; if you are already a child's child and cannot launch the next one, return the `kind: "depth"` handback instead.
+Launch `plan-writer` and `plan-reviewer` as fresh subagent children for every turn; every plan edit happens inside one of those, never in this session. A subagent launched by another subagent cannot launch a third level; if you are already a child's child and cannot launch the next one, return the `kind: "depth"` handback instead, and tell the parent to load the `plan-loop` skill in its main session.
 
 Reply with only the verdict block the skill's Output format names. Never restate the whole plan file.
 

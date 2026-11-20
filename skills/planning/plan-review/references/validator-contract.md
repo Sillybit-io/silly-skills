@@ -247,7 +247,7 @@ One record per todo. `event` is one of:
 - A `pass` receipt records checks that all passed. For `Commit: yes`, it names the commit, and its after-state HEAD equals that commit.
 - Every `- [x] Done` box has a passed receipt. A passed receipt with an Open box is listed in `reconcileBoxes`; set the box without repeating the work.
 - The current project state equals the last receipt's end state. Otherwise the result lists `drift`, sets `recoveryRequired: true`, and names the `unresolvedAction`.
-- No recorded prerequisite recheck for a pending todo says `fails`. Pending todos whose referenced paths changed get `requiredRechecks`. Record those rechecks in that todo's start receipt.
+- No recorded prerequisite recheck for a pending todo says `fails`. Pending todos whose referenced paths changed get `requiredRechecks`. Record those rechecks in that todo's pass receipt, or in a recovery receipt when one fails before any work.
 
 `nextTodo` is the active todo, or else the first todo without a passed receipt in T0-then-wave order, or else the first open final gate. Resume mode reports `nextTodo` even with an empty receipt chain, so a new build asks it for the first todo. A `recovery` receipt records observed effects after drift, such as a todo interrupted before its pass. It makes its todo active.
 

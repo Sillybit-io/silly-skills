@@ -1,6 +1,6 @@
 ---
-description: Drives a plan to a reviewed state by launching fresh plan-writer and plan-reviewer children in turn. Switch to it to run interactively, or launch it as a child with a request or a plan path.
-mode: all
+description: Drives a plan to a reviewed state by launching fresh plan-writer and plan-reviewer children in turn. Switch to it as your session; it cannot work as a child, because a child cannot launch children.
+mode: primary
 model: anthropic/claude-sonnet-5-5#high
 permissions:
   - action: read

@@ -23,7 +23,7 @@ const EXPECTED_MODE: Record<Persona, string> = {
   "plan-reviewer": "all",
   "plan-scout": "subagent",
   "plan-builder": "all",
-  "plan-loop": "all",
+  "plan-loop": "primary",
   "plan-result-reviewer": "subagent",
 };
 
