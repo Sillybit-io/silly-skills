@@ -161,6 +161,28 @@ Three planning tasks were run in Claude Code on 2026-10-02, on `claude-fable-5-1
 
 Without the skills, Claude Code planned in about half the time, 38.3 minutes against 78.4 over the three tasks, for $21.19 against $37.16. Its plans covered nearly the same answer-key items: 34 of 36, against 36. What the skills add is mostly outside the keys. Every line a skill plan cites comes with a quoted excerpt and a file hash that the validator checks: 25 to 76 lines per plan, against 0 to 19 unchecked references without the skills. A skill plan also records the project's checks as a baseline, traces critical flows, and ends with a final verification wave. Each number is one run, and two runs of nearly the same setup differed by about 3 minutes per task, so small differences mean little. Cost is the API-equivalent price Claude Code reports. [docs/benchmarks/planning.md](docs/benchmarks/planning.md) has the exact prompts, the run times, the answer keys, every measurement, and two attempts at a faster `plan-writer` that were measured and reverted. These numbers are for 0.5.0; later versions were not benchmarked.
 
+### How the plan skills compare with Spec Kit
+
+[Spec Kit](https://github.com/github/spec-kit) is GitHub's toolkit for spec-driven development. Both it and the plan skills make an agent write down what it will build before it changes any code. They differ in where they start and in who checks the work. The table comes from reading Spec Kit's [command prompts](https://github.com/github/spec-kit/tree/ad43c27c67c2f6db0484cea292a399bbf281fcf6/templates/commands), templates, and guides at commit `ad43c27` (2026-11-20, after release 1.4.3), beside the plan skills at 2.0.0. Spec Kit was not run for this comparison, so it says nothing about speed, cost, or the quality of what gets built.
+
+| Topic | Spec Kit | Plan skills |
+| --- | --- | --- |
+| Starts from | What the user needs: prioritized user stories, each with Given/When/Then scenarios, and no implementation detail | The code as it is: a list of gaps between the current state and the request, each cited to a file and a line range |
+| Reading existing code | No step in the `specify` or `plan` prompt asks for it; the guide for existing projects asks you to verify that the design reuses what is there | The writer reads the code the change touches and one step around it, and goes to the end in the strict areas |
+| Questions | `specify` makes informed guesses and marks at most three open points; `clarify` asks up to five questions, one at a time | Up to three to sharpen a vague idea, then product questions before technical ones, at most four of each, in one message |
+| Format checks | The agent checks its own spec against a checklist it writes, for up to three passes; the scripts resolve paths and check that files exist | A script: `validate-plan.ts` checks the structure, the coverage, and the hash of every cited file |
+| Check before building | `analyze` compares the spec, the plan, and the tasks with each other; it is one of three extra gates in the full path | `plan-review` runs in its own session, ideally on another model family, opens the cited code, and returns `OKAY`, `REJECT`, or `INCOMPLETE` |
+| Tests | Test tasks are written only when the spec or the user asks for them | Each todo has a runnable Acceptance and a QA scenario with a happy part and a failure part; the validator refuses a pass receipt without them |
+| Check after building | `converge` reads the code against the spec, the plan, and the tasks, and appends what is left as new tasks; it uses no git history | A fresh `plan-result-review` session compares every change with the plan from a snapshot taken before the build, including the owner's earlier work |
+| Slicing | One phase per user story, each testable alone, with a suggested first story | Todos in ordered waves; the plan builds as one piece |
+| Project rules | A constitution file that every plan is checked against | No file of their own; the plan records the project's own checks as a baseline |
+| Files per change | `spec.md`, `plan.md`, `research.md`, `data-model.md`, `contracts/`, `quickstart.md`, and `tasks.md` in one directory | The spec, its evidence index, the reviews, the gate record, and the build record in one directory |
+| Runs in | Dozens of coding agents through integrations, with presets and extensions on top | Claude Code, Cursor, and OpenCode |
+
+Pick Spec Kit when the hard part is deciding what to build: a new product or feature, work that starts from user stories, or a team that wants one workflow across many agents. Pick the plan skills when the hard part is changing code that already exists without breaking it, and you want a script and a second session to check the plan and the result, not the agent that wrote them.
+
+Two ideas from Spec Kit are planned for the plan skills: behavior lines in Given/When/Then that the owner approves before the todos are written, and slices of a large plan that each ship alone.
+
 ## Versioning
 
 Versions live at two levels. The repository follows SemVer as a whole: each release is a git tag plus a GitHub Release, and every notable change is recorded in [CHANGELOG.md](CHANGELOG.md). Each skill also carries its own `metadata.version` in its frontmatter and moves independently — patch for wording, minor for a new capability, major for a change to how you invoke it — so you can see that one skill changed without reading the whole repository changelog. [RELEASING.md](RELEASING.md) walks through the commands for both levels.

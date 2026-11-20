@@ -21,6 +21,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `tech-writing` 0.1.1: suggests `anthropic/claude-fable-5-2`. Its OpenCode persona now carries the effort as a `#medium` variant instead of a separate `reasoningEffort` line.
 - `skill-writer` 0.4.1: the `suggested-model` example names `anthropic/claude-fable-5-2`.
 - README: the suggested-model table lists every skill that sets a hint, and the model table names the current Fable and Sonnet versions.
+- README: a new section compares the plan skills with GitHub Spec Kit, from reading its command prompts.
 
 ## [0.12.0] - 2026-11-03
 
