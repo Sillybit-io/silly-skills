@@ -13,3 +13,7 @@
   "receipts": []
 }
 ```
+
+```json
+{"receipts": [{"seq": 1, "todo": "T0", "event": "pass", "state": "passed", "prev": null, "before": {"snapshot": "silly-skills/plan-builds/2026-11-20-behavior-first-and-slices-r1/baseline", "manifestSha256": "a43118f878019fa003cb02eae51617ede1535f2a45b57b250ebc51c52e89cb24", "stateDigest": "d5815f7325437577d11e273092a82b203fdbbaca5f93f9ec3079d9a8d1c87498"}, "after": {"snapshot": "silly-skills/plan-builds/2026-11-20-behavior-first-and-slices-r1/T0", "manifestSha256": "42fef7911cb3fb08a527e4e9226829c724757c92d04cb863c42083f6aa64c967", "stateDigest": "5079163455150eee8ae25cf73ecd1bfa943666c4703522ad491ce52b0cd0cd8f"}, "checks": [{"id": "acceptance", "command": "test -f docs/plans/2026-11-20-behavior-first-and-slices/2026-11-20-behavior-first-and-slices.md", "exit": 0, "expectedExit": 0, "passed": true, "observed": "exit 0"}, {"id": "qa:happy", "command": "git ls-files docs/plans/2026-11-20-behavior-first-and-slices | wc -l", "exit": 0, "expectedExit": 0, "passed": true, "observed": "5 files tracked in commit 2df5d9c"}], "prerequisites": [], "commit": {"sha": "2df5d9c032f5190c7f2ce605110b601fb21b45a6"}, "note": "plan directory already under docs/plans; no copy made"}]}
+```

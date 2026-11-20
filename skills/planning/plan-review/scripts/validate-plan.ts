@@ -151,6 +151,29 @@ export const TODO_FIELDS = [
   "Commit",
 ] as const;
 
+/** The cases of a Behavior line. A plan states a `primary` line and covers each other case with a line or an exclusion. */
+export const BEHAVIOR_CASES = ["primary", "alternate", "error", "recovery"] as const;
+
+/** Words that say how well instead of what happens. One in a Behavior line is a gap, never an error. */
+export const VAGUE_WORDS = [
+  "fast",
+  "quick",
+  "quickly",
+  "robust",
+  "secure",
+  "scalable",
+  "reliable",
+  "efficient",
+  "intuitive",
+  "seamless",
+  "user-friendly",
+  "properly",
+  "correctly",
+] as const;
+
+/** A word without a `/` that ends with a dot and one of these names a file. */
+const FILE_EXTENSIONS = ["md", "json", "ts", "tsx", "py", "sh", "yml", "yaml", "toml", "lock", "sql", "css", "html", "txt"] as const;
+
 export const CHECK_LETTERS = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"] as const;
 const EVIDENCE_KINDS = ["source", "probe", "documentation", "plan-inspection", "planned-qa"] as const;
 const OBLIGATION_STATUSES = ["verified", "contradicted", "unverified"] as const;
@@ -442,7 +465,12 @@ export type Todo = {
   commit: boolean;
   /** Strict areas the todo touches; empty for `Strict: no`. */
   strict: string[];
+  /** Behavior ids from `Serves`; empty for `Serves: none` or no field. */
+  serves: string[];
 };
+
+/** A Behavior line: `- B<n> (<case>): Given ..., when ..., then ...`. `text` is the part after the colon. */
+export type BehaviorLine = { id: string; case: string; text: string; line: number };
 
 export type ParsedPlan = {
   text: string;
@@ -458,6 +486,8 @@ export type ParsedPlan = {
   mustHave: { id: string; line: number }[];
   mustNotHave: { id: string; line: number }[];
   success: { gaps: string[]; todos: string[]; line: number }[];
+  /** The Behavior lines of the optional `## Behavior` section; empty when the plan has none. */
+  behavior: BehaviorLine[];
   /** The merged json blocks of the evidence index file; null when the file is missing or holds none. */
   evidenceIndex: { value: unknown; no: number } | { error: string; no: number } | null;
   citations: { path: string; start: number; end: number; line: number }[];
@@ -471,6 +501,42 @@ export function jsonBlocksOf(text: string): { value: unknown; no: number } | { e
 
 function section(plan: ParsedPlan, title: string): Section | undefined {
   return plan.sections.find((s) => s.title === title);
+}
+
+type BehaviorEntry =
+  | { kind: "line"; id: string; case: string; text: string; no: number }
+  | { kind: "exclusion"; case: string; text: string; no: number }
+  | { kind: "other"; no: number };
+
+/** The lines of a `## Behavior` section that are not blank and sit outside fences and HTML comments. */
+function behaviorEntries(lines: Line[], s: Section): BehaviorEntry[] {
+  const out: BehaviorEntry[] = [];
+  let comment = false;
+  for (let i = s.start; i < s.end; i++) {
+    const line = lines[i];
+    if (line.fenced || line.fenceMarker) continue;
+    let text = line.text;
+    if (comment) {
+      const close = text.indexOf("-->");
+      if (close === -1) continue;
+      comment = false;
+      text = text.slice(close + 3);
+    }
+    text = text.replace(/<!--.*?-->/g, "");
+    const open = text.indexOf("<!--");
+    if (open !== -1) {
+      comment = true;
+      text = text.slice(0, open);
+    }
+    text = text.trim();
+    if (text === "") continue;
+    const b = /^- (B\d+) \(([^)]*)\): (\S.*)$/.exec(text);
+    const x = /^- No (\S+) case: (\S.*)$/.exec(text);
+    if (b) out.push({ kind: "line", id: b[1], case: b[2], text: b[3], no: line.no });
+    else if (x) out.push({ kind: "exclusion", case: x[1], text: x[2], no: line.no });
+    else out.push({ kind: "other", no: line.no });
+  }
+  return out;
 }
 
 export function parsePlan(text: string, evidenceText?: string): ParsedPlan {
@@ -512,9 +578,17 @@ export function parsePlan(text: string, evidenceText?: string): ParsedPlan {
     mustHave: [],
     mustNotHave: [],
     success: [],
+    behavior: [],
     evidenceIndex: evidenceText === undefined ? null : jsonBlocksOf(evidenceText),
     citations: [],
   };
+
+  const behavior = section(plan, "Behavior");
+  if (behavior) {
+    for (const e of behaviorEntries(lines, behavior)) {
+      if (e.kind === "line") plan.behavior.push({ id: e.id, case: e.case, text: e.text, line: e.no });
+    }
+  }
 
   const scope = section(plan, "Scope");
   if (scope) {
@@ -558,6 +632,7 @@ export function parsePlan(text: string, evidenceText?: string): ParsedPlan {
         references: [],
         commit: false,
         strict: [],
+        serves: [],
       };
       let first = true;
       for (let i = sub.start; i < sub.end; i++) {
@@ -573,6 +648,8 @@ export function parsePlan(text: string, evidenceText?: string): ParsedPlan {
         }
         const f = /^- ([A-Za-z][A-Za-z ]*?): (.*)$/.exec(line.text);
         if (f && (TODO_FIELDS as readonly string[]).includes(f[1])) todo.fields[f[1]] = f[2].trim();
+        // `Serves` counts only after `Closes gap`, where a plan with Behavior lines puts it.
+        else if (f && f[1] === "Serves" && "Closes gap" in todo.fields) todo.fields.Serves = f[2].trim();
       }
       const closes = todo.fields["Closes gap"] ?? "";
       todo.closes = /^none\.?$/i.test(closes) ? [] : closes.match(/\bG\d+\b/g) ?? [];
@@ -582,6 +659,8 @@ export function parsePlan(text: string, evidenceText?: string): ParsedPlan {
       todo.references = [...(todo.fields.References ?? "").matchAll(/`([^`]+)`/g)].map((r) => r[1]);
       const strict = (todo.fields.Strict ?? "").replace(/\.$/, "").trim();
       todo.strict = /^no$/i.test(strict) ? [] : strict.split(/\s*,\s*/).filter(Boolean);
+      const serves = todo.fields.Serves ?? "";
+      todo.serves = /^none\.?$/i.test(serves) ? [] : serves.match(/\bB\d+\b/g) ?? [];
       plan.todos.push(todo);
     }
   }
@@ -997,7 +1076,7 @@ type Context = {
   errors: Finding[];
   /** Review gaps: they decide the expected verdict. */
   gaps: string[];
-  /** Soft-cap findings, reported under `gaps` but never part of a verdict. */
+  /** Soft-cap and vague-word findings, reported under `gaps` but never part of a verdict. */
   capGaps: string[];
 };
 
@@ -1054,6 +1133,8 @@ function validateCaps(ctx: Context, plan: ParsedPlan): void {
   const bullets = (from: number, to: number) => lines.slice(from, to).filter((l) => !l.fenced && !l.fenceMarker && l.text.startsWith("- "));
   const tldr = section(plan, "TL;DR");
   if (tldr) for (const b of bullets(tldr.start, tldr.end)) capCheck(ctx, b.no, "TL;DR bullet", b.text.slice(2), CAPS.tldrBullet);
+  // A Behavior line has the caps of a Must have bullet.
+  for (const b of plan.behavior) capCheck(ctx, b.line, `Behavior ${b.id}`, b.text, CAPS.requirement);
   const scope = section(plan, "Scope");
   if (scope) {
     const subs = sectionsOf(lines, 3, scope.start, scope.end);
@@ -1115,6 +1196,8 @@ function validateStructure(ctx: Context, plan: ParsedPlan): void {
   const expected = [...SECTIONS];
   let at = 0;
   for (const s of plan.sections) {
+    // Optional; validateBehavior checks where it sits.
+    if (s.title === "Behavior") continue;
     if (!(SECTIONS as readonly string[]).includes(s.title)) {
       const moved: Record<string, string> = { Review: ctx.files.reviews, "Result review": ctx.files.reviews, Build: ctx.files.build };
       err(ctx, "SECTION", s.headingLine, moved[s.title] ? `'## ${s.title}' belongs in ${moved[s.title]}, not in the spec` : `unknown top-level section '${s.title}'`);
@@ -1169,6 +1252,7 @@ function validateStructure(ctx: Context, plan: ParsedPlan): void {
       if (bullets.length === 0) err(ctx, "QUESTIONS", sub.headingLine, `'### ${sub.title}' is empty`);
     }
   }
+  validateBehavior(ctx, plan);
 
   if (status === "draft") return;
   validateCaps(ctx, plan);
@@ -1331,6 +1415,121 @@ function validateOpenDesign(ctx: Context, plan: ParsedPlan): void {
     else if (id && !url.replace(/\/$/, "").endsWith(`/projects/${id}`)) {
       err(ctx, "OPENDESIGN", link.no, `'- Link:' must end in '/projects/${id}'`);
     }
+  }
+}
+
+const EXTENSION_RE = new RegExp(`\\.(${FILE_EXTENSIONS.join("|")})$`);
+
+/** A word without its wrapping backticks, quotes, and brackets, its trailing punctuation, and a trailing line number. */
+function bareWord(raw: string): string {
+  let word = raw;
+  for (let prev = ""; prev !== word; ) {
+    prev = word;
+    word = word
+      .replace(/^[`'"‘“([{<]+/, "")
+      .replace(/[`'"’”)\]}>.,;:!?]+$/, "")
+      .replace(/:\d+(?:-\d+)?$/, "");
+  }
+  return word;
+}
+
+/**
+ * The words of a Behavior or exclusion line that name a file. A URL is skipped.
+ * A word is a file path when it starts with `./`, `../`, or `~/`; when it
+ * contains `/` and ends with a dot, one letter, and up to four more letters or
+ * digits; or when it has no `/` and ends with a dot and a FILE_EXTENSIONS entry.
+ */
+export function filePathWords(text: string): string[] {
+  return text
+    .split(/\s+/)
+    .map(bareWord)
+    .filter((w) => w !== "" && !/^[A-Za-z][A-Za-z0-9+.-]*:\/\//.test(w))
+    .filter((w) => /^(\.\.?|~)\//.test(w) || (w.includes("/") ? /\.[A-Za-z][A-Za-z0-9]{0,4}$/.test(w) : EXTENSION_RE.test(w)));
+}
+
+/** The VAGUE_WORDS a line uses, each once, in lower case. */
+function vagueWords(text: string): string[] {
+  return [...new Set(text.split(/\s+/).map((w) => bareWord(w).toLowerCase()))].filter((w) => (VAGUE_WORDS as readonly string[]).includes(w));
+}
+
+/** True when `Given`, `when`, and `then` appear in that order, as whole words in any case. */
+function givenWhenThen(text: string): boolean {
+  let at = 0;
+  for (const word of ["given", "when", "then"]) {
+    const m = new RegExp(`\\b${word}\\b`, "i").exec(text.slice(at));
+    if (!m) return false;
+    at += m.index + word.length;
+  }
+  return true;
+}
+
+/**
+ * The optional `## Behavior` section and the `Serves` field that ties todos to
+ * its lines. A plan without the section skips every rule here. The grammar
+ * holds at every status; coverage and `Serves` hold from `planned` on.
+ */
+function validateBehavior(ctx: Context, plan: ParsedPlan): void {
+  const found = plan.sections.filter((s) => s.title === "Behavior");
+  if (found.length === 0) return;
+  const [s] = found;
+  if (plan.sections[plan.sections.indexOf(s) - 1]?.title !== "TL;DR") {
+    err(ctx, "BEHAVIOR", s.headingLine, "'## Behavior' must come directly after '## TL;DR'");
+  }
+  for (const extra of found.slice(1)) err(ctx, "BEHAVIOR", extra.headingLine, "section '## Behavior' appears more than once");
+  const entries = behaviorEntries(plan.lines, s);
+  const seen = new Set<string>();
+  let next = 1;
+  for (const e of entries) {
+    if (e.kind === "other") {
+      err(ctx, "BEHAVIOR", e.no, "a Behavior section line must be '- B<n> (<case>): Given ..., when ..., then ...' or '- No <case> case: <reason>'");
+      continue;
+    }
+    const label = e.kind === "line" ? `Behavior ${e.id}` : `the 'No ${e.case} case' line`;
+    if (!(BEHAVIOR_CASES as readonly string[]).includes(e.case)) {
+      err(ctx, "BEHAVIOR", e.no, `${label} has unknown case '${e.case}'; use ${BEHAVIOR_CASES.join(", ")}`);
+    }
+    if (e.kind === "line") {
+      if (seen.has(e.id)) err(ctx, "BEHAVIOR", e.no, `duplicate Behavior line ${e.id}`);
+      else if (e.id !== `B${next}`) err(ctx, "BEHAVIOR", e.no, `Behavior ${e.id} is out of sequence; ids count up from B1, so expected B${next}`);
+      seen.add(e.id);
+      next = Number(e.id.slice(1)) + 1;
+      if (!givenWhenThen(e.text)) err(ctx, "BEHAVIOR", e.no, `Behavior ${e.id} needs 'Given', 'when', and 'then' in that order`);
+      // Advice, like a soft cap: listed under gaps, never part of a verdict.
+      for (const word of vagueWords(e.text)) ctx.capGaps.push(`vague word '${word}' in ${e.id}`);
+    }
+    for (const path of filePathWords(e.text)) {
+      err(ctx, "BEHAVIOR", e.no, `${label} names the file path '${path}'; say what a user or an operator sees`);
+    }
+  }
+  if (plan.frontmatter.status === "draft") return;
+
+  const lines = entries.filter((e): e is Extract<BehaviorEntry, { kind: "line" }> => e.kind === "line");
+  const exclusions = entries.filter((e): e is Extract<BehaviorEntry, { kind: "exclusion" }> => e.kind === "exclusion");
+  if (!lines.some((l) => l.case === "primary")) err(ctx, "BEHAVIOR", s.headingLine, "Behavior needs a primary line");
+  for (const c of BEHAVIOR_CASES.filter((k) => k !== "primary")) {
+    if (!lines.some((l) => l.case === c) && !exclusions.some((x) => x.case === c)) {
+      err(ctx, "BEHAVIOR", s.headingLine, `Behavior has no ${c} line and no '- No ${c} case: <reason>' line`);
+    }
+  }
+  const ids = new Set(lines.map((l) => l.id));
+  const served = new Set<string>();
+  for (const todo of plan.todos) {
+    if (todo.id === "T0") continue;
+    const value = todo.fields.Serves;
+    if (value === undefined) {
+      err(ctx, "BEHAVIOR", todo.line, `${todo.id} is missing '- Serves:' after '- Closes gap:'; write none or the Behavior ids it serves`);
+      continue;
+    }
+    if (todo.serves.length === 0 && !/^none\.?$/i.test(value)) {
+      err(ctx, "BEHAVIOR", todo.line, `${todo.id} Serves names no Behavior id; write none or ids such as B1`);
+    }
+    for (const id of todo.serves) {
+      if (ids.has(id)) served.add(id);
+      else err(ctx, "BEHAVIOR", todo.line, `${todo.id} serves unknown Behavior line ${id}`);
+    }
+  }
+  for (const l of lines) {
+    if (!served.has(l.id)) err(ctx, "BEHAVIOR", l.no, `Behavior ${l.id} is not served by any todo`);
   }
 }
 
@@ -1545,10 +1744,16 @@ export function evidenceFlows(plan: ParsedPlan): string[] {
   return index.value.flows.filter(isObject).map((f) => str(f.id)).filter(Boolean);
 }
 
+/** One `behavior:B<n>` review target per Behavior line; none for a plan without the section. */
+function behaviorTargets(plan: ParsedPlan): string[] {
+  return [...new Set(plan.behavior.map((b) => `behavior:${b.id}`))];
+}
+
 /** The review targets every gate record must cover. */
 export function requiredTargets(plan: ParsedPlan, citations: Map<string, Citation>): string[] {
   const out: string[] = [];
   for (const r of [...plan.mustHave, ...plan.mustNotHave]) if (r.id) out.push(r.id);
+  out.push(...behaviorTargets(plan));
   for (const todo of plan.todos) {
     out.push(`${todo.id}.start`, `${todo.id}.acceptance`, `${todo.id}.qa`);
     for (const dep of todo.dependsOn) out.push(`dep:${todo.id}:${dep}`);
@@ -2277,8 +2482,9 @@ function blockText(plan: ParsedPlan, id: string): { title: string; text: string 
 
 /**
  * One todo with what a todo child needs around it: the gaps it closes, the
- * titles of its dependencies, its strict areas, and the check ids its pass
- * receipt must record. About one todo's worth of text instead of the whole spec.
+ * Behavior lines it serves, the titles of its dependencies, its strict areas,
+ * and the check ids its pass receipt must record. About one todo's worth of
+ * text instead of the whole spec.
  */
 export function todoBrief(plan: ParsedPlan, id: string): string | null {
   const block = blockText(plan, id);
@@ -2288,6 +2494,8 @@ export function todoBrief(plan: ParsedPlan, id: string): string | null {
   if (todo) {
     const gaps = todo.closes.map((g) => plan.gaps.find((x) => x.id === g)).filter((g): g is { id: string; line: number } => Boolean(g));
     if (gaps.length > 0) out.push("", "Gaps it closes:", "", ...gaps.map((g) => plan.lines[g.line - 1].text));
+    const served = plan.behavior.filter((b) => todo.serves.includes(b.id));
+    if (served.length > 0) out.push("", "Behavior lines it serves:", "", ...served.map((b) => plan.lines[b.line - 1].text));
     const deps = todo.dependsOn.map((d) => plan.todos.find((t) => t.id === d)).filter((t): t is Todo => Boolean(t));
     if (deps.length > 0) out.push("", `Depends on: ${deps.map((t) => `${t.id} — ${t.title}`).join("; ")}`);
     out.push("", `Strict areas: ${todo.strict.length > 0 ? todo.strict.join(", ") : "none"}`);
@@ -2309,6 +2517,8 @@ export function gateSkeleton(plan: ParsedPlan, root: string, planDigest: string)
   const citations = index && !("error" in index) && isObject(index.value) && Array.isArray(index.value.citations) ? index.value.citations.filter(isObject) : [];
   const groups: string[][] = [];
   for (const r of [...plan.mustHave, ...plan.mustNotHave]) if (r.id) groups.push([r.id]);
+  const behavior = behaviorTargets(plan);
+  if (behavior.length > 0) groups.push(behavior);
   for (const todo of plan.todos) {
     groups.push([`${todo.id}.start`, `${todo.id}.acceptance`, `${todo.id}.qa`, ...todo.dependsOn.map((d) => `dep:${todo.id}:${d}`)]);
   }
@@ -2445,7 +2655,7 @@ export function validatePlan(planPath: string, options: Options = {}): Validatio
       return result;
     }
   }
-  // Soft caps never decide a verdict, so they join the gaps list only now.
+  // Soft caps and vague words never decide a verdict, so they join the gaps list only now.
   result.gaps.push(...ctx.capGaps);
   result.exitCode = result.errors.length > 0 ? 1 : 0;
   return result;
@@ -2476,9 +2686,10 @@ docs/plans/<stem>/<stem>.md; the four sibling files are found beside it.
   --resume        With --review: verify the approval against the build
                   baseline and the receipt chain in <stem>.build.md against
                   the current project, and report resumeEligible and nextTodo.
-  --todo <id>     Print one todo or final gate with the gaps it closes, its
-                  dependencies, its strict areas, and the check ids its pass
-                  receipt must record. Does not validate.
+  --todo <id>     Print one todo or final gate with the gaps it closes, the
+                  Behavior lines it serves, its dependencies, its strict
+                  areas, and the check ids its pass receipt must record. Does
+                  not validate.
   --gate-skeleton Print a gate record for the next round with every required
                   target in an obligation and every status unverified, for the
                   reviewer to fill in. Does not validate.

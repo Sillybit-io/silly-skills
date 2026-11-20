@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- `plan-review` 2.1.0, validator: a plan may state Behavior lines in an optional `## Behavior` section directly after `## TL;DR`. Each line is `- B<n> (<case>): Given ..., when ..., then ...` or an exclusion, `- No <case> case: <reason>`, and no word in it is a file path. From `planned` on, the primary case has a line, the alternate, error, and recovery cases each have a line or an exclusion, every todo except T0 has a `Serves` field after `Closes gap`, and every line is served by a todo. A miss is a `BEHAVIOR` error. A vague word, such as fast or robust, is a gap that never changes the verdict. `--todo` prints the lines a todo serves, and each line is a `behavior:B<n>` review target, in one `--gate-skeleton` group. A plan without the section gets the same results as before.
+
 ### Changed
 
 - `plan-review` 2.0.0, validator: plan format 2. The evidence index, gate record, and build record carry `schemaVersion: 2`, and a format 1 record is a `FORMAT_1` error that says to finish it on the old install. The spec drops Affected users, Ideal state, the Coverage paragraph, and Verification strategy. Every todo has a `Strict:` field (`no`, `security`, or `production`). A source citation needs no excerpt; the new `stamp-evidence.ts` fills its `sha256` in one run. Receipts are one per todo: `pass`, `block`, `recovery`, and `fix`. A pass receipt without a passing `acceptance` check and one passing check per QA part is a `MISSING_CHECK` error. New `--todo` prints one todo for a todo child, and `--gate-skeleton` prints a gate record with every required target already grouped.

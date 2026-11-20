@@ -334,7 +334,7 @@ A todo passes its Acceptance and every QA part, commits when it says `Commit: ye
 
 ### T0 — Copy the plan into the project
 
-- [ ] Open
+- [x] Done
 - Do: copy the plan directory into `docs/plans/` when it is not already there, and commit it
 - Must not: overwrite a conflicting destination
 - Closes gap: none
