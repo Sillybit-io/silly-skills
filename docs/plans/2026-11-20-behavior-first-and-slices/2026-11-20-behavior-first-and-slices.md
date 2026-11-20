@@ -425,7 +425,7 @@ A todo passes its Acceptance and every QA part, commits when it says `Commit: ye
 
 ### T7 — Pause the loop for Behavior lines, and update the README
 
-- [ ] Open
+- [x] Done
 - Do: Change `plan-loop` as "Loop pause" in Design says: one rule in the round loop step, applied before round 1 only. Bump `plan-loop` to 0.4.0. In the README's Planning flow section, say in a few sentences that a plan states its Behavior lines first and the owner approves them, that the result review checks them, and that a large plan can be built slice by slice, with one pull request per slice when the owner wants. Make the four edits to the README's comparison with Spec Kit that "README comparison" in Design lists. Add one changelog line for the loop and one for the README.
 - Must not: let the loop edit the plan. Add a handback kind. Pause in a later round. Renumber a step. Lengthen the description. Describe the grammar in the README. Edit the Spec Kit column, another row, or the "Pick Spec Kit when" paragraph of the comparison.
 - Closes gap: G8, G9, G10
@@ -440,26 +440,26 @@ A todo passes its Acceptance and every QA part, commits when it says `Commit: ye
 
 ### F1 — Plan compliance
 
-- [ ] Open
+- [x] Done
 - Do: every Must Have exists and every Must NOT Have is absent
 - Acceptance: the compatibility check in Design prints nothing. `git diff --stat "$(git log --diff-filter=A --format=%H -1 -- docs/plans/2026-11-20-behavior-first-and-slices/2026-11-20-behavior-first-and-slices.md)" -- agents docs/benchmarks docs/plans/2026-11-20-lighter-plan-skills.md 'skills/**/examples.md'` prints nothing.
 - Commit: no
 
 ### F2 — Code quality
 
-- [ ] Open
+- [x] Done
 - Do: the project's test, lint, and build commands against the baseline, and the slop pass
 - Commit: no
 
 ### F3 — Scenario QA
 
-- [ ] Open
+- [x] Done
 - Do: every todo's QA scenario
 - Commit: no
 
 ### F4 — Scope fidelity
 
-- [ ] Open
+- [x] Done
 - Do: an independent result review against the build baseline
 - Commit: no
 
