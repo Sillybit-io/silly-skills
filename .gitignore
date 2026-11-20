@@ -41,3 +41,7 @@ reports/
 /skills/skill-writer
 /skills/tech-writing
 /skills/ui-engineering
+
+# Plans written by the planning skills while working on this repository.
+# They stay on the machine that wrote them and are not published.
+/docs/plans/
