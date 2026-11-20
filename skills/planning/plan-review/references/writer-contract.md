@@ -8,10 +8,10 @@ Describe every execution blocker in detail; there is no reporting cap, and a dis
 
 `## Research` is present and either:
 
-- names sources, how others did it, what matters, pros and cons, and what the plan will follow, or
+- names its sources and what the plan will follow, or
 - contains the line `No useful public source found.`
 
-Each source is an `http` or `https` URL. Verify the claim against the fetched content and the target version when the plan relies on a version-specific contract. An inaccessible source is not proof of a defect: record the access failure and any substitute evidence. If a necessary contract remains unverified, the approval gate produces INCOMPLETE unless a demonstrated blocker already requires REJECT. Optional unreadable sources belong in Notes. A fetched contradiction is evidence for a blocker. A "no useful public source" line satisfies the research-section format but does not waive a necessary external-contract check.
+Each source is an `http` or `https` URL. Verify the claim against the fetched content and the target version when the plan relies on a version-specific contract. An inaccessible source is not proof of a defect: record the access failure and any substitute evidence. If a necessary contract remains unverified, the approval gate produces INCOMPLETE unless a demonstrated blocker already requires REJECT. A fetched contradiction is evidence for a blocker. A "no useful public source" line satisfies the format but does not waive a necessary external-contract check.
 
 ## Check G — Questions
 
@@ -35,22 +35,17 @@ When the plan, its request, or its ticket shows the work uses OpenDesign, `## De
 
 ## Check I — Final wave
 
-The wave contains todos titled `F1`, `F2`, `F3`, and `F4`, in that order:
-
-- F1 plan compliance: every Must Have is present, every Must NOT Have is absent.
-- F2 code quality: the test, lint, and build commands the project defines, plus a slop pass.
-- F3 scenario QA: every todo's QA scenario. F3 does not name a browser tool or a screenshot path.
-- F4 scope fidelity: the diff matches the spec.
-
-Extra todos titled `F5` onward may sit after `F4`. Fewer than four gates, a missing gate, or a gate out of order is a blocker.
+The wave contains todos titled `F1`, `F2`, `F3`, and `F4`, in that order, each with a box and a one-line `Do`. Their full rules live in `plan-builder`, so short standard text is correct. An extra `Acceptance:` line or a gate `F5` onward is allowed. Fewer than four gates, a missing gate, or a gate out of order is a blocker. F3 names no browser tool and no screenshot path.
 
 When `ui: yes` — including a plan that adds a web or mobile surface — the automated UI QA todo is present and last. It names the tool, the route or screen, the viewport widths, the steps, the expected result, and a screenshot path under `reports/ui-qa/`. When `ui: no`, that todo is absent and the wave says why in one line.
 
-## Check J — Todo boxes and T0
+## Check J — Todo boxes, standard sentences, T0, and strict fields
 
-Four misses, each a blocker:
+Each of these is a blocker. Judge what the text says, not its exact wording:
 
-- Every todo under `## Todos` and every gate under `## Final verification wave` starts with `- [ ] Open` on a freshly planned file. The `## Todos` section tells the builder to change that line to `- [x] Done` in the project copy before the next todo starts. A missing box, or a missing instruction, is a blocker. Do not reject a box that is already `- [x]` on a re-review after the build has started. One intro paragraph that says to pass the checks, mark Done, and only then start the next todo satisfies this miss and the test miss together.
-- `## Todos` tells the builder to run that todo's Acceptance and QA scenario, pass them, commit when the todo says `Commit: yes`, mark `- [x] Done`, and only then start the next todo. A missing instruction is a blocker. Look for it in the section intro, not on each todo body. A failure path marked n/a is not run; the intro does not have to say that for this check to pass. The final wave must not inherit that rule. A blocker is an intro that says the test-before-next rule applies to F1–F4 or the UI QA todo, including "the same rule applies here" once that rule includes testing. F2 running the project's test, lint, and build commands, and F3 executing QA scenarios, are the gates themselves. Do not flag those.
-- `## Execution strategy` tells the builder to finish T0, then each wave in list order, then the final wave, without stopping to ask for a continue. Todos inside one wave stay as independent as that line says. F1–F4 stay one parallel wave. If a todo's checks fail, the builder fixes that todo and runs the checks again until they pass, then continues. A missing sentence is a blocker. So is an instruction to stop after a wave and wait, or to stop and wait when a check fails. A failed check that is fixed and then continued is not this miss. Gates that stay parallel are not this miss.
-- `T0` is the first todo. Its job is to copy the whole plan directory into the project's `docs/plans/` when it is not already there, verify the copied bytes, continue in that copy, and commit the plan directory as `docs(plans): add <slug> plan`. Originals and conflicting destinations stay intact. If already there, no copy is made, and the commit still lands. Checking its own box is the one plan edit T0 may make besides copying. A missing T0, unconditional copy, a sibling file left behind, overwritten destination, build left in the outside directory, missing commit, or forbidden checkbox edit is a blocker. T0 does not need to close a gap. Its reference may be `this file`. The plan directory joining every `Commit: yes` commit, and the final plan-only commit after F4, are the builder's rules; a todo need not repeat them.
+- Every todo under `## Todos` and every gate under `## Final verification wave` starts with `- [ ] Open` on a freshly planned file. Do not reject a box that is already `- [x]` on a re-review after the build has started.
+- The `## Todos` introduction says, in one sentence or more, that a todo passes its Acceptance and every QA part and commits when it says `Commit: yes` before it is marked Done, and that the final wave is exempt. An introduction that applies this rule to the final wave is a blocker.
+- `## Execution strategy` says, above the wave list, that the build runs T0, then each wave in order, then the final wave, without stopping to ask, and that a failing todo is fixed and its checks rerun until they pass. An instruction to stop after a wave, or to stop and wait when a check fails, is a blocker.
+- `T0` is the first todo. It copies the plan directory into `docs/plans/` when it is not already there and commits it as `docs(plans): add <slug> plan`. Its details live in `plan-builder`. A missing T0, or a T0 that copies unconditionally or overwrites a destination, is a blocker.
+- Every todo has a `Strict:` field. A todo whose changes touch security, sign-in, or permissions, or production and shared services, says so; when unsure, it counts as strict. A strict todo marked `no` is a blocker.
+- Every todo's QA scenario labels its parts, such as `happy — ...; failure — ...`, or marks a part `n/a`, so the builder knows which checks to record.

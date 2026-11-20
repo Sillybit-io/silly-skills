@@ -28,7 +28,13 @@ import { createHash } from "node:crypto";
 import { existsSync, lstatSync, readdirSync, readFileSync, readlinkSync, realpathSync } from "node:fs";
 import { isAbsolute, join, resolve, sep } from "node:path";
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
+
+/** Format 1 plans were written by the plan skills before 2.0.0; they finish on that install. */
+export const FORMAT_1_MESSAGE = "This plan uses format 1. Finish it with the plan skills from before 2.0.0, or write it again.";
+
+/** Areas where the owner keeps the full rules: a todo's `Strict:` field names them. */
+export const STRICT_AREAS = ["security", "production"] as const;
 
 export const FRONTMATTER_KEYS = [
   "title",
@@ -50,7 +56,6 @@ export const SECTIONS = [
   "Research",
   "Questions",
   "Design",
-  "Verification strategy",
   "Execution strategy",
   "Todos",
   "Final verification wave",
@@ -58,13 +63,10 @@ export const SECTIONS = [
 ] as const;
 
 export const SCOPE_SUBSECTIONS = [
-  "Affected users",
-  "Ideal state",
   "IS / GAP ledger",
   "Risks",
   "Must have",
   "Must NOT have",
-  "Coverage",
   "Critical flows",
   "Baseline",
 ] as const;
@@ -119,7 +121,6 @@ export const CAPS = {
   requirement: { soft: 40, hard: 80, unit: "words" },
   tldrBullet: { soft: 60, hard: 120, unit: "words" },
   ledgerCell: { soft: 60, hard: 120, unit: "words" },
-  coverage: { soft: 120, hard: 240, unit: "words" },
   proofCell: { soft: 30, hard: 60, unit: "words" },
   blocker: { soft: 120, hard: 240, unit: "words" },
   recordProse: { soft: 200, hard: 400, unit: "characters" },
@@ -146,6 +147,7 @@ export const TODO_FIELDS = [
   "References",
   "Acceptance",
   "QA scenario",
+  "Strict",
   "Commit",
 ] as const;
 
@@ -153,7 +155,7 @@ export const CHECK_LETTERS = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"] 
 const EVIDENCE_KINDS = ["source", "probe", "documentation", "plan-inspection", "planned-qa"] as const;
 const OBLIGATION_STATUSES = ["verified", "contradicted", "unverified"] as const;
 const VERDICTS = ["OKAY", "REJECT", "INCOMPLETE"] as const;
-const RECEIPT_EVENTS = ["start", "checkpoint", "pass", "block", "recovery"] as const;
+const RECEIPT_EVENTS = ["pass", "block", "recovery", "fix"] as const;
 
 export type Verdict = (typeof VERDICTS)[number];
 export type Mode = "plan" | "review" | "resume";
@@ -438,6 +440,8 @@ export type Todo = {
   dependsOn: string[];
   references: string[];
   commit: boolean;
+  /** Strict areas the todo touches; empty for `Strict: no`. */
+  strict: string[];
 };
 
 export type ParsedPlan = {
@@ -553,6 +557,7 @@ export function parsePlan(text: string, evidenceText?: string): ParsedPlan {
         dependsOn: [],
         references: [],
         commit: false,
+        strict: [],
       };
       let first = true;
       for (let i = sub.start; i < sub.end; i++) {
@@ -575,6 +580,8 @@ export function parsePlan(text: string, evidenceText?: string): ParsedPlan {
       todo.dependsOn = /^none\.?$/i.test(deps) ? [] : deps.match(/\bT\d+\b/g) ?? [];
       todo.commit = /^yes\b/i.test(todo.fields.Commit ?? "");
       todo.references = [...(todo.fields.References ?? "").matchAll(/`([^`]+)`/g)].map((r) => r[1]);
+      const strict = (todo.fields.Strict ?? "").replace(/\.$/, "").trim();
+      todo.strict = /^no$/i.test(strict) ? [] : strict.split(/\s*,\s*/).filter(Boolean);
       plan.todos.push(todo);
     }
   }
@@ -1063,20 +1070,11 @@ function validateCaps(ctx: Context, plan: ParsedPlan): void {
         for (const i of [1, 2]) if (row.cells[i]) capCheck(ctx, row.no, `${row.cells[0]} ledger cell ${i + 1}`, row.cells[i], CAPS.ledgerCell);
       }
     }
-    const coverage = subs.find((s) => s.title === "Coverage");
-    if (coverage) {
-      const body = lines.slice(coverage.start, coverage.end).filter((l) => !l.fenced && !l.fenceMarker);
-      capCheck(ctx, coverage.headingLine, "Coverage paragraph", body.map((l) => l.text).join(" "), CAPS.coverage);
-    }
   }
-  for (const [title, columns] of [
-    ["Verification strategy", [1, 2]],
-    ["Success criteria", [2]],
-  ] as const) {
-    const s = section(plan, title);
-    if (!s) continue;
-    for (const row of tableBodyRows(lines, s.start, s.end)) {
-      for (const i of columns) if (row.cells[i]) capCheck(ctx, row.no, `${title} ${row.cells[0]} cell ${i + 1}`, row.cells[i], CAPS.proofCell);
+  const success = section(plan, "Success criteria");
+  if (success) {
+    for (const row of tableBodyRows(lines, success.start, success.end)) {
+      if (row.cells[2]) capCheck(ctx, row.no, `Success criteria ${row.cells[0]} cell 3`, row.cells[2], CAPS.proofCell);
     }
   }
 }
@@ -1207,6 +1205,11 @@ function validateStructure(ctx: Context, plan: ParsedPlan): void {
     if (todo.box === null) err(ctx, "TODO", todo.line, `${todo.id} must start with '- [ ] Open' or '- [x] Done'`);
     for (const field of TODO_FIELDS) {
       if (!todo.fields[field]) err(ctx, "TODO", todo.line, `${todo.id} is missing '- ${field}:'`);
+    }
+    for (const area of todo.strict) {
+      if (!(STRICT_AREAS as readonly string[]).includes(area)) {
+        err(ctx, "TODO", todo.line, `${todo.id} names unknown strict area '${area}'; use no, or ${STRICT_AREAS.join(", ")}`);
+      }
     }
     for (const gap of todo.closes) {
       if (!gapIds.has(gap)) err(ctx, "GAP_MAP", todo.line, `${todo.id} closes unknown gap ${gap}`);
@@ -1388,6 +1391,10 @@ function validateEvidenceIndex(
     err(ctx, "EVIDENCE_INDEX", line, "Evidence index must be a JSON object");
     return citations;
   }
+  if (value.schemaVersion === 1) {
+    err(ctx, "FORMAT_1", line, FORMAT_1_MESSAGE);
+    return citations;
+  }
   if (value.schemaVersion !== SCHEMA_VERSION) {
     err(ctx, "EVIDENCE_INDEX", line, `unknown Evidence index schemaVersion ${String(value.schemaVersion)}`);
     return citations;
@@ -1418,8 +1425,8 @@ function validateEvidenceIndex(
         err(ctx, "CITATION", line, `citation ${c.id} has an invalid line range`);
         continue;
       }
-      if (typeof c.excerpt !== "string" || c.excerpt.trim() === "" || !/^[0-9a-f]{64}$/.test(str(c.sha256))) {
-        err(ctx, "CITATION", line, `citation ${c.id} needs a literal excerpt and a sha256`);
+      if (!/^[0-9a-f]{64}$/.test(str(c.sha256))) {
+        err(ctx, "CITATION", line, `citation ${c.id} has no sha256; run stamp-evidence.ts to fill it`);
         continue;
       }
       const bytes = reader(path);
@@ -1429,7 +1436,7 @@ function validateEvidenceIndex(
       }
       const content = bytes.toString("utf8");
       if (end > lineCount(content)) err(ctx, "CITATION", line, `citation ${c.id}: ${path} has no line ${end}`);
-      else if (!excerptMatches(content, start, end, c.excerpt)) {
+      else if (typeof c.excerpt === "string" && !excerptMatches(content, start, end, c.excerpt)) {
         err(ctx, "EXCERPT", line, `citation ${c.id}: excerpt does not match ${path}:${start}-${end}`);
       }
       if (sha256(bytes) !== c.sha256) {
@@ -1471,7 +1478,7 @@ function validateEvidenceIndex(
     }
     const state = str(raw.state);
     if (!["inspected", "excluded", "pending"].includes(state)) err(ctx, "COVERAGE", line, `coverage ${raw.id} has invalid state '${state}'`);
-    for (const key of ["paths", "searches", "producers", "consumers", "citationIds"]) {
+    for (const key of ["paths", "citationIds"]) {
       if (!Array.isArray(raw[key])) err(ctx, "COVERAGE", line, `coverage ${raw.id} needs a '${key}' array`);
     }
     if (state === "excluded" && !str(raw.reason)) err(ctx, "COVERAGE", line, `coverage ${raw.id} is excluded without a boundary reason`);
@@ -1632,7 +1639,8 @@ function validateReview(
   for (const key of ["schemaVersion", "round", "planDigest", "repository", "sources", "obligations", "flows", "checks", "blockers", "verdict"]) {
     if (!(key in g)) err(ctx, "GATE_RECORD", line, `gate record is missing '${key}'`);
   }
-  if (g.schemaVersion !== SCHEMA_VERSION) err(ctx, "GATE_RECORD", line, `unknown gate record schemaVersion ${String(g.schemaVersion)}`);
+  if (g.schemaVersion === 1) err(ctx, "FORMAT_1", line, FORMAT_1_MESSAGE);
+  else if (g.schemaVersion !== SCHEMA_VERSION) err(ctx, "GATE_RECORD", line, `unknown gate record schemaVersion ${String(g.schemaVersion)}`);
   if (g.round !== latest.number) err(ctx, "GATE_RECORD", line, `gate record round ${String(g.round)} does not match the latest round, Round ${latest.number}`);
   if (String(g.round) !== plan.frontmatter.review_round) {
     err(mainCtx, "GATE_RECORD", plan.frontmatterLine.review_round ?? 1, `review_round ${plan.frontmatter.review_round} does not match the latest round ${String(g.round)}`);
@@ -1886,6 +1894,35 @@ type Receipt = Record<string, unknown> & {
   after: { snapshot: string; manifestSha256: string; stateDigest: string } | null;
 };
 
+function checkPassed(c: Record<string, unknown>): boolean {
+  if (c.passed === false || typeof c.exit !== "number") return false;
+  return typeof c.expectedExit === "number" ? c.exit === c.expectedExit : c.exit === 0;
+}
+
+/**
+ * The labelled parts of a todo's QA scenario, such as `happy` and `failure`
+ * in "happy — greets; failure — empty name". A part whose text is `n/a` is not
+ * run. A scenario with no labels counts as one part, `qa`.
+ */
+export function qaLabels(todo: Todo): string[] {
+  const text = (todo.fields["QA scenario"] ?? "").trim();
+  const labels: string[] = [];
+  let labelled = false;
+  for (const part of text.split(";")) {
+    const m = /^\s*([A-Za-z][A-Za-z -]*?)\s+—\s+(.*)$/.exec(part);
+    if (!m) continue;
+    labelled = true;
+    if (/^n\/a\b/i.test(m[2].trim())) continue;
+    labels.push(m[1].trim().toLowerCase().replace(/\s+/g, "-"));
+  }
+  return labelled ? labels : text === "" ? [] : ["qa"];
+}
+
+/** The check ids a todo's pass receipt must record as passing: `acceptance` and one `qa:<label>` per QA part. */
+export function requiredCheckIds(todo: Todo): string[] {
+  return ["acceptance", ...qaLabels(todo).map((l) => (l === "qa" ? "qa" : `qa:${l}`))];
+}
+
 /**
  * The build file's record: its fenced json blocks merged, so the first block
  * holds the record with `receipts: []` and each later block appends
@@ -1952,8 +1989,12 @@ function validateResume(
   }
   const b = record.value;
   const line = record.no;
+  if (isObject(b) && b.schemaVersion === 1) {
+    err(ctx, "FORMAT_1", line, FORMAT_1_MESSAGE);
+    return out;
+  }
   if (!isObject(b) || b.schemaVersion !== SCHEMA_VERSION) {
-    err(ctx, "BUILD_RECORD", line, "Build record must be an object with schemaVersion 1");
+    err(ctx, "BUILD_RECORD", line, `Build record must be an object with schemaVersion ${SCHEMA_VERSION}`);
     return out;
   }
   const approval = isObject(b.approval) ? b.approval : {};
@@ -2093,17 +2134,25 @@ function validateResume(
     }
     const beforeSnap = load(r.before, `${label} before`);
     const afterSnap = r.after ? load(r.after, `${label} after`) : null;
-    if (r.event !== "start" && !r.after) err(ctx, "RECEIPT_CHAIN", line, `${label} (${r.event}) has no after state`);
-    if (r.event === "start" || (r.event === "recovery" && active !== r.todo)) {
-      // A recovery receipt for a todo that was not started records effects that
-      // began before its start receipt; it makes that todo active.
-      if (active && active !== r.todo) err(ctx, "RECEIPT_ORDER", line, `${label} starts ${r.todo} while ${active} is still active`);
-      for (const dep of todoById.get(r.todo)?.dependsOn ?? []) {
-        if (!passed.has(dep)) err(ctx, "DEPENDENCY_ORDER", line, `${r.todo} started before its dependency ${dep} passed`);
+    if (!r.after) err(ctx, "RECEIPT_CHAIN", line, `${label} (${r.event}) has no after state`);
+    const planTodo = todoById.get(r.todo);
+    if (r.event === "fix") {
+      // A fix child repairs blocking result-review differences after every todo passed.
+      if (!/^F\d+$/.test(r.todo)) err(ctx, "RECEIPT_ORDER", line, `${label}: a fix receipt names a final gate such as F4, not ${r.todo}`);
+      if (active) err(ctx, "RECEIPT_ORDER", line, `${label} records a fix while ${active} is still active`);
+      const open = executionOrder(plan).filter((id) => !passed.has(id));
+      if (open.length > 0) err(ctx, "RECEIPT_ORDER", line, `${label} records a fix before ${open.join(", ")} passed`);
+    } else if (planTodo) {
+      // One record per todo: a pass or block may be a todo's first receipt; a
+      // recovery receipt makes its todo active until that todo passes or blocks.
+      if (active && active !== r.todo) err(ctx, "RECEIPT_ORDER", line, `${label} records ${r.todo} while ${active} is still active`);
+      if (passed.has(r.todo)) err(ctx, "RECEIPT_ORDER", line, `${label} records ${r.event} for ${r.todo}, which already passed`);
+      if (active !== r.todo) {
+        for (const dep of planTodo.dependsOn) {
+          if (!passed.has(dep)) err(ctx, "DEPENDENCY_ORDER", line, `${r.todo} has a ${r.event} receipt before its dependency ${dep} passed`);
+        }
       }
-      active = r.todo;
-    } else if (r.todo !== active && !/^F\d+$/.test(r.todo)) {
-      err(ctx, "RECEIPT_ORDER", line, `${label} records ${r.event} for ${r.todo}, which was not started`);
+      if (r.event === "recovery") active = r.todo;
     }
     for (const p of Array.isArray(r.prerequisites) ? r.prerequisites : []) {
       if (isObject(p)) rechecks.push({ targets: strArray(p.targets), status: str(p.status), seq: r.seq });
@@ -2115,20 +2164,24 @@ function validateResume(
         changedByDone.set(path, r.seq);
       }
     }
-    if (r.event === "pass") {
-      const todo = todoById.get(r.todo);
-      for (const dep of todo?.dependsOn ?? []) {
-        if (!passed.has(dep)) err(ctx, "DEPENDENCY_ORDER", line, `${r.todo} passed before its dependency ${dep}`);
-      }
+    if (r.event === "pass" || r.event === "fix") {
       const checks = Array.isArray(r.checks) ? r.checks : [];
-      if (checks.length === 0) err(ctx, "PASS_WITHOUT_CHECKS", line, `${label}: ${r.todo} passed without recorded checks`);
+      if (checks.length === 0) err(ctx, "PASS_WITHOUT_CHECKS", line, `${label}: ${r.todo} ${r.event} has no recorded checks`);
       for (const c of checks) {
         if (!isObject(c) || !str(c.command) || typeof c.exit !== "number") err(ctx, "PASS_WITHOUT_CHECKS", line, `${label}: each check needs a command and numeric exit`);
-        else if (c.passed === false || (typeof c.expectedExit === "number" ? c.exit !== c.expectedExit : c.exit !== 0)) {
-          err(ctx, "PASS_WITHOUT_CHECKS", line, `${label}: ${r.todo} passed with a failing check '${str(c.id) || str(c.command)}'`);
+        else if (!checkPassed(c)) {
+          err(ctx, "PASS_WITHOUT_CHECKS", line, `${label}: ${r.todo} ${r.event} has a failing check '${str(c.id) || str(c.command)}'`);
         }
       }
-      if (todo?.commit) {
+    }
+    if (r.event === "pass" && planTodo) {
+      const checks = (Array.isArray(r.checks) ? r.checks : []).filter(isObject);
+      for (const id of requiredCheckIds(planTodo)) {
+        if (!checks.some((c) => str(c.id) === id && checkPassed(c))) {
+          err(ctx, "MISSING_CHECK", line, `${label}: ${r.todo} has no passing '${id}' check, so it is not done; run it and record it`);
+        }
+      }
+      if (planTodo.commit) {
         const commit = isObject(r.commit) ? str(r.commit.sha) : "";
         if (!commit) err(ctx, "COMMIT", line, `${label}: ${r.todo} says Commit: yes but its passed receipt has no commit`);
         else if (afterSnap && afterSnap.manifest.headRevision !== commit) err(ctx, "COMMIT", line, `${label}: after-state HEAD is not the recorded commit ${commit.slice(0, 12)}`);
@@ -2203,6 +2256,89 @@ function validateResume(
 export function gitRepositoryIdentity(root: string): { rootCommits: string[] } {
   const p = git(root, ["rev-list", "--max-parents=0", "HEAD"]);
   return { rootCommits: p.code === 0 ? p.out.toString().split(/\s+/).filter(Boolean).sort() : [] };
+}
+
+/* ── briefs for builders and reviewers ─────────────────────────────────────── */
+
+/** The raw text of one `### T<n> —` or `### F<n> —` block, so a child reads its own todo and nothing else. */
+function blockText(plan: ParsedPlan, id: string): { title: string; text: string } | null {
+  for (const parent of ["Todos", "Final verification wave"]) {
+    const s = section(plan, parent);
+    if (!s) continue;
+    const sub = sectionsOf(plan.lines, 3, s.start, s.end).find((x) => x.title.startsWith(`${id} — `) || (id === "UI" && x.title === "Automated UI QA"));
+    if (sub) {
+      const body = plan.lines.slice(sub.start - 1, sub.end).map((l) => l.text);
+      while (body.length > 0 && body[body.length - 1].trim() === "") body.pop();
+      return { title: sub.title, text: body.join("\n") };
+    }
+  }
+  return null;
+}
+
+/**
+ * One todo with what a todo child needs around it: the gaps it closes, the
+ * titles of its dependencies, its strict areas, and the check ids its pass
+ * receipt must record. About one todo's worth of text instead of the whole spec.
+ */
+export function todoBrief(plan: ParsedPlan, id: string): string | null {
+  const block = blockText(plan, id);
+  if (!block) return null;
+  const out = [`# ${plan.frontmatter.title ?? "Plan"}: ${block.title}`, "", `Branch: \`${plan.frontmatter.branch ?? ""}\``, "", block.text];
+  const todo = plan.todos.find((t) => t.id === id);
+  if (todo) {
+    const gaps = todo.closes.map((g) => plan.gaps.find((x) => x.id === g)).filter((g): g is { id: string; line: number } => Boolean(g));
+    if (gaps.length > 0) out.push("", "Gaps it closes:", "", ...gaps.map((g) => plan.lines[g.line - 1].text));
+    const deps = todo.dependsOn.map((d) => plan.todos.find((t) => t.id === d)).filter((t): t is Todo => Boolean(t));
+    if (deps.length > 0) out.push("", `Depends on: ${deps.map((t) => `${t.id} — ${t.title}`).join("; ")}`);
+    out.push("", `Strict areas: ${todo.strict.length > 0 ? todo.strict.join(", ") : "none"}`);
+    out.push(`Checks its pass receipt must record: ${requiredCheckIds(todo).map((c) => `\`${c}\``).join(", ")}`);
+  }
+  const must = [...plan.mustHave, ...plan.mustNotHave].map((r) => plan.lines[r.line - 1].text);
+  if (must.length > 0) out.push("", "Must have and must not have (whole plan):", "", ...must);
+  return `${out.join("\n")}\n`;
+}
+
+/**
+ * A gate record with every required target already in an obligation, every
+ * status `unverified`, and every check, flow, and contract listed. The reviewer
+ * fills in evidence and statuses, splitting an obligation when its targets'
+ * evidence differs, instead of typing the whole record.
+ */
+export function gateSkeleton(plan: ParsedPlan, root: string, planDigest: string): Record<string, unknown> {
+  const index = plan.evidenceIndex;
+  const citations = index && !("error" in index) && isObject(index.value) && Array.isArray(index.value.citations) ? index.value.citations.filter(isObject) : [];
+  const groups: string[][] = [];
+  for (const r of [...plan.mustHave, ...plan.mustNotHave]) if (r.id) groups.push([r.id]);
+  for (const todo of plan.todos) {
+    groups.push([`${todo.id}.start`, `${todo.id}.acceptance`, `${todo.id}.qa`, ...todo.dependsOn.map((d) => `dep:${todo.id}:${d}`)]);
+  }
+  for (const final of plan.finals) groups.push([`${final.id}.acceptance`]);
+  for (const flow of evidenceFlows(plan)) groups.push([`flow:${flow}`]);
+  for (const c of citations) if (c.kind === "external") groups.push([`contract:${str(c.id)}`]);
+  for (const letter of CHECK_LETTERS) groups.push([`check:${letter}`]);
+  const head = git(root, ["rev-parse", "HEAD"]);
+  const status = git(root, ["status", "--porcelain=v1", "-z"]);
+  const dirty =
+    status.code === 0
+      ? status.out
+          .toString("utf8")
+          .split("\0")
+          .filter((e) => e.length > 3 && /^[ MADRCU?!]{2} /.test(e))
+          .map((e) => e.slice(3))
+      : [];
+  return {
+    schemaVersion: SCHEMA_VERSION,
+    round: Number(plan.frontmatter.review_round ?? 0) + 1,
+    planDigest,
+    repository: { revision: head.code === 0 ? head.out.toString().trim() : "", dirty },
+    sources: [],
+    evidence: [],
+    obligations: groups.map((targets, i) => ({ id: `O${i + 1}`, targets, evidenceIds: [], observed: "", status: "unverified" })),
+    flows: evidenceFlows(plan).map((id) => ({ id, status: "unverified", counterexample: "", evidenceIds: [] })),
+    checks: Object.fromEntries(CHECK_LETTERS.map((l) => [l, { status: "unverified", evidenceIds: [], observed: "" }])),
+    blockers: [],
+    verdict: "INCOMPLETE",
+  };
 }
 
 /* ── entry point ───────────────────────────────────────────────────────────── */
@@ -2327,6 +2463,8 @@ function validateEvidenceIndexQuiet(ctx: Context, plan: ParsedPlan): Map<string,
 }
 
 export const USAGE = `Usage: validate-plan <plan> [--review [--resume]] [--root <project>] [--json]
+       validate-plan <plan> --todo <T<n>|F<n>> [--root <project>]
+       validate-plan <plan> --gate-skeleton [--root <project>]
 
 Checks a plan-writer plan (default), its latest plan-review gate record
 (--review), or a plan-builder resume state (--review --resume). <plan> is
@@ -2338,6 +2476,12 @@ docs/plans/<stem>/<stem>.md; the four sibling files are found beside it.
   --resume        With --review: verify the approval against the build
                   baseline and the receipt chain in <stem>.build.md against
                   the current project, and report resumeEligible and nextTodo.
+  --todo <id>     Print one todo or final gate with the gaps it closes, its
+                  dependencies, its strict areas, and the check ids its pass
+                  receipt must record. Does not validate.
+  --gate-skeleton Print a gate record for the next round with every required
+                  target in an obligation and every status unverified, for the
+                  reviewer to fill in. Does not validate.
   --root <dir>    Project root for citations and snapshots. Default: cwd.
   --json          Print one JSON object instead of text findings.
   --help          Show this message.
@@ -2352,6 +2496,8 @@ export function main(argv: string[], write: (text: string) => void = (t) => cons
   let review = false;
   let resume = false;
   let json = false;
+  let todo: string | null = null;
+  let skeleton = false;
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === "--help" || arg === "-h") {
@@ -2361,7 +2507,14 @@ export function main(argv: string[], write: (text: string) => void = (t) => cons
     if (arg === "--review") review = true;
     else if (arg === "--resume") resume = true;
     else if (arg === "--json") json = true;
-    else if (arg === "--root") {
+    else if (arg === "--gate-skeleton") skeleton = true;
+    else if (arg === "--todo") {
+      todo = argv[++i] ?? null;
+      if (!todo || !/^(T\d+|F\d+|UI)$/.test(todo)) {
+        write("error: --todo needs a todo or gate id such as T3 or F2");
+        return 2;
+      }
+    } else if (arg === "--root") {
       root = argv[++i];
       if (!root) {
         write("error: --root needs a directory");
@@ -2383,6 +2536,33 @@ export function main(argv: string[], write: (text: string) => void = (t) => cons
   if (resume && !review) {
     write("error: --resume requires --review");
     return 2;
+  }
+  if (todo !== null || skeleton) {
+    if (todo !== null && skeleton) {
+      write("error: --todo and --gate-skeleton cannot be combined");
+      return 2;
+    }
+    const base = resolve(root ?? process.cwd());
+    const absPlan = resolve(base, plan);
+    const files = planFiles(absPlan);
+    const text = readBytes(absPlan)?.toString("utf8");
+    if (text === undefined) {
+      write(`error: cannot read plan ${plan}`);
+      return 2;
+    }
+    const evidence = readBytes(files.evidenceIndex)?.toString("utf8");
+    const parsed = parsePlan(text, evidence);
+    if (skeleton) {
+      write(JSON.stringify(gateSkeleton(parsed, base, canonicalSpecDigest(text, evidence ?? "")), null, 2));
+      return 0;
+    }
+    const brief = todoBrief(parsed, todo as string);
+    if (brief === null) {
+      write(`error: the plan has no ${todo}`);
+      return 2;
+    }
+    write(brief.trimEnd());
+    return 0;
   }
   let result: ValidationResult;
   try {

@@ -15,4 +15,4 @@ Run the skill's Workflow from step 1 against the request you were given. Where t
 
 Reply with only the handback block the skill's Output format names. Never restate the whole document.
 
-The canonical suggestion for this skill is `anthropic/claude-fable-5-1` at `medium` effort. Change the `model:` and `effort:` lines above to override, or run `sh scripts/agent-install.sh --tool claude-code --agent tech-writer --model <id> --effort <level>`.
+The canonical suggestion for this skill is `anthropic/claude-fable-5-2` at `medium` effort. Change the `model:` and `effort:` lines above to override, or run `sh scripts/agent-install.sh --tool claude-code --agent tech-writer --model <id> --effort <level>`.

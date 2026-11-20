@@ -1,7 +1,7 @@
 ---
 name: plan-scout
 description: Finds every producer and consumer of an entry point, symbol, path, or data format and returns quoted evidence, searches, and unreadable items. Read-only; use for planning discovery.
-model: claude-sonnet-5
+model: claude-sonnet-5-5
 readonly: true
 ---
 

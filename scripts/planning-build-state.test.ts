@@ -100,4 +100,44 @@ describe("capture-build-state", () => {
     expect(changed.code).toBe(0);
     expect(JSON.parse(changed.out).stateDigest).not.toBe(JSON.parse(first.out).stateDigest);
   });
+
+  test("--brief attributes each changed path to the todo whose receipt changed it, and flags the rest", () => {
+    const dir = tempDir();
+    const stem = "2026-11-20-x";
+    const planDir = `docs/plans/${stem}`;
+    const plan = `${planDir}/${stem}.md`;
+    mkdirSync(join(dir, planDir), { recursive: true });
+    writeFileSync(
+      join(dir, plan),
+      "---\ntitle: Brief fixture\n---\n\n# Brief fixture\n\n## Scope\n\n### Must have\n\n- MH1: A greeting.\n\n## Todos\n\n### T1 — Add the greeting\n\n- [x] Done\n- Do: greet.\n- Strict: security\n- Commit: no\n",
+    );
+    writeFileSync(join(dir, `${planDir}/${stem}.evidence-index.md`), "```json\n{}\n```\n");
+    writeFileSync(join(dir, "app.py"), "print('hi')\n");
+    const baseline = join(tempDir(), "baseline");
+    const first = JSON.parse(run([plan, "--root", dir, "--output", baseline], dir).out);
+    writeFileSync(join(dir, "app.py"), "print('hello')\n");
+    const after = join(tempDir(), "after");
+    const second = JSON.parse(run([plan, "--root", dir, "--output", after, "--carry", baseline], dir).out);
+    const ref = (snapshot: string, s: { manifestSha256: string; stateDigest: string }) => ({ snapshot, manifestSha256: s.manifestSha256, stateDigest: s.stateDigest });
+    const receipt = {
+      seq: 1, todo: "T1", event: "pass", state: "passed", prev: null,
+      before: ref(baseline, first), after: ref(after, second),
+      checks: [{ id: "acceptance", command: "python app.py", exit: 0, expectedExit: 0, passed: true, observed: "hello" }],
+      prerequisites: [], commit: { none: "Commit: no" }, note: "",
+    };
+    writeFileSync(join(dir, `${planDir}/${stem}.build.md`), `# Build: x\n\n\`\`\`json\n${JSON.stringify({ schemaVersion: 2, baseline: ref(baseline, first), receipts: [receipt] })}\n\`\`\`\n`);
+    writeFileSync(join(dir, "stray.py"), "print('stray')\n");
+    const p = Bun.spawnSync(["bun", INVENTORY, plan, "--root", dir, "--baseline", baseline, "--brief", "--json"], { stdout: "pipe", stderr: "pipe" });
+    expect(p.exitCode).toBe(0);
+    const brief = JSON.parse(p.stdout.toString());
+    expect(brief.requirements).toEqual(["- MH1: A greeting."]);
+    expect(brief.todos).toEqual([
+      { id: "T1", title: "Add the greeting", box: "Done", strict: ["security"], events: ["pass"], checks: [{ id: "acceptance", exit: 0, passed: true }], commit: null },
+    ]);
+    const byPath = Object.fromEntries(brief.changes.map((c: { path: string; todos: string[] }) => [c.path, c.todos]));
+    expect(byPath).toEqual({ "app.py": ["T1"], "stray.py": [] });
+    const text = Bun.spawnSync(["bun", INVENTORY, plan, "--root", dir, "--baseline", baseline, "--brief"], { stdout: "pipe" }).stdout.toString();
+    expect(text).toMatch(/^- stray\.py \([a-z+]+\): unattributed$/m);
+    expect(text).not.toContain("+1:");
+  });
 });

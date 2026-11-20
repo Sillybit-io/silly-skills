@@ -23,7 +23,7 @@ const EXPECTED_MODE: Record<Persona, string> = {
   "plan-reviewer": "all",
   "plan-scout": "subagent",
   "plan-builder": "all",
-  "plan-loop": "all",
+  "plan-loop": "primary",
   "plan-result-reviewer": "subagent",
 };
 
@@ -31,7 +31,7 @@ const EXPECTED_DELEGATES: Record<Persona, Persona[]> = {
   "plan-writer": ["plan-scout"],
   "plan-reviewer": ["plan-scout"],
   "plan-scout": [],
-  "plan-builder": ["plan-result-reviewer"],
+  "plan-builder": ["plan-builder", "plan-result-reviewer"],
   "plan-loop": ["plan-writer", "plan-reviewer"],
   "plan-result-reviewer": ["plan-scout"],
 };

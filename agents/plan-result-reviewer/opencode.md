@@ -60,6 +60,9 @@ permissions:
   - action: shell
     resource: "bun */inventory-changes.ts *"
     effect: allow
+  - action: shell
+    resource: "bun */validate-plan.ts *"
+    effect: allow
   - action: subagent
     resource: "*"
     effect: deny

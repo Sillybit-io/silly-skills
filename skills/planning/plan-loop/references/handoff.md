@@ -9,7 +9,7 @@ interrupted loop picks back up without repeating a fresh child's work.
 A handback is a structured refusal to fake progress. It has six fields:
 
 - `kind` — what stopped the loop: `"question"` (an owner decision only a
-  human can make), `"consent"` (the five-round boundary), `"unavailable"` (a
+  human can make), `"consent"` (the two-round boundary), `"unavailable"` (a
   tool, dependency, or piece of evidence this session cannot reach),
   `"depth"` (this session cannot launch the next child itself), or
   `"blocked"` (an identical checkpoint with no new evidence, per Workflow
@@ -24,7 +24,7 @@ A handback is a structured refusal to fake progress. It has six fields:
 - `nextAction` — the smallest concrete step that unblocks this: launch a
   fresh writer with the fix-only step for round `<n>`, launch a fresh
   reviewer for round `<n+1>`, ask the owner the named question, or renew
-  consent for up to five more rounds.
+  consent for up to two more rounds.
 
 A handback is not a failure report about the plan; it is an honest statement
 that this session's own authority or reach ends here. Whatever invoked this
@@ -50,7 +50,7 @@ and `review_round`, and the history table and rounds under `## Review` in
 `<stem>.reviews.md`, newest first, already record where a plan stands. A loop resumed after a handback, a host restart, or a fresh session
 re-reads those files and continues from exactly that recorded state — it does
 not need to know how many rounds ran before, only what the file currently
-says. Re-derive the round count and the five-round consent boundary from the
+says. Re-derive the round count and the two-round consent boundary from the
 plan's own history table on every resume; do not trust a count remembered
 from an earlier session that might be stale.
 

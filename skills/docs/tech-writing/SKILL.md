@@ -3,9 +3,9 @@ name: tech-writing
 description: Writes a new technical document from repository facts. Covers a README, a how-to, a reference page, an explanation, or a decision record. Names the reader and their next action first, picks the type, outlines before prose, writes in simple English, strips filler, and verifies every command and link before handing it back. Use when you write a README for this, write an ADR for this decision, document this decision, write a how-to, or draft a design note. Creates new documents only.
 license: CC-BY-ND-4.0
 metadata:
-  version: "0.1.0"
+  version: "0.1.1"
   category: docs
-  suggested-model: anthropic/claude-fable-5-1
+  suggested-model: anthropic/claude-fable-5-2
   suggested-effort: medium
 ---
 
