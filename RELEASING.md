@@ -38,11 +38,12 @@ Every change to a skill needs a version bump and a changelog line in the same co
 
 4. Replace `<describe the change>` with a real description. Write what changed for someone who uses the skill, not which lines you edited.
 
-5. Check your work:
+5. Check your work. Run `bun install` first, so the lint finds markdownlint-cli2:
 
    ```bash
    bun run validate
    bun test
+   bun run lint
    ```
 
 6. Commit the skill and the changelog together.
@@ -98,6 +99,7 @@ Do this when the work on the default branch is ready to publish as a version. Ch
    ```bash
    bun run validate
    bun test
+   bun run lint
    ```
 
 4. Commit the release:

@@ -5,7 +5,11 @@
     "validate": "bun scripts/validate.ts",
     "validate-plan": "bun scripts/validate-plan.ts",
     "test": "bun test",
+    "lint": "bun --bun markdownlint-cli2",
     "bump-skill": "bun scripts/bump-skill-version.ts",
     "prepare-release": "bun scripts/prepare-release.ts"
+  },
+  "devDependencies": {
+    "markdownlint-cli2": "0.24.2"
   }
 }

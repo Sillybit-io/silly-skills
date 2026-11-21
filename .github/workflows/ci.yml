@@ -12,11 +12,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
       - run: bun run validate
       - run: bun test
-      - uses: DavidAnson/markdownlint-cli2-action@v20
-        with:
-          globs: "**/*.md"
+      - run: bun run lint
       # www.npmjs.com answers automated clients with 403 Forbidden — the runner
       # and a plain local curl both get it — so the package link in README.md can
       # never be verified from here. Excluded by host rather than by accepting
@@ -29,4 +28,5 @@ jobs:
             --exclude '^https://linear\.app'
             --exclude '^https://www\.npmjs\.com'
             --exclude '^mailto:'
+            --exclude-path node_modules
             '**/*.md'

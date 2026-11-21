@@ -1,0 +1,5 @@
+{
+  "gitignore": true,
+  "globs": ["**/*.md"],
+  "ignores": [".git/**"]
+}
