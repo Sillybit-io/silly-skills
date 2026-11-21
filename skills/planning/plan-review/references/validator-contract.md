@@ -52,6 +52,7 @@ A directory name that differs from the stem, a missing or different links line, 
 - `gateEligible` is true only in review mode, for a complete, consistent OKAY on the current plan and current source bytes.
 - `resumeEligible` is true only in resume mode, after the baseline, the unchanged spec, the live approval, the receipt chain, and the current state all check out. Resume mode always reports `gateEligible: false`.
 - A plan with slices adds `slices` in every mode: one `{id, name, branch, todos}` per slice, in order, with `branch` null when the slice names none. Resume mode then adds `nextSlice`, the slice of `nextTodo`, or null for T0 and a final gate, and `sliceStart`, true when no todo is active and `nextTodo` is the first todo of `nextSlice`. A plan without slices gets none of the three keys.
+- A plan whose spec git ignores adds `planIgnored: true` in every mode, before the slice keys. The spec is ignored when the project root is a git repository and `git check-ignore -q -- <spec>` exits 0 there. Git never reports a tracked file as ignored. Any other plan gets no such key. `--todo` then prints `Plan directory: ignored by git. Leave it out of every commit.` under the branch line.
 - A well-formed REJECT or INCOMPLETE round exits 0 and is not eligible. A blocked build receipt exits 0 and is not eligible.
 
 The validator never edits files, calls a model, fetches a URL, or runs a command from a plan. It checks shape, identity, arithmetic, and agreement. It cannot prove that a reviewer read the code or that a flow works.
@@ -217,7 +218,7 @@ Each `paths` entry has a `path` and three layers: `head`, `index`, and `worktree
 
 `stateDigest` is the SHA-256 of the canonical JSON `{"headRevision": ..., "paths": [...]}`. Declared report paths are left out. The plan's working-tree layer is replaced by `{"state": "plan", "specDigest": ...}`, so appending a receipt is not drift. Paths sort by UTF-8 bytes.
 
-`<stem>.reviews.md` and `<stem>.build.md` change during a build by design, so every capture declares them in `administrative.reports`; `capture-build-state.ts` does this itself. A baseline that does not declare both is a `BUILD_RECORD` error. Report bytes remain in snapshot inventories. Any other file in the plan directory that changes is drift.
+`<stem>.reviews.md` and `<stem>.build.md` change during a build by design, so every capture declares them in `administrative.reports`; `capture-build-state.ts` does this itself. A baseline that does not declare both is a `BUILD_RECORD` error. Report bytes remain in snapshot inventories. Any other file in the plan directory that changes is drift. When git ignores the plan directory, its files are in no snapshot, so the spec digest alone guards the spec and the evidence index.
 
 A receipt:
 
@@ -256,7 +257,7 @@ One record per todo. `event` is one of:
 - The baseline and every receipt snapshot exist, match their recorded manifest digests, and verify: every object's length and digest, and the recomputed `stateDigest`. The baseline's repository matches the build record and the current project, and the baseline declares the reviews and build files as reports.
 - The gate record's sources and the evidence index citations match the baseline bytes, not the current files.
 - The receipts chain: sequential `seq`, correct `prev`, and each `before` equals the previous end state. One todo is active at a time. A todo's first receipt comes only after its dependencies passed, and a todo has no receipt after its pass.
-- A `pass` receipt records checks that all passed. For `Commit: yes`, it names the commit, and its after-state HEAD equals that commit.
+- A `pass` receipt records checks that all passed. For `Commit: yes`, it names the commit, and its after-state HEAD equals that commit. With `planIgnored`, T0's pass receipt may name no commit; a commit it names is still checked. Every other todo keeps the rule.
 - Every `- [x] Done` box has a passed receipt. A passed receipt with an Open box is listed in `reconcileBoxes`; set the box without repeating the work.
 - The current project state equals the last receipt's end state. Otherwise the result lists `drift`, sets `recoveryRequired: true`, and names the `unresolvedAction`.
 - No recorded prerequisite recheck for a pending todo says `fails`. Pending todos whose referenced paths changed get `requiredRechecks`. Record those rechecks in that todo's pass receipt, or in a recovery receipt when one fails before any work.

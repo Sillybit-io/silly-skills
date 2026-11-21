@@ -206,6 +206,8 @@ export type ValidationResult = {
   requiredRechecks: { todo: string; paths: string[] }[];
   reconcileBoxes: string[];
   drift: string[];
+  /** Only when git ignores the plan's spec, in every mode. */
+  planIgnored?: true;
   /** Only for a plan with slices, in every mode. */
   slices?: { id: string; name: string; branch: string | null; todos: string[] }[];
   /** Only for a plan with slices, in resume mode: the slice of nextTodo, or null. */
@@ -849,6 +851,21 @@ export function isGitRoot(root: string): boolean {
     return false;
   }
 }
+
+/**
+ * True when git ignores the plan's spec: the project root is a git repository
+ * and `git check-ignore -q -- <spec>` exits 0 there. Git never reports a
+ * tracked file as ignored, so a tracked spec is not ignored, whatever the
+ * ignore rules say. Outside git, and on any other exit code, it is false.
+ * Read-only.
+ */
+export function planIgnored(root: string, planRel: string): boolean {
+  if (!isGitRoot(root)) return false;
+  return git(root, ["check-ignore", "-q", "--", planRel]).code === 0;
+}
+
+/** The line `--todo` prints under the branch when git ignores the plan directory. */
+const PLAN_IGNORED_LINE = "Plan directory: ignored by git. Leave it out of every commit.";
 
 function splitNul(buf: Buffer): Buffer[] {
   const out: Buffer[] = [];
@@ -2257,6 +2274,7 @@ function validateResume(
   buildText: string | null,
   currentDigest: string,
   inGit: boolean,
+  ignored: boolean,
 ): ResumeOutcome {
   const ctx = inFile(mainCtx, mainCtx.files.build);
   const planRel = mainCtx.files.plan;
@@ -2479,8 +2497,10 @@ function validateResume(
       }
       if (planTodo.commit) {
         const commit = isObject(r.commit) ? str(r.commit.sha) : "";
-        if (!commit) err(ctx, "COMMIT", line, `${label}: ${r.todo} says Commit: yes but its passed receipt has no commit`);
-        else if (afterSnap && afterSnap.manifest.headRevision !== commit) err(ctx, "COMMIT", line, `${label}: after-state HEAD is not the recorded commit ${commit.slice(0, 12)}`);
+        if (!commit) {
+          // Where git ignores the plan directory, T0 has nothing to commit; every other todo keeps the rule.
+          if (!(ignored && r.todo === "T0")) err(ctx, "COMMIT", line, `${label}: ${r.todo} says Commit: yes but its passed receipt has no commit`);
+        } else if (afterSnap && afterSnap.manifest.headRevision !== commit) err(ctx, "COMMIT", line, `${label}: after-state HEAD is not the recorded commit ${commit.slice(0, 12)}`);
       }
       passed.set(r.todo, r);
       if (active === r.todo) active = null;
@@ -2575,15 +2595,17 @@ function blockText(plan: ParsedPlan, id: string): { title: string; text: string 
  * One todo with what a todo child needs around it: its slice, the gaps it
  * closes, the Behavior lines it serves, the titles of its dependencies, its
  * strict areas, and the check ids its pass receipt must record. About one
- * todo's worth of text instead of the whole spec.
+ * todo's worth of text instead of the whole spec. With `planIgnored`, a line
+ * under the branch says that git ignores the plan directory.
  */
-export function todoBrief(plan: ParsedPlan, id: string): string | null {
+export function todoBrief(plan: ParsedPlan, id: string, options: { planIgnored?: boolean } = {}): string | null {
   const block = blockText(plan, id);
   if (!block) return null;
   const todo = plan.todos.find((t) => t.id === id);
   // A todo in a slice builds on the slice's branch when the slice names one.
   const slice = todo ? sliceOf(plan, todo.id) : undefined;
   const out = [`# ${plan.frontmatter.title ?? "Plan"}: ${block.title}`, "", `Branch: \`${slice?.branch ?? plan.frontmatter.branch ?? ""}\``];
+  if (options.planIgnored) out.push(PLAN_IGNORED_LINE);
   if (slice) out.push(`Slice: ${slice.id} — ${slice.name}`);
   out.push("", block.text);
   if (todo) {
@@ -2703,6 +2725,9 @@ export function validatePlan(planPath: string, options: Options = {}): Validatio
   const plan = parsePlan(text, evidenceText ?? undefined);
   const digest = canonicalSpecDigest(text, evidenceText ?? "");
   result.planDigest = digest;
+  // Only a plan that git ignores gets the key, so the output of any other plan stays as it was.
+  const ignored = planIgnored(root, planRel);
+  if (ignored) result.planIgnored = true;
   // Only a plan with slices gets the slice keys, so the output of any other plan stays as it was.
   if (plan.slices.length > 0) result.slices = plan.slices.map(({ id, name, branch, todos }) => ({ id, name, branch, todos }));
   validateStructure(ctx, plan);
@@ -2741,7 +2766,7 @@ export function validatePlan(planPath: string, options: Options = {}): Validatio
   }
   if (mode === "resume" && bundle) {
     const inGit = isGitRoot(root);
-    const resume = validateResume(ctx, plan, bundle, buildText, digest, inGit);
+    const resume = validateResume(ctx, plan, bundle, buildText, digest, inGit, ignored);
     result.resumeEligible = resume.eligible && result.errors.length === 0;
     result.nextTodo = resume.nextTodo;
     result.activeTodo = resume.activeTodo;
@@ -2874,7 +2899,8 @@ export function main(argv: string[], write: (text: string) => void = (t) => cons
       write(JSON.stringify(gateSkeleton(parsed, base, canonicalSpecDigest(text, evidence ?? "")), null, 2));
       return 0;
     }
-    const brief = todoBrief(parsed, todo as string);
+    const planRel = absPlan.startsWith(base + sep) ? absPlan.slice(base.length + 1).split(sep).join("/") : plan;
+    const brief = todoBrief(parsed, todo as string, { planIgnored: planIgnored(base, planRel) });
     if (brief === null) {
       write(`error: the plan has no ${todo}`);
       return 2;

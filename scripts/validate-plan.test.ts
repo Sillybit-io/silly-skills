@@ -29,6 +29,7 @@ import {
   FORMAT_1_MESSAGE,
   filePathWords,
   parsePlan,
+  planIgnored,
   qaLabels,
   requiredCheckIds,
   requiredTargets,
@@ -632,6 +633,8 @@ type ScenarioOptions = {
   obligations?: Obligation[];
   /** The checks on T1's pass receipt; PASSING by default. */
   t1Checks?: unknown[];
+  /** Runs after the plan and its review are written and before the baseline, such as to add an ignore rule. */
+  beforeBaseline?: (root: string) => void;
 };
 
 function buildScenario(options: ScenarioOptions = {}) {
@@ -643,6 +646,7 @@ function buildScenario(options: ScenarioOptions = {}) {
   const text = reviewedPlan(root, { mutatePlan, obligations: options.obligations });
   const spec = specOf(root, text);
   const gateDigest = sha(canon(JSON.parse(read(root, GATE))));
+  options.beforeBaseline?.(root);
   const baseline = saveSnapshot(root, snapshot(root, "silly-skills/plan-builds/run/baseline", { reports: options.reports }), spec);
   const carry = JSON.parse(readFileSync(join(root, ".git", baseline.snapshot, "manifest.json"), "utf8")).paths.map((p: { path: string }) => p.path);
   const inputs: ReceiptInput[] = [{ todo: "T0", event: "pass", after: "same", checks: [check("acceptance"), check("qa:happy")] }];
@@ -1971,6 +1975,125 @@ describe("resume mode", () => {
     expect(result.exitCode).toBe(0);
     expect(result.resumeEligible).toBe(false);
     expect(result.unresolvedAction).toContain("needs a credential");
+  });
+});
+
+describe("ignored plan directory", () => {
+  const LINE = "Plan directory: ignored by git. Leave it out of every commit.";
+  /** T0 with `Commit: yes`, as a 2.1.0 writer leaves it. */
+  const T0_COMMIT = (t: string): string =>
+    t.replace("- QA scenario: happy — the file exists; failure — n/a.\n- Strict: no.\n- Commit: no.", "- QA scenario: happy — the file exists; failure — n/a.\n- Strict: no.\n- Commit: yes — `docs(plans): add fixture plan`.");
+  /** One slice that holds both waves. */
+  const ONE_SLICE = (t: string): string => t.replace("- Wave 1: T1\n", "- Slice S1 — greeting. Independent test: `bun test` greets a configured name.\n- Wave 1: T1\n");
+  /** An ignore rule for the plan directory, committed. */
+  const ignorePlans = (root: string): void => {
+    write(root, ".gitignore", "/docs/plans/\n");
+    git(root, "add", ".gitignore");
+    git(root, "commit", "-q", "-m", "ignore plans");
+  };
+  /** The plan directory, committed, as T0 does where git tracks plans. */
+  const trackPlans = (root: string): void => {
+    git(root, "add", "--", DIR);
+    git(root, "commit", "-q", "-m", "docs(plans): add fixture plan");
+  };
+  const T0_PASS: ReceiptInput = { todo: "T0", event: "pass", after: "same", checks: [check("acceptance"), check("qa:happy")], commit: { none: "git ignores the plan directory" } };
+  /** buildScenario on a plan whose T0 says Commit: yes, with a T0 pass receipt that names no commit. */
+  const scenario = (beforeBaseline: (root: string) => void, options: ScenarioOptions = {}) => {
+    const s = buildScenario({ ...options, mutatePlan: T0_COMMIT, beforeBaseline });
+    s.record.receipts = receipts(s.baseline, [T0_PASS, ...s.inputs.slice(1)]);
+    writeBuild(s.root, s.record);
+    return s;
+  };
+  const resume = (root: string) => run(root, ["--review", "--resume"]);
+  const commitErrors = (result: { errors: { code: string; message: string }[] }): string[] => result.errors.filter((e) => e.code === "COMMIT").map((e) => e.message);
+  const noCommit = (seq: number, id: string) => `receipt ${seq}: ${id} says Commit: yes but its passed receipt has no commit`;
+  const cli = (root: string, ...args: string[]) => spawnSync("bun", [rootCli, PLAN, ...args, "--root", root], { encoding: "utf8" });
+
+  test("the check is true only in a git repository whose ignore rules match an untracked spec", () => {
+    const root = makeProject();
+    writePlan(root, planText(root));
+    expect(planIgnored(root, PLAN)).toBe(false);
+    mkdirSync(join(root, ".git/info"), { recursive: true });
+    write(root, ".git/info/exclude", "/docs/plans/\n");
+    expect(planIgnored(root, PLAN)).toBe(true);
+    write(root, ".git/info/exclude", "");
+    expect(planIgnored(root, PLAN)).toBe(false);
+    ignorePlans(root);
+    expect(planIgnored(root, PLAN)).toBe(true);
+    git(root, "add", "-f", "--", PLAN);
+    git(root, "commit", "-q", "-m", "track the spec");
+    expect(planIgnored(root, PLAN)).toBe(false);
+    const outside = tempDir();
+    mkdirSync(join(outside, DIR), { recursive: true });
+    write(outside, ".gitignore", "/docs/plans/\n");
+    write(outside, PLAN, "# Fixture plan\n");
+    expect(planIgnored(outside, PLAN)).toBe(false);
+  });
+
+  test("the JSON has planIgnored: true in plan, review, and resume mode there, before the slice keys, and the existing fixtures have no such key", () => {
+    const { root } = scenario(ignorePlans, { stopAfter: "T0" });
+    for (const flags of [[], ["--review"], ["--review", "--resume"]]) expect(run(root, flags).planIgnored).toBe(true);
+    expect(JSON.parse(cli(root, "--review", "--resume", "--json").stdout).planIgnored).toBe(true);
+    const sliced = makeProject();
+    ignorePlans(sliced);
+    writePlan(sliced, planText(sliced, { mutate: ONE_SLICE }));
+    const keys = Object.keys(run(sliced));
+    expect(keys.slice(keys.indexOf("exitCode"))).toEqual(["exitCode", "planIgnored", "slices"]);
+    const plain = buildScenario();
+    for (const flags of [[], ["--review"], ["--review", "--resume"]]) expect("planIgnored" in run(plain.root, flags)).toBe(false);
+    expect(cli(plain.root, "--review", "--resume", "--json").stdout).not.toContain("planIgnored");
+  });
+
+  test("a Commit: yes T0 whose pass receipt names no commit resumes there, and is a COMMIT error where git tracks the plan", () => {
+    const ignored = resume(scenario(ignorePlans, { stopAfter: "T0" }).root);
+    expect(ignored.errors).toEqual([]);
+    expect(ignored.resumeEligible).toBe(true);
+    expect(ignored.nextTodo).toBe("T1");
+    const tracked = resume(scenario(trackPlans, { stopAfter: "T0" }).root);
+    expect(codes(tracked)).toEqual(["COMMIT"]);
+    expect(commitErrors(tracked)).toEqual([noCommit(1, "T0")]);
+    expect(tracked.resumeEligible).toBe(false);
+    expect("planIgnored" in tracked).toBe(false);
+    // A T0 receipt that names a commit is still checked against its after-state HEAD.
+    const named = scenario(ignorePlans, { stopAfter: "T0" });
+    named.record.receipts = receipts(named.baseline, [{ ...T0_PASS, commit: { sha: "f".repeat(40) } }]);
+    writeBuild(named.root, named.record);
+    expect(commitErrors(resume(named.root))).toEqual([`receipt 1: after-state HEAD is not the recorded commit ${"f".repeat(12)}`]);
+  });
+
+  test("another Commit: yes todo without a commit is a COMMIT error in both", () => {
+    const ignored = resume(scenario(ignorePlans, { t1Commit: true, omitCommit: true }).root);
+    expect(commitErrors(ignored)).toEqual([noCommit(2, "T1")]);
+    expect(ignored.resumeEligible).toBe(false);
+    const tracked = resume(scenario(trackPlans, { t1Commit: true, omitCommit: true }).root);
+    expect(commitErrors(tracked)).toEqual([noCommit(1, "T0"), noCommit(2, "T1")]);
+    expect(tracked.resumeEligible).toBe(false);
+  });
+
+  test("--todo prints the plan-directory line directly under the branch only there", () => {
+    const root = makeProject();
+    writePlan(root, planText(root));
+    expect(cli(root, "--todo", "T1").stdout).not.toContain("Plan directory");
+    ignorePlans(root);
+    const ignored = cli(root, "--todo", "T1");
+    expect(ignored.status).toBe(0);
+    expect(ignored.stdout).toContain(`Branch: \`feat/fixture\`\n${LINE}\n\n### T1 — Add the greeting`);
+    expect(ignored.stdout.split(LINE).length).toBe(2);
+    writePlan(root, planText(root, { mutate: ONE_SLICE }));
+    expect(cli(root, "--todo", "T1").stdout).toContain(`Branch: \`feat/fixture\`\n${LINE}\nSlice: S1 — greeting\n\n### T1`);
+    git(root, "add", "-f", "--", DIR);
+    expect(cli(root, "--todo", "T1").stdout).not.toContain("Plan directory");
+  });
+
+  test("in that build, a later todo commits its own file, the build resumes, and no commit holds a plan file", () => {
+    const { root } = scenario(ignorePlans, { t1Commit: true });
+    const result = resume(root);
+    expect(result.errors).toEqual([]);
+    expect(result.resumeEligible).toBe(true);
+    expect(result.nextTodo).toBe("T2");
+    const paths = git(root, "log", "--name-only", "--format=").toString().split("\n").filter(Boolean);
+    expect(paths).toContain("src/app.ts");
+    expect(paths.filter((p) => p.startsWith("docs/plans/"))).toEqual([]);
   });
 });
 
