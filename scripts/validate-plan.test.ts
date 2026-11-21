@@ -15,6 +15,7 @@ import {
   lstatSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   readlinkSync,
   rmSync,
@@ -33,6 +34,9 @@ import {
   qaLabels,
   requiredCheckIds,
   requiredTargets,
+  SCOPE_SUBSECTIONS,
+  SECTIONS,
+  TODO_FIELDS,
   type Todo,
   validatePlan,
 } from "./validate-plan.ts";
@@ -2264,7 +2268,7 @@ describe("CLI", () => {
   test("--help exits 0 and lists every flag", () => {
     const result = cli(rootCli, ["--help"]);
     expect(result.code).toBe(0);
-    for (const flag of ["--review", "--resume", "--root", "--json", "--help"]) expect(result.out).toContain(flag);
+    for (const flag of ["--review", "--resume", "--root", "--json", "--help", "--init", "--grammar"]) expect(result.out).toContain(flag);
   });
 
   test("bun run validate-plan --help works from the repository", () => {
@@ -2302,5 +2306,221 @@ describe("CLI", () => {
     expect(readFileSync(detached, "utf8")).not.toContain("../../../../scripts");
     expect(dirname(detached)).not.toContain(repo);
     expect(existsSync(detached)).toBe(true);
+  });
+});
+
+describe("skeleton and grammar commands", () => {
+  const ARGS = ["--title", "Demo plan", "--slug", "demo", "--request", "Add a demo.", "--intent", "change", "--tier", "standard", "--branch", "feat/demo", "--date", "2026-09-29"];
+  const DEMO = "2026-09-29-demo";
+  const specRel = (stem: string) => `docs/plans/${stem}/${stem}.md`;
+  const evidenceRel = (stem: string) => `docs/plans/${stem}/${stem}.evidence-index.md`;
+  const cli = (...args: string[]) => spawnSync("bun", [rootCli, ...args], { encoding: "utf8" });
+  const init = (root: string, ...args: string[]) => cli("--init", ...args, "--root", root);
+  /** ARGS with the value after `flag` replaced, or without `flag` and its value. */
+  const withValue = (flag: string, value: string) => ARGS.map((a, i) => (ARGS[i - 1] === flag ? value : a));
+  const without = (flag: string) => ARGS.filter((_, i) => ARGS[i] !== flag && ARGS[i - 1] !== flag);
+  /** Every entry under a directory, the Git directory left out, with the bytes of each file and the target of each link. */
+  const tree = (root: string, rel = ""): string[] =>
+    readdirSync(join(root, rel), { withFileTypes: true })
+      .filter((e) => !(rel === "" && e.name === ".git"))
+      .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+      .flatMap((e) => {
+        const path = rel === "" ? e.name : `${rel}/${e.name}`;
+        if (e.isSymbolicLink()) return [`${path} -> ${readlinkSync(join(root, path))}`];
+        if (e.isDirectory()) return [`${path}/`, ...tree(root, path)];
+        return [`${path} ${sha(readFileSync(join(root, path)))}`];
+      });
+  const baselineOf = (evidence: string) => JSON.parse(evidence.split("```json\n")[1].split("\n```")[0]).baseline;
+  const localToday = () => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  };
+  const SKELETON_ERRORS = ["FLOW", "QUESTIONS", "QUESTIONS"];
+
+  test("--init with the six required values creates the directory and the two files, prints the spec path, and exits 0", () => {
+    const root = tempDir();
+    const days = [localToday()];
+    const p = init(root, "--title", "Demo\n  plan", "--slug", "demo", "--request", 'Add a "demo"\n\tthing.', "--intent", "change", "--tier", "standard", "--branch", "feat/demo");
+    days.push(localToday());
+    expect(p.status).toBe(0);
+    const stem = days.map((day) => `${day}-demo`).find((s) => p.stdout === `${specRel(s)}\n`) as string;
+    expect(stem).toBeDefined();
+    expect(tree(root)).toEqual(["docs/", "docs/plans/", `docs/plans/${stem}/`, expect.stringMatching(new RegExp(`^docs/plans/${stem}/${stem}\\.evidence-index\\.md `)), expect.stringMatching(new RegExp(`^docs/plans/${stem}/${stem}\\.md `))]);
+    const head = read(root, specRel(stem)).split("\n").slice(0, 13);
+    expect(head).toEqual(["---", "title: Demo plan", `request: "Add a 'demo' thing."`, "source: chat", `date: ${stem.slice(0, 10)}`, "status: draft", "tier: standard", "intent: change", "branch: feat/demo", "ui: no", "review: optional", "review_round: 0", "---"]);
+    const other = tempDir();
+    expect(init(other, ...withValue("--tier", "architecture"), "--source", "ticket:ABC-1", "--ui", "yes").status).toBe(0);
+    const front = parsePlan(read(other, specRel(DEMO))).frontmatter;
+    expect([front.date, front.source, front.ui, front.tier, front.review]).toEqual(["2026-09-29", "ticket:ABC-1", "yes", "architecture", "required"]);
+  });
+
+  test("the validator's errors on that skeleton are two QUESTIONS errors and one FLOW error", () => {
+    const root = makeProject();
+    expect(init(root, ...ARGS).status).toBe(0);
+    const result = validatePlan(specRel(DEMO), { root });
+    expect(codes(result).sort()).toEqual(SKELETON_ERRORS);
+    expect(result.errors.filter((e) => e.code === "QUESTIONS").map((e) => e.message)).toEqual(["'### Product' is empty", "'### Technical' is empty"]);
+    expect(result.errors.find((e) => e.code === "FLOW")?.file).toBe(evidenceRel(DEMO));
+    expect(result.gaps).toEqual([]);
+  });
+
+  test("set to planned, the skeleton reports PLACEHOLDER and TODO errors: the template cannot pass", () => {
+    const root = makeProject();
+    expect(init(root, ...ARGS).status).toBe(0);
+    write(root, specRel(DEMO), read(root, specRel(DEMO)).replace("\nstatus: draft\n", "\nstatus: planned\n"));
+    const result = validatePlan(specRel(DEMO), { root });
+    expect(codes(result)).toContain("PLACEHOLDER");
+    const todo = result.errors.filter((e) => e.code === "TODO").map((e) => e.message);
+    for (const field of TODO_FIELDS) expect(todo).toContain(`T1 is missing '- ${field}:'`);
+    expect(todo.filter((m) => m.startsWith("T0 "))).toEqual([]);
+  });
+
+  test("the spec holds the validator's sections and Scope subsections in order, the gates, the template, and a T0 with the stem and the slug", () => {
+    const root = tempDir();
+    expect(init(root, ...ARGS).status).toBe(0);
+    const text = read(root, specRel(DEMO));
+    const parsed = parsePlan(text);
+    expect(parsed.sections.map((s) => s.title)).toEqual([SECTIONS[0], "Behavior", ...SECTIONS.slice(1)]);
+    const scope = text.slice(text.indexOf("\n## Scope\n"), text.indexOf("\n## Research\n")).split("\n");
+    expect(scope.filter((l) => l.startsWith("### ")).map((l) => l.slice(4))).toEqual([...SCOPE_SUBSECTIONS]);
+    expect(text).toContain("## Questions\n\n### Product\n\n<!-- todo: product -->\n\n### Technical\n\n<!-- todo: technical -->\n");
+    expect(parsed.finals.map((f) => [f.id, f.box])).toEqual([["F1", "Open"], ["F2", "Open"], ["F3", "Open"], ["F4", "Open"]]);
+    expect(parsed.todos.map((t) => [t.id, t.title, t.box])).toEqual([["T0", "Copy the plan into the project", "Open"], ["T1", "Title", "Open"]]);
+    const t0 = parsed.todos[0];
+    expect(Object.keys(t0.fields)).toEqual([...TODO_FIELDS]);
+    expect(t0.fields.Acceptance).toBe(`\`test -f ${specRel(DEMO)}\` exits 0`);
+    expect(t0.fields.Commit).toBe("yes — `docs(plans): add demo plan`");
+    const template = text.slice(text.indexOf("### T1 — Title\n"), text.indexOf("\n## Final verification wave\n")).trim().split("\n").slice(2);
+    expect(template).toEqual(["- [ ] Open", ...TODO_FIELDS.flatMap((f) => (f === "Closes gap" ? [f, "Serves"] : [f])).map((f) => `- ${f}:`)]);
+    expect(text.endsWith("| Gap | Closed by | Proof |\n| --- | --- | --- |\n\n<!-- todo: success criteria -->\n")).toBe(true);
+  });
+
+  test("a second call with the same slug creates a directory that ends in -2 and leaves the first byte-identical", () => {
+    const root = tempDir();
+    expect(init(root, ...ARGS).stdout).toBe(`${specRel(DEMO)}\n`);
+    const first = tree(root);
+    const again = init(root, ...ARGS);
+    expect(again.status).toBe(0);
+    expect(again.stdout).toBe(`${specRel(`${DEMO}-2`)}\n`);
+    expect(tree(root).filter((e) => !e.startsWith(`docs/plans/${DEMO}-2/`))).toEqual(first);
+    const second = read(root, specRel(`${DEMO}-2`));
+    expect(second).toContain(`[Evidence index](${DEMO}-2.evidence-index.md)`);
+    expect(second).toContain(`- Acceptance: \`test -f ${specRel(`${DEMO}-2`)}\` exits 0`);
+    expect(second).toContain("- Commit: yes — `docs(plans): add demo plan`");
+    expect(codes(validatePlan(specRel(`${DEMO}-2`), { root })).sort()).toEqual(SKELETON_ERRORS);
+    // A name is taken by any kind of entry: a file, and a symlink to nothing.
+    write(root, `docs/plans/${DEMO}-3`, "a file\n");
+    symlinkSync("missing", join(root, `docs/plans/${DEMO}-4`));
+    const taken = tree(root);
+    expect(init(root, ...ARGS).stdout).toBe(`${specRel(`${DEMO}-5`)}\n`);
+    expect(tree(root).filter((e) => !e.startsWith(`docs/plans/${DEMO}-5/`))).toEqual(taken);
+    expect(readdirSync(join(root, "docs/plans")).filter((name) => name.startsWith("."))).toEqual([]);
+  });
+
+  test("in a git repository the baseline holds the HEAD revision and the dirty paths; outside git it holds nonGit", () => {
+    const root = makeProject();
+    write(root, "README.md", "# Fixture\n\nChanged.\n");
+    write(root, "notes.txt", "untracked\n");
+    expect(init(root, ...ARGS).status).toBe(0);
+    const inGit = baselineOf(read(root, evidenceRel(DEMO)));
+    expect(inGit.revision).toBe(git(root, "rev-parse", "HEAD").toString().trim());
+    expect([...inGit.dirty].sort()).toEqual(["README.md", "notes.txt"]);
+    expect(inGit.checks).toEqual([]);
+    expect("nonGit" in inGit).toBe(false);
+    const outside = tempDir();
+    write(outside, "notes.txt", "untracked\n");
+    expect(init(outside, ...ARGS).status).toBe(0);
+    expect(baselineOf(read(outside, evidenceRel(DEMO)))).toEqual({ nonGit: true, dirty: [], checks: [] });
+    expect(codes(validatePlan(specRel(DEMO), { root: outside })).sort()).toEqual(SKELETON_ERRORS);
+  });
+
+  test("a slug with a slash or dots, a missing required flag, an unknown tier, and a combination with --json each exit 2 and create nothing", () => {
+    const root = tempDir();
+    const cases: [string[], string][] = [
+      [withValue("--slug", "../x"), "--slug"],
+      [withValue("--slug", "a/b"), "--slug"],
+      [withValue("--slug", "a.b"), "--slug"],
+      [without("--slug"), "--slug"],
+      [without("--branch"), "--branch"],
+      [withValue("--tier", "huge"), "--tier"],
+      [[...ARGS, "--json"], "--json"],
+      [withValue("--title", " \n "), "--title"],
+      [withValue("--branch", "feat/a b"), "--branch"],
+      [withValue("--date", "today"), "--date"],
+      [[...ARGS, "--grammar"], "--grammar"],
+      [[...ARGS, "--slug", "other"], "--slug"],
+      [[...ARGS, "plan.md"], "plan path"],
+      [[...ARGS, "--bogus"], "--bogus"],
+    ];
+    for (const [args, named] of cases) {
+      const p = init(root, ...args);
+      expect([p.status, p.stdout.trimEnd().split("\n").length, p.stdout.startsWith("error: ")]).toEqual([2, 1, true]);
+      expect(p.stdout).toContain(named);
+    }
+    const stray = cli("--title", "Demo plan", "--root", root);
+    expect([stray.status, stray.stdout.trimEnd()]).toEqual([2, "error: --title needs --init"]);
+    expect(tree(root)).toEqual([]);
+  });
+
+  test("a docs/plans that is a symlink to a directory outside the root exits 2 and writes nothing there", () => {
+    const outside = tempDir();
+    const root = tempDir();
+    mkdirSync(join(root, "docs"));
+    symlinkSync(outside, join(root, "docs/plans"));
+    const p = init(root, ...ARGS);
+    expect([p.status, p.stdout.trimEnd()]).toEqual([2, "error: docs/plans resolves outside the root"]);
+    const viaDocs = tempDir();
+    symlinkSync(outside, join(viaDocs, "docs"));
+    expect(init(viaDocs, ...ARGS).stdout.trimEnd()).toBe("error: docs resolves outside the root");
+    expect(readdirSync(outside)).toEqual([]);
+    // A symlink that stays inside the root is followed.
+    const inside = tempDir();
+    mkdirSync(join(inside, "docs"));
+    mkdirSync(join(inside, "kept"));
+    symlinkSync("../kept", join(inside, "docs/plans"));
+    expect(init(inside, ...ARGS).stdout).toBe(`${specRel(DEMO)}\n`);
+    expect(readdirSync(join(inside, "kept", DEMO)).sort()).toEqual([`${DEMO}.evidence-index.md`, `${DEMO}.md`]);
+  });
+
+  test("--grammar prints the Plan grammar and Field caps sections of the contract as they stand", () => {
+    const contract = readFileSync(join(repo, "skills/planning/plan-review/references/validator-contract.md"), "utf8");
+    const start = contract.indexOf("\n## Plan grammar\n") + 1;
+    const end = contract.indexOf("\n## ", contract.indexOf("\n## Field caps\n") + 1) + 1;
+    for (const script of [rootCli, bundled]) {
+      const p = spawnSync("bun", [script, "--grammar"], { encoding: "utf8" });
+      expect(p.status).toBe(0);
+      expect(p.stdout.split("\n")[0]).toBe("## Plan grammar");
+      expect(p.stdout).toContain("\n## Field caps\n");
+      expect(p.stdout).toContain("\n| Todo `Do` | 150 words | 300 |\n");
+      expect(p.stdout.split("\n")).not.toContain("## Evidence index");
+      expect(p.stdout).toBe(`${contract.slice(start, end).trimEnd()}\n`);
+    }
+    for (const extra of [["--root", "."], ["plan.md"], ["--json"], ["--todo", "T1"]]) {
+      const p = cli("--grammar", ...extra);
+      expect([p.status, p.stdout.trimEnd().split("\n").length, p.stdout.startsWith("error: ")]).toEqual([2, 1, true]);
+    }
+  });
+
+  test("a copy of the script alone exits 2 for --grammar and still validates a plan", () => {
+    const dir = join(tempDir(), "scripts");
+    mkdirSync(dir);
+    const alone = join(dir, "validate-plan.ts");
+    copyFileSync(bundled, alone);
+    const grammar = spawnSync("bun", [alone, "--grammar"], { encoding: "utf8" });
+    expect(grammar.status).toBe(2);
+    expect(grammar.stdout.startsWith("error: cannot read ")).toBe(true);
+    const root = makeProject();
+    writePlan(root, planText(root));
+    const checked = spawnSync("bun", [alone, PLAN, "--root", root, "--json"], { encoding: "utf8" });
+    expect(checked.status).toBe(0);
+    expect(JSON.parse(checked.stdout).errors).toEqual([]);
+  });
+
+  test("--help lists --init and --grammar", () => {
+    const p = cli("--help");
+    expect(p.status).toBe(0);
+    expect(p.stdout).toContain("validate-plan --init --title <title> --slug <slug> --request <text>");
+    expect(p.stdout).toContain("validate-plan --grammar\n");
+    for (const flag of ["--init", "--grammar", "--title", "--slug", "--request", "--intent", "--tier", "--branch", "--source", "--date", "--ui"]) expect(p.stdout).toContain(flag);
   });
 });

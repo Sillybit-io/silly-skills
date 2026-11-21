@@ -6,6 +6,8 @@ Read this file when you write or check the machine-readable parts of a plan: the
 bun <plan-review-base>/scripts/validate-plan.ts <plan> [--review [--resume]] [--root <project>] [--json]
 bun <plan-review-base>/scripts/validate-plan.ts <plan> --todo <T<n>|F<n>> [--root <project>]
 bun <plan-review-base>/scripts/validate-plan.ts <plan> --gate-skeleton [--root <project>]
+bun <plan-review-base>/scripts/validate-plan.ts --init --title <title> --slug <slug> --request <text> --intent <intent> --tier <tier> --branch <branch> [--source <chat|ticket:<id>>] [--date <YYYY-MM-DD>] [--ui <yes|no>] [--root <project>]
+bun <plan-review-base>/scripts/validate-plan.ts --grammar
 bun <plan-review-base>/scripts/stamp-evidence.ts <plan> [--root <project>]
 ```
 
@@ -13,6 +15,8 @@ In this repository, `bun run validate-plan <plan> ...` runs the same code.
 
 - `--todo` prints one todo or final gate, its slice, the gap rows it closes, the Behavior lines it serves, its dependencies' titles, its strict areas, the check ids its pass receipt must record, and the Must Have and Must NOT Have lines. For a todo in a slice that names a branch, the branch it prints is the slice's, and the last todo of a slice also gets the slice's independent test. A todo child reads this instead of the whole spec. It does not validate.
 - `--gate-skeleton` prints a gate record for the next round: every required target already in an obligation (one per requirement, one for all Behavior lines, one per todo with its dependencies, one for all slices, one per final gate, flow, contract, and check), every status `unverified`, and `verdict: INCOMPLETE`. The reviewer fills in evidence and statuses, and splits an obligation when its targets' evidence or status differs. It does not validate.
+- `--init` creates a new plan directory, `docs/plans/<stem>/` under the root with `<stem>` as `<date>-<slug>`, and prints the spec path. It writes two files. The spec is a draft with every section and Scope subsection in order, `## Behavior` after `## TL;DR`, T0, an empty todo template, the four final gates, and a placeholder line, `<!-- todo: <slot> -->`, in every empty slot. The evidence index's baseline holds the HEAD revision and the dirty paths, or `"nonGit": true` outside git. The slug is words of lower-case letters and digits joined by single hyphens, and the intent, tier, source, date, and ui values must pass the frontmatter rules; the defaults are `chat`, today's date, and `no`, and `review` is `required` for the `architecture` tier. It never overwrites a file or merges into a directory: when `docs/plans/<stem>` exists, it tries `-2`, `-3`, and so on. A bad argument, or a `docs/plans` that resolves outside the root, exits 2 with one `error:` line and writes nothing. A fresh skeleton reports two `QUESTIONS` errors and one `FLOW` error, and its todo template cannot reach `planned`.
+- `--grammar` prints the Plan grammar and Field caps sections of this file, as they stand. It takes no other argument. The validator reads this file only for `--grammar`.
 - `stamp-evidence.ts` fills the empty `sha256` of every source citation with the SHA-256 of the cited file as it is now. It never changes a filled hash or any other file. Exit 1 names a cited file it could not read.
 
 ## Format 1
@@ -55,7 +59,7 @@ A directory name that differs from the stem, a missing or different links line, 
 - A plan whose spec git ignores adds `planIgnored: true` in every mode, before the slice keys. The spec is ignored when the project root is a git repository and `git check-ignore -q -- <spec>` exits 0 there. Git never reports a tracked file as ignored. Any other plan gets no such key. `--todo` then prints `Plan directory: ignored by git. Leave it out of every commit.` under the branch line.
 - A well-formed REJECT or INCOMPLETE round exits 0 and is not eligible. A blocked build receipt exits 0 and is not eligible.
 
-The validator never edits files, calls a model, fetches a URL, or runs a command from a plan. It checks shape, identity, arithmetic, and agreement. It cannot prove that a reviewer read the code or that a flow works.
+The validator never edits files, except that `--init` creates a new plan directory, and it never calls a model, fetches a URL, or runs a command from a plan. It checks shape, identity, arithmetic, and agreement. It cannot prove that a reviewer read the code or that a flow works.
 
 ## Canonical spec digest
 

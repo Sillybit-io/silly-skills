@@ -4,12 +4,17 @@
  * plan-review gate records, and plan-builder resume state.
  *
  * Bundled with the plan-review skill so an installed copy works without this
- * repository. Uses Bun/Node built-ins only. It never edits files, invokes a
- * model, fetches a URL, or runs a command taken from a plan. The only
- * subprocesses are fixed, read-only git commands.
+ * repository. Uses Bun/Node built-ins only. It never edits files, except that
+ * --init creates a new plan directory, and it never invokes a model, fetches a
+ * URL, or runs a command taken from a plan. The only subprocesses are fixed,
+ * read-only git commands.
  *
  * Usage:
  *   bun validate-plan.ts <plan> [--review [--resume]] [--root <project>] [--json]
+ *   bun validate-plan.ts --init --title <title> --slug <slug> --request <text>
+ *     --intent <intent> --tier <tier> --branch <branch>
+ *     [--source <chat|ticket:<id>>] [--date <YYYY-MM-DD>] [--ui <yes|no>] [--root <project>]
+ *   bun validate-plan.ts --grammar
  *
  * A plan is a directory, docs/plans/<stem>/, holding <stem>.md (the spec) and
  * four siblings: <stem>.evidence-index.md, <stem>.reviews.md,
@@ -20,13 +25,27 @@
  * inconsistent evidence, or unexpected drift; 2 — invalid arguments or an
  * unreadable input, including a missing snapshot.
  *
- * The grammar is documented in ../references/validator-contract.md.
+ * The grammar is documented in ../references/validator-contract.md; --grammar
+ * prints its Plan grammar and Field caps sections.
  */
 
 import { spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
-import { existsSync, lstatSync, readdirSync, readFileSync, readlinkSync, realpathSync } from "node:fs";
+import { createHash, randomBytes } from "node:crypto";
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  readlinkSync,
+  realpathSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { isAbsolute, join, resolve, sep } from "node:path";
+import { fileURLToPath } from "node:url";
 
 export const SCHEMA_VERSION = 2;
 
@@ -49,6 +68,18 @@ export const FRONTMATTER_KEYS = [
   "review",
   "review_round",
 ] as const;
+
+/** The pattern each frontmatter value must match; `title`, `request`, and `branch` have none. */
+const FRONTMATTER_PATTERNS: Record<string, RegExp> = {
+  source: /^(chat|ticket:\S+)$/,
+  date: /^\d{4}-\d{2}-\d{2}$/,
+  status: /^(draft|planned|reviewed)$/,
+  tier: /^(standard|architecture)$/,
+  intent: /^(refactor|build|change|architecture|research)$/,
+  ui: /^(yes|no)$/,
+  review: /^(required|optional)$/,
+  review_round: /^\d+$/,
+};
 
 export const SECTIONS = [
   "TL;DR",
@@ -1152,11 +1183,16 @@ function capCheck(ctx: Context, line: number, label: string, text: string, cap: 
   }
 }
 
+/** The line directly under the spec's H1, which names the four sibling files. */
+function linksLine(stem: string): string {
+  return `Files: [Evidence index](${stem}${SIBLINGS.evidenceIndex}) · [Reviews](${stem}${SIBLINGS.reviews}) · [Gate record](${stem}${SIBLINGS.gateRecord}) · [Build](${stem}${SIBLINGS.build})`;
+}
+
 /** The links line directly under the H1 that names the four sibling files. */
 function validateLinksLine(ctx: Context, plan: ParsedPlan): void {
   const lines = plan.lines;
   const h1 = lines.findIndex((l, i) => i >= plan.frontmatterEnd && !l.fenced && !l.fenceMarker && /^# /.test(l.text));
-  const want = `Files: [Evidence index](${ctx.files.stem}${SIBLINGS.evidenceIndex}) · [Reviews](${ctx.files.stem}${SIBLINGS.reviews}) · [Gate record](${ctx.files.stem}${SIBLINGS.gateRecord}) · [Build](${ctx.files.stem}${SIBLINGS.build})`;
+  const want = linksLine(ctx.files.stem);
   if (h1 === -1) {
     err(ctx, "PLAN_FILES", 1, "the plan has no '# <title>' heading");
     return;
@@ -1231,17 +1267,7 @@ function validateStructure(ctx: Context, plan: ParsedPlan): void {
       err(ctx, "FRONTMATTER", plan.frontmatterLine[key], `unknown frontmatter key '${key}'`);
     }
   }
-  const enums: Record<string, RegExp> = {
-    source: /^(chat|ticket:\S+)$/,
-    date: /^\d{4}-\d{2}-\d{2}$/,
-    status: /^(draft|planned|reviewed)$/,
-    tier: /^(standard|architecture)$/,
-    intent: /^(refactor|build|change|architecture|research)$/,
-    ui: /^(yes|no)$/,
-    review: /^(required|optional)$/,
-    review_round: /^\d+$/,
-  };
-  for (const [key, re] of Object.entries(enums)) {
+  for (const [key, re] of Object.entries(FRONTMATTER_PATTERNS)) {
     if (key in fm && !re.test(fm[key])) err(ctx, "FRONTMATTER", plan.frontmatterLine[key], `invalid value '${fm[key]}' for '${key}'`);
   }
 
@@ -2626,6 +2652,25 @@ export function todoBrief(plan: ParsedPlan, id: string, options: { planIgnored?:
 }
 
 /**
+ * The HEAD revision and the dirty paths that `git status --porcelain` lists,
+ * for a gate record's repository and a new plan's baseline. Each is empty when
+ * git cannot report it. Read-only.
+ */
+function headAndDirty(root: string): { revision: string; dirty: string[] } {
+  const head = git(root, ["rev-parse", "HEAD"]);
+  const status = git(root, ["status", "--porcelain=v1", "-z"]);
+  const dirty =
+    status.code === 0
+      ? status.out
+          .toString("utf8")
+          .split("\0")
+          .filter((e) => e.length > 3 && /^[ MADRCU?!]{2} /.test(e))
+          .map((e) => e.slice(3))
+      : [];
+  return { revision: head.code === 0 ? head.out.toString().trim() : "", dirty };
+}
+
+/**
  * A gate record with every required target already in an obligation, every
  * status `unverified`, and every check, flow, and contract listed. The reviewer
  * fills in evidence and statuses, splitting an obligation when its targets'
@@ -2647,21 +2692,12 @@ export function gateSkeleton(plan: ParsedPlan, root: string, planDigest: string)
   for (const flow of evidenceFlows(plan)) groups.push([`flow:${flow}`]);
   for (const c of citations) if (c.kind === "external") groups.push([`contract:${str(c.id)}`]);
   for (const letter of CHECK_LETTERS) groups.push([`check:${letter}`]);
-  const head = git(root, ["rev-parse", "HEAD"]);
-  const status = git(root, ["status", "--porcelain=v1", "-z"]);
-  const dirty =
-    status.code === 0
-      ? status.out
-          .toString("utf8")
-          .split("\0")
-          .filter((e) => e.length > 3 && /^[ MADRCU?!]{2} /.test(e))
-          .map((e) => e.slice(3))
-      : [];
+  const { revision, dirty } = headAndDirty(root);
   return {
     schemaVersion: SCHEMA_VERSION,
     round: Number(plan.frontmatter.review_round ?? 0) + 1,
     planDigest,
-    repository: { revision: head.code === 0 ? head.out.toString().trim() : "", dirty },
+    repository: { revision, dirty },
     sources: [],
     evidence: [],
     obligations: groups.map((targets, i) => ({ id: `O${i + 1}`, targets, evidenceIds: [], observed: "", status: "unverified" })),
@@ -2670,6 +2706,280 @@ export function gateSkeleton(plan: ParsedPlan, root: string, planDigest: string)
     blockers: [],
     verdict: "INCOMPLETE",
   };
+}
+
+/* ── plan skeleton and plan grammar ────────────────────────────────────────── */
+
+/** A slug: words of lower-case letters and digits, joined by single hyphens. */
+const SLUG = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+
+const INIT_REQUIRED = ["title", "slug", "request", "intent", "tier", "branch"] as const;
+const INIT_OPTIONAL = ["source", "date", "ui"] as const;
+type InitKey = (typeof INIT_REQUIRED)[number] | (typeof INIT_OPTIONAL)[number];
+
+/** The values `--init` writes into a new plan, checked and with the defaults filled in. */
+export type InitValues = Record<InitKey, string>;
+
+/** The flags of `--init` that take a value, each with the key it sets. */
+const INIT_FLAGS = new Map<string, InitKey>([...INIT_REQUIRED, ...INIT_OPTIONAL].map((key) => [`--${key}`, key]));
+
+/** Today's date in local time, as YYYY-MM-DD. */
+function localDate(now = new Date()): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
+
+/**
+ * Checks the values given to `--init` and fills in the defaults: source
+ * `chat`, today's local date, and ui `no`. The title and the request become
+ * one line, each run of whitespace one space, and a double quote in the
+ * request becomes a single quote. The intent, tier, source, date, and ui must
+ * pass the frontmatter patterns, and the branch is one word.
+ */
+export function initValues(given: Partial<Record<InitKey, string>>, today = localDate()): { values: InitValues } | { error: string } {
+  for (const key of INIT_REQUIRED) {
+    if (given[key] === undefined) return { error: `--init needs --${key}` };
+  }
+  const oneLine = (text: string) => text.replace(/\s+/g, " ").trim();
+  const values: InitValues = {
+    title: oneLine(given.title as string),
+    slug: given.slug as string,
+    request: oneLine(given.request as string).replace(/"/g, "'"),
+    intent: given.intent as string,
+    tier: given.tier as string,
+    branch: given.branch as string,
+    source: given.source ?? "chat",
+    date: given.date ?? today,
+    ui: given.ui ?? "no",
+  };
+  if (values.title === "") return { error: "--title is empty" };
+  if (values.request === "") return { error: "--request is empty" };
+  if (!SLUG.test(values.slug)) {
+    return { error: `--slug ${JSON.stringify(values.slug)} must be words of lower-case letters and digits joined by single hyphens` };
+  }
+  for (const key of ["intent", "tier", "source", "date", "ui"] as const) {
+    if (!FRONTMATTER_PATTERNS[key].test(values[key])) return { error: `invalid value ${JSON.stringify(values[key])} for --${key}` };
+  }
+  if (!/^\S+$/.test(values.branch)) return { error: `--branch ${JSON.stringify(values.branch)} must be one word without whitespace` };
+  return { values };
+}
+
+/** The slot a placeholder line names, `<!-- todo: <slot> -->`: the title in lower case unless listed here. */
+const SLOTS: Record<string, string> = { "TL;DR": "tldr", "IS / GAP ledger": "ledger" };
+
+function placeholder(title: string): string {
+  return `<!-- todo: ${SLOTS[title] ?? title.toLowerCase()} -->`;
+}
+
+/** The four standard final gates, each with its `Do` text. */
+const FINAL_GATES = [
+  ["F1 — Plan compliance", "every Must Have exists and every Must NOT Have is absent"],
+  ["F2 — Code quality", "the project's test, lint, and build commands against the baseline, and the slop pass"],
+  ["F3 — Scenario QA", "every todo's QA scenario"],
+  ["F4 — Scope fidelity", "an independent result review against the build baseline"],
+] as const;
+
+/**
+ * The two files `--init` writes. The spec is a draft with every section and
+ * Scope subsection in order, `## Behavior` directly after `## TL;DR`, T0, a
+ * todo template, the four final gates, and a placeholder line in every empty
+ * slot. The template's fields hold no value, so a template left in place
+ * cannot reach `planned`. The evidence index holds the baseline, or
+ * `"nonGit": true` when `baseline` is null. The slug in T0's commit subject
+ * carries no collision suffix; the stem may.
+ */
+export function planSkeleton(values: InitValues, stem: string, baseline: { revision: string; dirty: string[] } | null): { spec: string; evidence: string } {
+  const front: Record<(typeof FRONTMATTER_KEYS)[number], string> = {
+    title: values.title,
+    request: `"${values.request}"`,
+    source: values.source,
+    date: values.date,
+    status: "draft",
+    tier: values.tier,
+    intent: values.intent,
+    branch: values.branch,
+    ui: values.ui,
+    review: values.tier === "architecture" ? "required" : "optional",
+    review_round: "0",
+  };
+  const t0: Record<(typeof TODO_FIELDS)[number], string> = {
+    Do: "copy the plan directory into `docs/plans/` when it is not already there, and commit it unless git ignores it",
+    "Must not": "overwrite a conflicting destination",
+    "Closes gap": "none",
+    "Depends on": "none",
+    References: "this file",
+    Acceptance: `\`test -f docs/plans/${stem}/${stem}.md\` exits 0`,
+    "QA scenario": "happy — the plan directory is in `docs/plans/`, and committed unless git ignores it; failure — n/a",
+    Strict: "no",
+    Commit: `yes — \`docs(plans): add ${values.slug} plan\``,
+  };
+  // The template has Serves after Closes gap, where a plan with Behavior lines needs it.
+  const template = TODO_FIELDS.flatMap((field) => (field === "Closes gap" ? [field, "Serves"] : [field]));
+  // A section's body is a list of blocks, and a blank line separates blocks.
+  const sub = (title: string, ...blocks: string[][]): string[][] => [[`### ${title}`], ...blocks];
+  const body = (title: string): string[][] => {
+    switch (title) {
+      case "Scope":
+        return SCOPE_SUBSECTIONS.flatMap((s) => sub(s, [placeholder(s)]));
+      case "Questions":
+        return ["Product", "Technical"].flatMap((s) => sub(s, [placeholder(s)]));
+      case "Execution strategy":
+        return [
+          ["Build with `plan-builder`: T0, then each wave in this order, then the final wave, without stopping to ask; fix a failing todo and rerun its checks until they pass."],
+          ["- T0 runs alone before wave 1."],
+          ["<!-- todo: waves -->"],
+        ];
+      case "Todos":
+        return [
+          ["A todo passes its Acceptance and every QA part, commits when it says `Commit: yes`, and only then turns `- [ ] Open` into `- [x] Done`; the final wave is exempt."],
+          ...sub("T0 — Copy the plan into the project", ["- [ ] Open", ...TODO_FIELDS.map((field) => `- ${field}: ${t0[field]}`)]),
+          ...sub("T1 — Title", ["- [ ] Open", ...template.map((field) => `- ${field}:`)]),
+        ];
+      case "Final verification wave":
+        return [
+          ...FINAL_GATES.flatMap(([gate, todo]) => sub(gate, ["- [ ] Open", `- Do: ${todo}`, "- Commit: no"])),
+          ["<!-- todo: ui line, or the Automated UI QA todo -->"],
+        ];
+      case "Success criteria":
+        return [["| Gap | Closed by | Proof |", "| --- | --- | --- |"], [placeholder(title)]];
+      default:
+        return [[placeholder(title)]];
+    }
+  };
+  const titles = [SECTIONS[0], "Behavior", ...SECTIONS.slice(1)];
+  const blocks: string[][] = [
+    ["---", ...FRONTMATTER_KEYS.map((key) => `${key}: ${front[key]}`), "---"],
+    ["<!-- markdownlint-disable-next-line MD025 -->", `# ${values.title}`],
+    [linksLine(stem)],
+    ...titles.flatMap((title) => [[`## ${title}`], ...body(title)]),
+  ];
+  const base =
+    baseline === null
+      ? `{ "nonGit": true, "dirty": [], "checks": [] }`
+      : `{ "revision": ${JSON.stringify(baseline.revision)}, "dirty": ${JSON.stringify(baseline.dirty)}, "checks": [] }`;
+  return {
+    spec: `${blocks.map((b) => b.join("\n")).join("\n\n")}\n`,
+    evidence: `# Evidence index: ${values.title}\n\n\`\`\`json\n{ "schemaVersion": ${SCHEMA_VERSION}, "citations": [], "coverage": [], "frontier": [], "flows": [], "baseline": ${base} }\n\`\`\`\n`,
+  };
+}
+
+/** True when the path exists as any kind of entry, a dangling symlink included. */
+function entryExists(abs: string): boolean {
+  try {
+    lstatSync(abs);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** A new, empty directory in `parent` with a random name, made with the default mode. */
+function makeTempDir(parent: string, prefix: string): string {
+  for (;;) {
+    const dir = join(parent, `${prefix}${randomBytes(6).toString("hex")}`);
+    try {
+      mkdirSync(dir);
+      return dir;
+    } catch (error) {
+      if ((error as { code?: string }).code !== "EEXIST") throw error;
+    }
+  }
+}
+
+/**
+ * `--init`: creates `docs/plans/<stem>/` under the root, `<stem>` being
+ * `<date>-<slug>`, with the two files of planSkeleton, and returns the spec
+ * path relative to the root. It reads the HEAD revision and the dirty paths
+ * before it creates anything. When `docs/plans/<stem>` exists, as any kind of
+ * entry, it tries `<stem>-2`, then `-3`, and so on. It builds the files in a
+ * temporary sibling directory and renames that into place, so a failure
+ * leaves no partial plan directory. It never overwrites a file or merges into
+ * an existing directory, and it refuses a `docs` or `docs/plans` that
+ * resolves outside the root.
+ */
+export function initPlan(values: InitValues, root: string): { plan: string } | { error: string } {
+  let realRoot: string;
+  try {
+    realRoot = realpathSync(root);
+    if (!statSync(realRoot).isDirectory()) return { error: `the root ${JSON.stringify(root)} is not a directory` };
+  } catch {
+    return { error: `cannot read the root ${JSON.stringify(root)}` };
+  }
+  const inside = (abs: string) => abs.startsWith(realRoot.endsWith(sep) ? realRoot : realRoot + sep);
+  const baseline = isGitRoot(root) ? headAndDirty(root) : null;
+  const plans = join(root, "docs", "plans");
+  for (const [abs, name] of [
+    [join(root, "docs"), "docs"],
+    [plans, "docs/plans"],
+  ] as const) {
+    if (!entryExists(abs)) {
+      try {
+        mkdirSync(abs);
+      } catch (error) {
+        return { error: `cannot create ${name}: ${(error as Error).message}` };
+      }
+      continue;
+    }
+    let real: string;
+    try {
+      real = realpathSync(abs);
+    } catch {
+      return { error: `${name} cannot be resolved` };
+    }
+    if (!inside(real)) return { error: `${name} resolves outside the root` };
+    if (!statSync(real).isDirectory()) return { error: `${name} is not a directory` };
+  }
+  const base = `${values.date}-${values.slug}`;
+  for (let n = 1; ; n++) {
+    const stem = n === 1 ? base : `${base}-${n}`;
+    const target = join(plans, stem);
+    if (entryExists(target)) continue;
+    const { spec, evidence } = planSkeleton(values, stem, baseline);
+    let tmp: string;
+    try {
+      tmp = makeTempDir(plans, `.${base}-`);
+    } catch (error) {
+      return { error: `cannot create a temporary directory in docs/plans: ${(error as Error).message}` };
+    }
+    try {
+      writeFileSync(join(tmp, `${stem}.md`), spec, { flag: "wx" });
+      writeFileSync(join(tmp, `${stem}${SIBLINGS.evidenceIndex}`), evidence, { flag: "wx" });
+      renameSync(tmp, target);
+    } catch (error) {
+      rmSync(tmp, { recursive: true, force: true });
+      // Another process took the name in the meantime: try the next one.
+      if (entryExists(target)) continue;
+      return { error: `cannot create docs/plans/${stem}: ${(error as Error).message}` };
+    }
+    return { plan: `docs/plans/${stem}/${stem}.md` };
+  }
+}
+
+/** The validator contract, beside the script's own directory. */
+function contractPath(): string {
+  return fileURLToPath(new URL("../references/validator-contract.md", import.meta.url));
+}
+
+/**
+ * `--grammar`: the Plan grammar and Field caps sections of the validator
+ * contract, as they stand: from the line `## Plan grammar` up to, and not
+ * including, the next `## ` heading after `## Field caps`. It reads the
+ * contract only when called, so a copy of the script alone still validates.
+ */
+export function grammarText(path = contractPath()): { text: string } | { error: string } {
+  const bytes = readBytes(path);
+  if (bytes === null) return { error: `cannot read ${path}` };
+  const lines = scanLines(bytes.toString("utf8"));
+  const heading = (from: number, match: (text: string) => boolean) =>
+    lines.findIndex((l, i) => i >= from && !l.fenced && !l.fenceMarker && match(l.text.trimEnd()));
+  const start = heading(0, (t) => t === "## Plan grammar");
+  if (start === -1) return { error: `${path} has no '## Plan grammar' heading` };
+  const caps = heading(start + 1, (t) => t === "## Field caps");
+  if (caps === -1) return { error: `${path} has no '## Field caps' heading after '## Plan grammar'` };
+  const next = heading(caps + 1, (t) => t.startsWith("## "));
+  const body = lines.slice(start, next === -1 ? lines.length : next).map((l) => l.text);
+  while (body.length > 0 && body[body.length - 1].trim() === "") body.pop();
+  return { text: body.join("\n") };
 }
 
 /* ── entry point ───────────────────────────────────────────────────────────── */
@@ -2806,6 +3116,10 @@ function validateEvidenceIndexQuiet(ctx: Context, plan: ParsedPlan): Map<string,
 export const USAGE = `Usage: validate-plan <plan> [--review [--resume]] [--root <project>] [--json]
        validate-plan <plan> --todo <T<n>|F<n>> [--root <project>]
        validate-plan <plan> --gate-skeleton [--root <project>]
+       validate-plan --init --title <title> --slug <slug> --request <text>
+         --intent <intent> --tier <tier> --branch <branch>
+         [--source <chat|ticket:<id>>] [--date <YYYY-MM-DD>] [--ui <yes|no>] [--root <project>]
+       validate-plan --grammar
 
 Checks a plan-writer plan (default), its latest plan-review gate record
 (--review), or a plan-builder resume state (--review --resume). <plan> is
@@ -2825,13 +3139,23 @@ docs/plans/<stem>/<stem>.md; the four sibling files are found beside it.
   --gate-skeleton Print a gate record for the next round with every required
                   target in an obligation and every status unverified, for the
                   reviewer to fill in. Does not validate.
-  --root <dir>    Project root for citations and snapshots. Default: cwd.
+  --init          Create a new plan directory, docs/plans/<date>-<slug>/ under
+                  the root, with the spec and evidence index skeletons, and
+                  print the spec path. When that name exists, -2, -3, and so on
+                  are tried; nothing is overwritten. Defaults: --source chat,
+                  --date today, --ui no. Takes no plan path. A bad argument
+                  exits 2 and writes nothing.
+  --grammar       Print the Plan grammar and Field caps sections of
+                  references/validator-contract.md. Takes no other argument.
+  --root <dir>    Project root for citations, snapshots, and --init.
+                  Default: cwd.
   --json          Print one JSON object instead of text findings.
   --help          Show this message.
 
 Exit codes: 0 structurally consistent; 1 invalid structure, inconsistent
 evidence, or unexpected drift; 2 invalid arguments or unreadable input.
-Never edits files, calls a model, fetches a URL, or runs plan commands.`;
+Never edits files, except that --init creates a new plan directory, and
+never calls a model, fetches a URL, or runs plan commands.`;
 
 export function main(argv: string[], write: (text: string) => void = (t) => console.log(t)): number {
   let plan: string | null = null;
@@ -2841,17 +3165,34 @@ export function main(argv: string[], write: (text: string) => void = (t) => cons
   let json = false;
   let todo: string | null = null;
   let skeleton = false;
+  let init = false;
+  let grammar = false;
+  const given: Partial<Record<InitKey, string>> = {};
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === "--help" || arg === "-h") {
       write(USAGE);
       return 0;
     }
+    const initKey = INIT_FLAGS.get(arg);
     if (arg === "--review") review = true;
     else if (arg === "--resume") resume = true;
     else if (arg === "--json") json = true;
     else if (arg === "--gate-skeleton") skeleton = true;
-    else if (arg === "--todo") {
+    else if (arg === "--init") init = true;
+    else if (arg === "--grammar") grammar = true;
+    else if (initKey) {
+      const value = argv[++i];
+      if (value === undefined) {
+        write(`error: ${arg} needs a value`);
+        return 2;
+      }
+      if (initKey in given) {
+        write(`error: ${arg} is given twice`);
+        return 2;
+      }
+      given[initKey] = value;
+    } else if (arg === "--todo") {
       todo = argv[++i] ?? null;
       if (!todo || !/^(T\d+|F\d+|UI)$/.test(todo)) {
         write("error: --todo needs a todo or gate id such as T3 or F2");
@@ -2864,13 +3205,70 @@ export function main(argv: string[], write: (text: string) => void = (t) => cons
         return 2;
       }
     } else if (arg.startsWith("-")) {
-      write(`error: unknown argument '${arg}'\n${USAGE}`);
+      // --init and --grammar answer every bad argument with one error line.
+      const brief = argv.includes("--init") || argv.includes("--grammar");
+      write(brief ? `error: unknown argument '${arg}'` : `error: unknown argument '${arg}'\n${USAGE}`);
       return 2;
     } else if (plan === null) plan = arg;
     else {
       write(`error: unexpected argument '${arg}'`);
       return 2;
     }
+  }
+  if (init) {
+    const other = (
+      [
+        ["--review", review],
+        ["--resume", resume],
+        ["--json", json],
+        ["--todo", todo !== null],
+        ["--gate-skeleton", skeleton],
+        ["--grammar", grammar],
+      ] as const
+    ).find(([, on]) => on);
+    if (other) {
+      write(`error: --init cannot be combined with ${other[0]}`);
+      return 2;
+    }
+    if (plan !== null) {
+      write("error: --init takes no plan path");
+      return 2;
+    }
+    const checked = initValues(given);
+    if ("error" in checked) {
+      write(`error: ${checked.error}`);
+      return 2;
+    }
+    let made: { plan: string } | { error: string };
+    try {
+      made = initPlan(checked.values, resolve(root ?? process.cwd()));
+    } catch (error) {
+      made = { error: (error as Error).message };
+    }
+    if ("error" in made) {
+      write(`error: ${made.error}`);
+      return 2;
+    }
+    write(made.plan);
+    return 0;
+  }
+  const stray = Object.keys(given)[0];
+  if (stray !== undefined) {
+    write(`error: --${stray} needs --init`);
+    return 2;
+  }
+  if (grammar) {
+    if (argv.length !== 1) {
+      write("error: --grammar takes no plan path and no other argument");
+      return 2;
+    }
+    const printed = grammarText();
+    if ("error" in printed) {
+      write(`error: ${printed.error}`);
+      return 2;
+    }
+    write(printed.text);
+    return 0;
   }
   if (plan === null) {
     write(`error: a plan path is required\n${USAGE}`);
