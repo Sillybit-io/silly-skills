@@ -6,13 +6,17 @@ Read this file when you write or check the machine-readable parts of a plan: the
 bun <plan-review-base>/scripts/validate-plan.ts <plan> [--review [--resume]] [--root <project>] [--json]
 bun <plan-review-base>/scripts/validate-plan.ts <plan> --todo <T<n>|F<n>> [--root <project>]
 bun <plan-review-base>/scripts/validate-plan.ts <plan> --gate-skeleton [--root <project>]
+bun <plan-review-base>/scripts/validate-plan.ts --init --title <title> --slug <slug> --request <text> --intent <intent> --tier <tier> --branch <branch> [--source <chat|ticket:<id>>] [--date <YYYY-MM-DD>] [--ui <yes|no>] [--root <project>]
+bun <plan-review-base>/scripts/validate-plan.ts --grammar
 bun <plan-review-base>/scripts/stamp-evidence.ts <plan> [--root <project>]
 ```
 
 In this repository, `bun run validate-plan <plan> ...` runs the same code.
 
-- `--todo` prints one todo or final gate, its slice, the gap rows it closes, the Behavior lines it serves, its dependencies' titles, its strict areas, the check ids its pass receipt must record, and the Must Have and Must NOT Have lines. For a todo in a slice that names a branch, the branch it prints is the slice's, and the last todo of a slice also gets the slice's independent test. A todo child reads this instead of the whole spec. It does not validate.
+- `--todo` prints one todo or final gate, its slice, the gap rows it closes, the Behavior lines it serves, its dependencies' titles, its strict areas, the check ids its pass receipt must record, the Design subsections it names, and the Must Have and Must NOT Have lines. For a todo in a slice that names a branch, the branch it prints is the slice's, and the last todo of a slice also gets the slice's independent test. A todo or gate names a `###` subsection of `## Design` when the subsection's title appears in the text of its block. Both are compared in lower case, without backticks, and with runs of whitespace as one space, and the title must sit between characters that are not letters or digits. A todo child reads this instead of the whole spec. It does not validate.
 - `--gate-skeleton` prints a gate record for the next round: every required target already in an obligation (one per requirement, one for all Behavior lines, one per todo with its dependencies, one for all slices, one per final gate, flow, contract, and check), every status `unverified`, and `verdict: INCOMPLETE`. The reviewer fills in evidence and statuses, and splits an obligation when its targets' evidence or status differs. It does not validate.
+- `--init` creates a new plan directory, `docs/plans/<stem>/` under the root with `<stem>` as `<date>-<slug>`, and prints the spec path. It writes two files. The spec is a draft with every section and Scope subsection in order, `## Behavior` after `## TL;DR`, T0, an empty todo template, the four final gates, and a placeholder line, `<!-- todo: <slot> -->`, in every empty slot. The evidence index's baseline holds the HEAD revision and the dirty paths, or `"nonGit": true` outside git. The slug is words of lower-case letters and digits joined by single hyphens, and the intent, tier, source, date, and ui values must pass the frontmatter rules; the defaults are `chat`, today's date, and `no`, and `review` is `required` for the `architecture` tier. It never overwrites a file or merges into a directory: when `docs/plans/<stem>` exists, it tries `-2`, `-3`, and so on. A bad argument, or a `docs/plans` that resolves outside the root, exits 2 with one `error:` line and writes nothing. A fresh skeleton reports two `QUESTIONS` errors and one `FLOW` error, and its todo template cannot reach `planned`.
+- `--grammar` prints the Plan grammar and Field caps sections of this file, as they stand. It takes no other argument. The validator reads this file only for `--grammar`.
 - `stamp-evidence.ts` fills the empty `sha256` of every source citation with the SHA-256 of the cited file as it is now. It never changes a filled hash or any other file. Exit 1 names a cited file it could not read.
 
 ## Format 1
@@ -52,9 +56,10 @@ A directory name that differs from the stem, a missing or different links line, 
 - `gateEligible` is true only in review mode, for a complete, consistent OKAY on the current plan and current source bytes.
 - `resumeEligible` is true only in resume mode, after the baseline, the unchanged spec, the live approval, the receipt chain, and the current state all check out. Resume mode always reports `gateEligible: false`.
 - A plan with slices adds `slices` in every mode: one `{id, name, branch, todos}` per slice, in order, with `branch` null when the slice names none. Resume mode then adds `nextSlice`, the slice of `nextTodo`, or null for T0 and a final gate, and `sliceStart`, true when no todo is active and `nextTodo` is the first todo of `nextSlice`. A plan without slices gets none of the three keys.
+- A plan whose spec git ignores adds `planIgnored: true` in every mode, before the slice keys. The spec is ignored when the project root is a git repository and `git check-ignore -q -- <spec>` exits 0 there. Git never reports a tracked file as ignored. Any other plan gets no such key. `--todo` then prints `Plan directory: ignored by git. Leave it out of every commit.` under the branch line.
 - A well-formed REJECT or INCOMPLETE round exits 0 and is not eligible. A blocked build receipt exits 0 and is not eligible.
 
-The validator never edits files, calls a model, fetches a URL, or runs a command from a plan. It checks shape, identity, arithmetic, and agreement. It cannot prove that a reviewer read the code or that a flow works.
+The validator never edits files, except that `--init` creates a new plan directory, and it never calls a model, fetches a URL, or runs a command from a plan. It checks shape, identity, arithmetic, and agreement. It cannot prove that a reviewer read the code or that a flow works.
 
 ## Canonical spec digest
 
@@ -217,7 +222,7 @@ Each `paths` entry has a `path` and three layers: `head`, `index`, and `worktree
 
 `stateDigest` is the SHA-256 of the canonical JSON `{"headRevision": ..., "paths": [...]}`. Declared report paths are left out. The plan's working-tree layer is replaced by `{"state": "plan", "specDigest": ...}`, so appending a receipt is not drift. Paths sort by UTF-8 bytes.
 
-`<stem>.reviews.md` and `<stem>.build.md` change during a build by design, so every capture declares them in `administrative.reports`; `capture-build-state.ts` does this itself. A baseline that does not declare both is a `BUILD_RECORD` error. Report bytes remain in snapshot inventories. Any other file in the plan directory that changes is drift.
+`<stem>.reviews.md` and `<stem>.build.md` change during a build by design, so every capture declares them in `administrative.reports`; `capture-build-state.ts` does this itself. A baseline that does not declare both is a `BUILD_RECORD` error. Report bytes remain in snapshot inventories. Any other file in the plan directory that changes is drift. When git ignores the plan directory, its files are in no snapshot, so the spec digest alone guards the spec and the evidence index.
 
 A receipt:
 
@@ -256,7 +261,7 @@ One record per todo. `event` is one of:
 - The baseline and every receipt snapshot exist, match their recorded manifest digests, and verify: every object's length and digest, and the recomputed `stateDigest`. The baseline's repository matches the build record and the current project, and the baseline declares the reviews and build files as reports.
 - The gate record's sources and the evidence index citations match the baseline bytes, not the current files.
 - The receipts chain: sequential `seq`, correct `prev`, and each `before` equals the previous end state. One todo is active at a time. A todo's first receipt comes only after its dependencies passed, and a todo has no receipt after its pass.
-- A `pass` receipt records checks that all passed. For `Commit: yes`, it names the commit, and its after-state HEAD equals that commit.
+- A `pass` receipt records checks that all passed. For `Commit: yes`, it names the commit, and its after-state HEAD equals that commit. With `planIgnored`, T0's pass receipt may name no commit; a commit it names is still checked. Every other todo keeps the rule.
 - Every `- [x] Done` box has a passed receipt. A passed receipt with an Open box is listed in `reconcileBoxes`; set the box without repeating the work.
 - The current project state equals the last receipt's end state. Otherwise the result lists `drift`, sets `recoveryRequired: true`, and names the `unresolvedAction`.
 - No recorded prerequisite recheck for a pending todo says `fails`. Pending todos whose referenced paths changed get `requiredRechecks`. Record those rechecks in that todo's pass receipt, or in a recovery receipt when one fails before any work.

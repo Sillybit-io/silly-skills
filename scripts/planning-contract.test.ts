@@ -8,6 +8,9 @@
  * there. A package can pass before the repository's shared README badge and
  * skill-count test are updated, without hiding a real catalogue failure: the
  * full `bun run validate` still checks those.
+ *
+ * The two `reviewed replies` tests check that the approved replies of
+ * plan-review and plan-loop tell the owner to start the build in a new session.
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
@@ -108,4 +111,71 @@ describe("planning packages", () => {
       }
     });
   }
+});
+
+/** The reply a skill gives when a plan is approved, by the verdict line it starts with. */
+const REVIEWED_REPLIES = [
+  { skill: "plan-review", verdict: "PLAN-REVIEW: OKAY" },
+  { skill: "plan-loop", verdict: "PLAN-LOOP: REVIEWED" },
+];
+
+/** The top-level fenced blocks of a markdown text, each with its info string. */
+function fencedBlocks(text: string): { info: string; lines: string[] }[] {
+  const out: { info: string; lines: string[] }[] = [];
+  let open: { fence: string; info: string; lines: string[] } | null = null;
+  for (const line of text.split("\n")) {
+    const f = /^\s*(`{3,}|~{3,})(.*)$/.exec(line);
+    if (!open) {
+      if (f) open = { fence: f[1], info: f[2].trim(), lines: [] };
+    } else if (f && f[1][0] === open.fence[0] && f[1].length >= open.fence.length && f[2].trim() === "") {
+      out.push({ info: open.info, lines: open.lines });
+      open = null;
+    } else {
+      open.lines.push(line);
+    }
+  }
+  return out;
+}
+
+/** The one `markdown` block of the skill's SKILL.md whose first line is the verdict. */
+function replyBlock(skill: string, verdict: string): string {
+  const found = locate(skill);
+  if (!found) throw new Error(`${skill}: no SKILL.md found`);
+  const blocks = fencedBlocks(readFileSync(join(found.dir, "SKILL.md"), "utf8")).filter(
+    (b) => b.info === "markdown" && b.lines[0] === verdict,
+  );
+  if (blocks.length !== 1) throw new Error(`${skill}: ${blocks.length} markdown blocks start with ${verdict}, expected 1`);
+  return blocks[0].lines.join("\n");
+}
+
+function reviewedReplies(): Map<string, string> {
+  return new Map(REVIEWED_REPLIES.map(({ skill, verdict }) => [skill, replyBlock(skill, verdict)]));
+}
+
+/** The skills whose reply does not tell the owner to start the build in a new session. */
+function missingNewSession(replies: Map<string, string>): string[] {
+  return [...replies].filter(([, block]) => !block.includes("new session")).map(([skill]) => skill);
+}
+
+/** A copy of the block that ends before its last sentence. */
+function withoutLastSentence(block: string): string {
+  const text = block.trimEnd();
+  const ends = [...text.matchAll(/[.!?]\s+(?=\S)/g)];
+  const last = ends.at(-1);
+  return last === undefined ? "" : text.slice(0, (last.index ?? 0) + 1);
+}
+
+test("reviewed replies: the OKAY reply of plan-review and the REVIEWED reply of plan-loop say to start the build in a new session", () => {
+  expect(missingNewSession(reviewedReplies())).toEqual([]);
+});
+
+test("reviewed replies: the check reports a copy of each reply without its last sentence as a miss", () => {
+  const replies = reviewedReplies();
+  const cut = new Map([...replies].map(([skill, block]) => [skill, withoutLastSentence(block)]));
+  for (const [skill, copy] of cut) {
+    // The copy keeps the verdict line and the reply up to its last sentence.
+    const whole = replies.get(skill) ?? "";
+    expect({ skill, cut: copy.includes("\n") && whole.startsWith(copy) && copy.length < whole.length }).toEqual({ skill, cut: true });
+  }
+  expect(missingNewSession(cut)).toEqual(["plan-review", "plan-loop"]);
 });

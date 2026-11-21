@@ -34,7 +34,9 @@ export const USAGE = `Usage: inventory-changes <plan> [--root <project>] [--base
 
 Lists every path whose HEAD, index, or working-tree layer changed since the
 build baseline recorded in the plan's build file, or since --baseline.
-The plan's own directory is left out: the build commits it by design.
+The plan's own directory is left out: it holds the plan and its records, not
+implementation changes. When git ignores it, the report and --brief add
+planIgnored: true.
 With only --base, lists committed and current changes without owner-work
 attribution. --brief prints requirements, todos with their recorded checks and
 commits, and changed paths with the todo that changed them, without diffs, plus
@@ -127,8 +129,10 @@ export function main(argv: string[], write: (s: string) => void = (s) => console
   const record = v.buildRecord(existsSync(buildAbs) ? readFileSync(buildAbs, "utf8") : null);
   const recordValue = record && !("error" in record) ? (record.value as Record<string, unknown>) : null;
   const inGit = v.isGitRoot(root);
+  // A plan-review validator older than 2.2.0 has no planIgnored export; the plan then counts as not ignored.
+  const planIgnored = typeof v.planIgnored === "function" && v.planIgnored(root, planRel) === true;
 
-  const report: Record<string, unknown> = { schemaVersion: 1, plan: planRel, planDir: files.dir, root: ".", baseline: null, ownerWorkCertifiable: false };
+  const report: Record<string, unknown> = { schemaVersion: 1, plan: planRel, planDir: files.dir, ...(planIgnored ? { planIgnored: true } : {}), root: ".", baseline: null, ownerWorkCertifiable: false };
   let baselineManifest: { paths: Row[]; baseRevision: string | null; headRevision: string | null; includes?: string[] } | null = null;
   let baselineDir = "";
   const snapshotRef = baselineArg ?? ((recordValue?.baseline as Record<string, string> | undefined)?.snapshot ?? null);
@@ -294,7 +298,8 @@ type Brief = { json: Record<string, unknown>; text: string };
  * with their recorded checks and commits, and each changed path attributed to
  * the todo whose receipt interval changed it. A plan with Behavior lines gets
  * each line with the todos that serve it, and a plan with slices gets each
- * slice with its branch and todos. It is not a verdict.
+ * slice with its branch and todos. A plan directory that git ignores gets one
+ * line that says so. It is not a verdict.
  */
 function resultBrief(
   v: any,
@@ -356,12 +361,13 @@ function resultBrief(
     todos: (plan.todos as { id: string; serves?: string[] }[]).filter((todo) => (todo.serves ?? []).includes(b.id)).map((todo) => todo.id),
   }));
   const slices = ((plan.slices ?? []) as { id: string; name: string; branch: string | null; todos: string[] }[]).map((s) => ({ id: s.id, name: s.name, branch: s.branch, todos: s.todos }));
-  // Only a plan with Behavior lines or slices gets these keys, so the brief of any other plan stays as it was.
+  // Only a plan with Behavior lines or slices, or one whose directory git ignores, gets these keys, so the brief of any other plan stays as it was.
   const json = {
     plan: report.plan,
     baseline: report.baseline,
     headRevision: report.headRevision,
     ownerWorkCertifiable: report.ownerWorkCertifiable,
+    ...(report.planIgnored === true ? { planIgnored: true } : {}),
     requirements: [...plan.mustHave, ...plan.mustNotHave].map((m: { line: number }) => lineOf(m.line)),
     ...(behavior.length > 0 ? { behavior } : {}),
     todos,
@@ -372,7 +378,9 @@ function resultBrief(
   };
   const t: string[] = [`# Result brief: ${plan.frontmatter.title ?? report.plan}`, ""];
   const base = report.baseline as Record<string, string> | null;
-  t.push(`Baseline: ${base ? base.snapshot : "none (revision-only)"}. HEAD: ${report.headRevision ?? "none"}. Owner work certifiable: ${report.ownerWorkCertifiable}.`, "");
+  t.push(`Baseline: ${base ? base.snapshot : "none (revision-only)"}. HEAD: ${report.headRevision ?? "none"}. Owner work certifiable: ${report.ownerWorkCertifiable}.`);
+  if (report.planIgnored === true) t.push("Plan directory: ignored by git; no commit holds it.");
+  t.push("");
   t.push("## Requirements", "", ...json.requirements, "");
   if (behavior.length > 0) t.push("## Behavior", "", ...behavior.map((b) => `- ${b.id} served by ${b.todos.join(", ") || "no todo"}: ${b.text}`), "");
   t.push("## Todos", "");

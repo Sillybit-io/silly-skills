@@ -136,13 +136,15 @@ describe("capture-build-state", () => {
     ]);
     const byPath = Object.fromEntries(brief.changes.map((c: { path: string; todos: string[] }) => [c.path, c.todos]));
     expect(byPath).toEqual({ "app.py": ["T1"], "stray.py": [] });
-    // A plan with no Behavior section and no slices gets neither part.
+    // A plan with no Behavior section and no slices gets neither part, and a plan directory git does not ignore gets no plan-directory key or line.
     expect(brief).not.toHaveProperty("behavior");
     expect(brief).not.toHaveProperty("slices");
+    expect(brief).not.toHaveProperty("planIgnored");
     const text = Bun.spawnSync(["bun", INVENTORY, plan, "--root", dir, "--baseline", baseline, "--brief"], { stdout: "pipe" }).stdout.toString();
     expect(text).toMatch(/^- stray\.py \([a-z+]+\): unattributed$/m);
     expect(text).not.toContain("+1:");
     expect(text).not.toMatch(/^## (Behavior|Slices)$/m);
+    expect(text).not.toContain("Plan directory");
   });
 
   test("--brief lists each Behavior line with the todos that serve it, and each slice with its branch and todos", () => {
@@ -193,5 +195,49 @@ describe("capture-build-state", () => {
       "## Behavior\n\n- B1 served by T2, T3: Given an open shop, when a visitor opens the page, then it greets them.\n- B2 served by T3: Given a closed shop, when a visitor opens the page, then it says the shop is closed.\n\n## Todos\n",
     );
     expect(text).toContain("## Slices\n\n- S1 — foundation; branch: feat/shop-foundation; todos: T1\n- S2 — greeting; todos: T2, T3\n");
+  });
+});
+
+describe("ignored plan directory", () => {
+  test("--brief has planIgnored: true and the plan-directory line in a git repository that ignores the plan directory, and neither without the rule", () => {
+    const dir = tempDir();
+    const stem = "2026-11-21-z";
+    const planDir = `docs/plans/${stem}`;
+    const plan = `${planDir}/${stem}.md`;
+    const env = { ...process.env, GIT_AUTHOR_NAME: "Fixture", GIT_AUTHOR_EMAIL: "fixture@example.com", GIT_COMMITTER_NAME: "Fixture", GIT_COMMITTER_EMAIL: "fixture@example.com", GIT_CONFIG_NOSYSTEM: "1" };
+    const git = (...args: string[]) => expect(Bun.spawnSync(["git", "-c", "commit.gpgSign=false", ...args], { cwd: dir, env, stdout: "pipe", stderr: "pipe" }).exitCode).toBe(0);
+    git("init", "-q");
+    writeFileSync(join(dir, ".gitignore"), "/docs/plans/\n");
+    writeFileSync(join(dir, "app.py"), "print('hi')\n");
+    git("add", ".gitignore", "app.py");
+    git("commit", "-q", "-m", "init");
+    mkdirSync(join(dir, planDir), { recursive: true });
+    writeFileSync(
+      join(dir, plan),
+      "---\ntitle: Ignored fixture\n---\n\n# Ignored fixture\n\n## Scope\n\n### Must have\n\n- MH1: A greeting.\n\n## Todos\n\n### T1 — Add the greeting\n\n- [ ] Open\n- Do: greet.\n- Strict: no\n- Commit: yes — `feat(app): greet`\n",
+    );
+    writeFileSync(join(dir, `${planDir}/${stem}.evidence-index.md`), "```json\n{}\n```\n");
+    const baseline = join(tempDir(), "baseline");
+    expect(run([plan, "--root", dir, "--output", baseline], dir).code).toBe(0);
+    const inventory = (...flags: string[]): string => {
+      const p = Bun.spawnSync(["bun", INVENTORY, plan, "--root", dir, "--baseline", baseline, ...flags], { stdout: "pipe", stderr: "pipe" });
+      expect(p.exitCode).toBe(0);
+      return p.stdout.toString();
+    };
+    const line = "Plan directory: ignored by git; no commit holds it.";
+
+    const brief = JSON.parse(inventory("--brief", "--json"));
+    expect(brief.planIgnored).toBe(true);
+    expect(Object.keys(brief).slice(0, 5)).toEqual(["plan", "baseline", "headRevision", "ownerWorkCertifiable", "planIgnored"]);
+    const text = inventory("--brief");
+    expect(text).toContain(`Owner work certifiable: true.\n${line}\n\n## Requirements\n`);
+    expect(text.split(line).length).toBe(2);
+    expect(JSON.parse(inventory("--json")).planIgnored).toBe(true);
+
+    // The same fixture without the ignore rule: no key and no line.
+    writeFileSync(join(dir, ".gitignore"), "");
+    expect(JSON.parse(inventory("--brief", "--json"))).not.toHaveProperty("planIgnored");
+    expect(inventory("--brief")).not.toContain("Plan directory");
+    expect(JSON.parse(inventory("--json"))).not.toHaveProperty("planIgnored");
   });
 });

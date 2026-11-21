@@ -15,6 +15,7 @@ import {
   lstatSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   readlinkSync,
   rmSync,
@@ -29,9 +30,13 @@ import {
   FORMAT_1_MESSAGE,
   filePathWords,
   parsePlan,
+  planIgnored,
   qaLabels,
   requiredCheckIds,
   requiredTargets,
+  SCOPE_SUBSECTIONS,
+  SECTIONS,
+  TODO_FIELDS,
   type Todo,
   validatePlan,
 } from "./validate-plan.ts";
@@ -632,6 +637,8 @@ type ScenarioOptions = {
   obligations?: Obligation[];
   /** The checks on T1's pass receipt; PASSING by default. */
   t1Checks?: unknown[];
+  /** Runs after the plan and its review are written and before the baseline, such as to add an ignore rule. */
+  beforeBaseline?: (root: string) => void;
 };
 
 function buildScenario(options: ScenarioOptions = {}) {
@@ -643,6 +650,7 @@ function buildScenario(options: ScenarioOptions = {}) {
   const text = reviewedPlan(root, { mutatePlan, obligations: options.obligations });
   const spec = specOf(root, text);
   const gateDigest = sha(canon(JSON.parse(read(root, GATE))));
+  options.beforeBaseline?.(root);
   const baseline = saveSnapshot(root, snapshot(root, "silly-skills/plan-builds/run/baseline", { reports: options.reports }), spec);
   const carry = JSON.parse(readFileSync(join(root, ".git", baseline.snapshot, "manifest.json"), "utf8")).paths.map((p: { path: string }) => p.path);
   const inputs: ReceiptInput[] = [{ todo: "T0", event: "pass", after: "same", checks: [check("acceptance"), check("qa:happy")] }];
@@ -1974,6 +1982,125 @@ describe("resume mode", () => {
   });
 });
 
+describe("ignored plan directory", () => {
+  const LINE = "Plan directory: ignored by git. Leave it out of every commit.";
+  /** T0 with `Commit: yes`, as a 2.1.0 writer leaves it. */
+  const T0_COMMIT = (t: string): string =>
+    t.replace("- QA scenario: happy — the file exists; failure — n/a.\n- Strict: no.\n- Commit: no.", "- QA scenario: happy — the file exists; failure — n/a.\n- Strict: no.\n- Commit: yes — `docs(plans): add fixture plan`.");
+  /** One slice that holds both waves. */
+  const ONE_SLICE = (t: string): string => t.replace("- Wave 1: T1\n", "- Slice S1 — greeting. Independent test: `bun test` greets a configured name.\n- Wave 1: T1\n");
+  /** An ignore rule for the plan directory, committed. */
+  const ignorePlans = (root: string): void => {
+    write(root, ".gitignore", "/docs/plans/\n");
+    git(root, "add", ".gitignore");
+    git(root, "commit", "-q", "-m", "ignore plans");
+  };
+  /** The plan directory, committed, as T0 does where git tracks plans. */
+  const trackPlans = (root: string): void => {
+    git(root, "add", "--", DIR);
+    git(root, "commit", "-q", "-m", "docs(plans): add fixture plan");
+  };
+  const T0_PASS: ReceiptInput = { todo: "T0", event: "pass", after: "same", checks: [check("acceptance"), check("qa:happy")], commit: { none: "git ignores the plan directory" } };
+  /** buildScenario on a plan whose T0 says Commit: yes, with a T0 pass receipt that names no commit. */
+  const scenario = (beforeBaseline: (root: string) => void, options: ScenarioOptions = {}) => {
+    const s = buildScenario({ ...options, mutatePlan: T0_COMMIT, beforeBaseline });
+    s.record.receipts = receipts(s.baseline, [T0_PASS, ...s.inputs.slice(1)]);
+    writeBuild(s.root, s.record);
+    return s;
+  };
+  const resume = (root: string) => run(root, ["--review", "--resume"]);
+  const commitErrors = (result: { errors: { code: string; message: string }[] }): string[] => result.errors.filter((e) => e.code === "COMMIT").map((e) => e.message);
+  const noCommit = (seq: number, id: string) => `receipt ${seq}: ${id} says Commit: yes but its passed receipt has no commit`;
+  const cli = (root: string, ...args: string[]) => spawnSync("bun", [rootCli, PLAN, ...args, "--root", root], { encoding: "utf8" });
+
+  test("the check is true only in a git repository whose ignore rules match an untracked spec", () => {
+    const root = makeProject();
+    writePlan(root, planText(root));
+    expect(planIgnored(root, PLAN)).toBe(false);
+    mkdirSync(join(root, ".git/info"), { recursive: true });
+    write(root, ".git/info/exclude", "/docs/plans/\n");
+    expect(planIgnored(root, PLAN)).toBe(true);
+    write(root, ".git/info/exclude", "");
+    expect(planIgnored(root, PLAN)).toBe(false);
+    ignorePlans(root);
+    expect(planIgnored(root, PLAN)).toBe(true);
+    git(root, "add", "-f", "--", PLAN);
+    git(root, "commit", "-q", "-m", "track the spec");
+    expect(planIgnored(root, PLAN)).toBe(false);
+    const outside = tempDir();
+    mkdirSync(join(outside, DIR), { recursive: true });
+    write(outside, ".gitignore", "/docs/plans/\n");
+    write(outside, PLAN, "# Fixture plan\n");
+    expect(planIgnored(outside, PLAN)).toBe(false);
+  });
+
+  test("the JSON has planIgnored: true in plan, review, and resume mode there, before the slice keys, and the existing fixtures have no such key", () => {
+    const { root } = scenario(ignorePlans, { stopAfter: "T0" });
+    for (const flags of [[], ["--review"], ["--review", "--resume"]]) expect(run(root, flags).planIgnored).toBe(true);
+    expect(JSON.parse(cli(root, "--review", "--resume", "--json").stdout).planIgnored).toBe(true);
+    const sliced = makeProject();
+    ignorePlans(sliced);
+    writePlan(sliced, planText(sliced, { mutate: ONE_SLICE }));
+    const keys = Object.keys(run(sliced));
+    expect(keys.slice(keys.indexOf("exitCode"))).toEqual(["exitCode", "planIgnored", "slices"]);
+    const plain = buildScenario();
+    for (const flags of [[], ["--review"], ["--review", "--resume"]]) expect("planIgnored" in run(plain.root, flags)).toBe(false);
+    expect(cli(plain.root, "--review", "--resume", "--json").stdout).not.toContain("planIgnored");
+  });
+
+  test("a Commit: yes T0 whose pass receipt names no commit resumes there, and is a COMMIT error where git tracks the plan", () => {
+    const ignored = resume(scenario(ignorePlans, { stopAfter: "T0" }).root);
+    expect(ignored.errors).toEqual([]);
+    expect(ignored.resumeEligible).toBe(true);
+    expect(ignored.nextTodo).toBe("T1");
+    const tracked = resume(scenario(trackPlans, { stopAfter: "T0" }).root);
+    expect(codes(tracked)).toEqual(["COMMIT"]);
+    expect(commitErrors(tracked)).toEqual([noCommit(1, "T0")]);
+    expect(tracked.resumeEligible).toBe(false);
+    expect("planIgnored" in tracked).toBe(false);
+    // A T0 receipt that names a commit is still checked against its after-state HEAD.
+    const named = scenario(ignorePlans, { stopAfter: "T0" });
+    named.record.receipts = receipts(named.baseline, [{ ...T0_PASS, commit: { sha: "f".repeat(40) } }]);
+    writeBuild(named.root, named.record);
+    expect(commitErrors(resume(named.root))).toEqual([`receipt 1: after-state HEAD is not the recorded commit ${"f".repeat(12)}`]);
+  });
+
+  test("another Commit: yes todo without a commit is a COMMIT error in both", () => {
+    const ignored = resume(scenario(ignorePlans, { t1Commit: true, omitCommit: true }).root);
+    expect(commitErrors(ignored)).toEqual([noCommit(2, "T1")]);
+    expect(ignored.resumeEligible).toBe(false);
+    const tracked = resume(scenario(trackPlans, { t1Commit: true, omitCommit: true }).root);
+    expect(commitErrors(tracked)).toEqual([noCommit(1, "T0"), noCommit(2, "T1")]);
+    expect(tracked.resumeEligible).toBe(false);
+  });
+
+  test("--todo prints the plan-directory line directly under the branch only there", () => {
+    const root = makeProject();
+    writePlan(root, planText(root));
+    expect(cli(root, "--todo", "T1").stdout).not.toContain("Plan directory");
+    ignorePlans(root);
+    const ignored = cli(root, "--todo", "T1");
+    expect(ignored.status).toBe(0);
+    expect(ignored.stdout).toContain(`Branch: \`feat/fixture\`\n${LINE}\n\n### T1 — Add the greeting`);
+    expect(ignored.stdout.split(LINE).length).toBe(2);
+    writePlan(root, planText(root, { mutate: ONE_SLICE }));
+    expect(cli(root, "--todo", "T1").stdout).toContain(`Branch: \`feat/fixture\`\n${LINE}\nSlice: S1 — greeting\n\n### T1`);
+    git(root, "add", "-f", "--", DIR);
+    expect(cli(root, "--todo", "T1").stdout).not.toContain("Plan directory");
+  });
+
+  test("in that build, a later todo commits its own file, the build resumes, and no commit holds a plan file", () => {
+    const { root } = scenario(ignorePlans, { t1Commit: true });
+    const result = resume(root);
+    expect(result.errors).toEqual([]);
+    expect(result.resumeEligible).toBe(true);
+    expect(result.nextTodo).toBe("T2");
+    const paths = git(root, "log", "--name-only", "--format=").toString().split("\n").filter(Boolean);
+    expect(paths).toContain("src/app.ts");
+    expect(paths.filter((p) => p.startsWith("docs/plans/"))).toEqual([]);
+  });
+});
+
 describe("format 2", () => {
   test("format 1 evidence indexes, gate records, and build records are refused with one message", () => {
     const root = makeProject();
@@ -2141,7 +2268,7 @@ describe("CLI", () => {
   test("--help exits 0 and lists every flag", () => {
     const result = cli(rootCli, ["--help"]);
     expect(result.code).toBe(0);
-    for (const flag of ["--review", "--resume", "--root", "--json", "--help"]) expect(result.out).toContain(flag);
+    for (const flag of ["--review", "--resume", "--root", "--json", "--help", "--init", "--grammar"]) expect(result.out).toContain(flag);
   });
 
   test("bun run validate-plan --help works from the repository", () => {
@@ -2179,5 +2306,637 @@ describe("CLI", () => {
     expect(readFileSync(detached, "utf8")).not.toContain("../../../../scripts");
     expect(dirname(detached)).not.toContain(repo);
     expect(existsSync(detached)).toBe(true);
+  });
+});
+
+describe("skeleton and grammar commands", () => {
+  const ARGS = ["--title", "Demo plan", "--slug", "demo", "--request", "Add a demo.", "--intent", "change", "--tier", "standard", "--branch", "feat/demo", "--date", "2026-09-29"];
+  const DEMO = "2026-09-29-demo";
+  const specRel = (stem: string) => `docs/plans/${stem}/${stem}.md`;
+  const evidenceRel = (stem: string) => `docs/plans/${stem}/${stem}.evidence-index.md`;
+  const cli = (...args: string[]) => spawnSync("bun", [rootCli, ...args], { encoding: "utf8" });
+  const init = (root: string, ...args: string[]) => cli("--init", ...args, "--root", root);
+  /** ARGS with the value after `flag` replaced, or without `flag` and its value. */
+  const withValue = (flag: string, value: string) => ARGS.map((a, i) => (ARGS[i - 1] === flag ? value : a));
+  const without = (flag: string) => ARGS.filter((_, i) => ARGS[i] !== flag && ARGS[i - 1] !== flag);
+  /** Every entry under a directory, the Git directory left out, with the bytes of each file and the target of each link. */
+  const tree = (root: string, rel = ""): string[] =>
+    readdirSync(join(root, rel), { withFileTypes: true })
+      .filter((e) => !(rel === "" && e.name === ".git"))
+      .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+      .flatMap((e) => {
+        const path = rel === "" ? e.name : `${rel}/${e.name}`;
+        if (e.isSymbolicLink()) return [`${path} -> ${readlinkSync(join(root, path))}`];
+        if (e.isDirectory()) return [`${path}/`, ...tree(root, path)];
+        return [`${path} ${sha(readFileSync(join(root, path)))}`];
+      });
+  const baselineOf = (evidence: string) => JSON.parse(evidence.split("```json\n")[1].split("\n```")[0]).baseline;
+  const localToday = () => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  };
+  const SKELETON_ERRORS = ["FLOW", "QUESTIONS", "QUESTIONS"];
+
+  test("--init with the six required values creates the directory and the two files, prints the spec path, and exits 0", () => {
+    const root = tempDir();
+    const days = [localToday()];
+    const p = init(root, "--title", "Demo\n  plan", "--slug", "demo", "--request", 'Add a "demo"\n\tthing.', "--intent", "change", "--tier", "standard", "--branch", "feat/demo");
+    days.push(localToday());
+    expect(p.status).toBe(0);
+    const stem = days.map((day) => `${day}-demo`).find((s) => p.stdout === `${specRel(s)}\n`) as string;
+    expect(stem).toBeDefined();
+    expect(tree(root)).toEqual(["docs/", "docs/plans/", `docs/plans/${stem}/`, expect.stringMatching(new RegExp(`^docs/plans/${stem}/${stem}\\.evidence-index\\.md `)), expect.stringMatching(new RegExp(`^docs/plans/${stem}/${stem}\\.md `))]);
+    const head = read(root, specRel(stem)).split("\n").slice(0, 13);
+    expect(head).toEqual(["---", "title: Demo plan", `request: "Add a 'demo' thing."`, "source: chat", `date: ${stem.slice(0, 10)}`, "status: draft", "tier: standard", "intent: change", "branch: feat/demo", "ui: no", "review: optional", "review_round: 0", "---"]);
+    const other = tempDir();
+    expect(init(other, ...withValue("--tier", "architecture"), "--source", "ticket:ABC-1", "--ui", "yes").status).toBe(0);
+    const front = parsePlan(read(other, specRel(DEMO))).frontmatter;
+    expect([front.date, front.source, front.ui, front.tier, front.review]).toEqual(["2026-09-29", "ticket:ABC-1", "yes", "architecture", "required"]);
+  });
+
+  test("the validator's errors on that skeleton are two QUESTIONS errors and one FLOW error", () => {
+    const root = makeProject();
+    expect(init(root, ...ARGS).status).toBe(0);
+    const result = validatePlan(specRel(DEMO), { root });
+    expect(codes(result).sort()).toEqual(SKELETON_ERRORS);
+    expect(result.errors.filter((e) => e.code === "QUESTIONS").map((e) => e.message)).toEqual(["'### Product' is empty", "'### Technical' is empty"]);
+    expect(result.errors.find((e) => e.code === "FLOW")?.file).toBe(evidenceRel(DEMO));
+    expect(result.gaps).toEqual([]);
+  });
+
+  test("set to planned, the skeleton reports PLACEHOLDER and TODO errors: the template cannot pass", () => {
+    const root = makeProject();
+    expect(init(root, ...ARGS).status).toBe(0);
+    write(root, specRel(DEMO), read(root, specRel(DEMO)).replace("\nstatus: draft\n", "\nstatus: planned\n"));
+    const result = validatePlan(specRel(DEMO), { root });
+    expect(codes(result)).toContain("PLACEHOLDER");
+    const todo = result.errors.filter((e) => e.code === "TODO").map((e) => e.message);
+    for (const field of TODO_FIELDS) expect(todo).toContain(`T1 is missing '- ${field}:'`);
+    expect(todo.filter((m) => m.startsWith("T0 "))).toEqual([]);
+  });
+
+  test("the spec holds the validator's sections and Scope subsections in order, the gates, the template, and a T0 with the stem and the slug", () => {
+    const root = tempDir();
+    expect(init(root, ...ARGS).status).toBe(0);
+    const text = read(root, specRel(DEMO));
+    const parsed = parsePlan(text);
+    expect(parsed.sections.map((s) => s.title)).toEqual([SECTIONS[0], "Behavior", ...SECTIONS.slice(1)]);
+    const scope = text.slice(text.indexOf("\n## Scope\n"), text.indexOf("\n## Research\n")).split("\n");
+    expect(scope.filter((l) => l.startsWith("### ")).map((l) => l.slice(4))).toEqual([...SCOPE_SUBSECTIONS]);
+    expect(text).toContain("## Questions\n\n### Product\n\n<!-- todo: product -->\n\n### Technical\n\n<!-- todo: technical -->\n");
+    expect(parsed.finals.map((f) => [f.id, f.box])).toEqual([["F1", "Open"], ["F2", "Open"], ["F3", "Open"], ["F4", "Open"]]);
+    expect(parsed.todos.map((t) => [t.id, t.title, t.box])).toEqual([["T0", "Copy the plan into the project", "Open"], ["T1", "Title", "Open"]]);
+    const t0 = parsed.todos[0];
+    expect(Object.keys(t0.fields)).toEqual([...TODO_FIELDS]);
+    expect(t0.fields.Acceptance).toBe(`\`test -f ${specRel(DEMO)}\` exits 0`);
+    expect(t0.fields.Commit).toBe("yes — `docs(plans): add demo plan`");
+    const template = text.slice(text.indexOf("### T1 — Title\n"), text.indexOf("\n## Final verification wave\n")).trim().split("\n").slice(2);
+    expect(template).toEqual(["- [ ] Open", ...TODO_FIELDS.flatMap((f) => (f === "Closes gap" ? [f, "Serves"] : [f])).map((f) => `- ${f}:`)]);
+    expect(text.endsWith("| Gap | Closed by | Proof |\n| --- | --- | --- |\n\n<!-- todo: success criteria -->\n")).toBe(true);
+  });
+
+  test("a second call with the same slug creates a directory that ends in -2 and leaves the first byte-identical", () => {
+    const root = tempDir();
+    expect(init(root, ...ARGS).stdout).toBe(`${specRel(DEMO)}\n`);
+    const first = tree(root);
+    const again = init(root, ...ARGS);
+    expect(again.status).toBe(0);
+    expect(again.stdout).toBe(`${specRel(`${DEMO}-2`)}\n`);
+    expect(tree(root).filter((e) => !e.startsWith(`docs/plans/${DEMO}-2/`))).toEqual(first);
+    const second = read(root, specRel(`${DEMO}-2`));
+    expect(second).toContain(`[Evidence index](${DEMO}-2.evidence-index.md)`);
+    expect(second).toContain(`- Acceptance: \`test -f ${specRel(`${DEMO}-2`)}\` exits 0`);
+    expect(second).toContain("- Commit: yes — `docs(plans): add demo plan`");
+    expect(codes(validatePlan(specRel(`${DEMO}-2`), { root })).sort()).toEqual(SKELETON_ERRORS);
+    // A name is taken by any kind of entry: a file, and a symlink to nothing.
+    write(root, `docs/plans/${DEMO}-3`, "a file\n");
+    symlinkSync("missing", join(root, `docs/plans/${DEMO}-4`));
+    const taken = tree(root);
+    expect(init(root, ...ARGS).stdout).toBe(`${specRel(`${DEMO}-5`)}\n`);
+    expect(tree(root).filter((e) => !e.startsWith(`docs/plans/${DEMO}-5/`))).toEqual(taken);
+    expect(readdirSync(join(root, "docs/plans")).filter((name) => name.startsWith("."))).toEqual([]);
+  });
+
+  test("in a git repository the baseline holds the HEAD revision and the dirty paths; outside git it holds nonGit", () => {
+    const root = makeProject();
+    write(root, "README.md", "# Fixture\n\nChanged.\n");
+    write(root, "notes.txt", "untracked\n");
+    expect(init(root, ...ARGS).status).toBe(0);
+    const inGit = baselineOf(read(root, evidenceRel(DEMO)));
+    expect(inGit.revision).toBe(git(root, "rev-parse", "HEAD").toString().trim());
+    expect([...inGit.dirty].sort()).toEqual(["README.md", "notes.txt"]);
+    expect(inGit.checks).toEqual([]);
+    expect("nonGit" in inGit).toBe(false);
+    const outside = tempDir();
+    write(outside, "notes.txt", "untracked\n");
+    expect(init(outside, ...ARGS).status).toBe(0);
+    expect(baselineOf(read(outside, evidenceRel(DEMO)))).toEqual({ nonGit: true, dirty: [], checks: [] });
+    expect(codes(validatePlan(specRel(DEMO), { root: outside })).sort()).toEqual(SKELETON_ERRORS);
+  });
+
+  test("a slug with a slash or dots, a missing required flag, an unknown tier, and a combination with --json each exit 2 and create nothing", () => {
+    const root = tempDir();
+    const cases: [string[], string][] = [
+      [withValue("--slug", "../x"), "--slug"],
+      [withValue("--slug", "a/b"), "--slug"],
+      [withValue("--slug", "a.b"), "--slug"],
+      [without("--slug"), "--slug"],
+      [without("--branch"), "--branch"],
+      [withValue("--tier", "huge"), "--tier"],
+      [[...ARGS, "--json"], "--json"],
+      [withValue("--title", " \n "), "--title"],
+      [withValue("--branch", "feat/a b"), "--branch"],
+      [withValue("--date", "today"), "--date"],
+      [[...ARGS, "--grammar"], "--grammar"],
+      [[...ARGS, "--slug", "other"], "--slug"],
+      [[...ARGS, "plan.md"], "plan path"],
+      [[...ARGS, "--bogus"], "--bogus"],
+    ];
+    for (const [args, named] of cases) {
+      const p = init(root, ...args);
+      expect([p.status, p.stdout.trimEnd().split("\n").length, p.stdout.startsWith("error: ")]).toEqual([2, 1, true]);
+      expect(p.stdout).toContain(named);
+    }
+    const stray = cli("--title", "Demo plan", "--root", root);
+    expect([stray.status, stray.stdout.trimEnd()]).toEqual([2, "error: --title needs --init"]);
+    expect(tree(root)).toEqual([]);
+  });
+
+  test("a docs/plans that is a symlink to a directory outside the root exits 2 and writes nothing there", () => {
+    const outside = tempDir();
+    const root = tempDir();
+    mkdirSync(join(root, "docs"));
+    symlinkSync(outside, join(root, "docs/plans"));
+    const p = init(root, ...ARGS);
+    expect([p.status, p.stdout.trimEnd()]).toEqual([2, "error: docs/plans resolves outside the root"]);
+    const viaDocs = tempDir();
+    symlinkSync(outside, join(viaDocs, "docs"));
+    expect(init(viaDocs, ...ARGS).stdout.trimEnd()).toBe("error: docs resolves outside the root");
+    expect(readdirSync(outside)).toEqual([]);
+    // A symlink that stays inside the root is followed.
+    const inside = tempDir();
+    mkdirSync(join(inside, "docs"));
+    mkdirSync(join(inside, "kept"));
+    symlinkSync("../kept", join(inside, "docs/plans"));
+    expect(init(inside, ...ARGS).stdout).toBe(`${specRel(DEMO)}\n`);
+    expect(readdirSync(join(inside, "kept", DEMO)).sort()).toEqual([`${DEMO}.evidence-index.md`, `${DEMO}.md`]);
+  });
+
+  test("--grammar prints the Plan grammar and Field caps sections of the contract as they stand", () => {
+    const contract = readFileSync(join(repo, "skills/planning/plan-review/references/validator-contract.md"), "utf8");
+    const start = contract.indexOf("\n## Plan grammar\n") + 1;
+    const end = contract.indexOf("\n## ", contract.indexOf("\n## Field caps\n") + 1) + 1;
+    for (const script of [rootCli, bundled]) {
+      const p = spawnSync("bun", [script, "--grammar"], { encoding: "utf8" });
+      expect(p.status).toBe(0);
+      expect(p.stdout.split("\n")[0]).toBe("## Plan grammar");
+      expect(p.stdout).toContain("\n## Field caps\n");
+      expect(p.stdout).toContain("\n| Todo `Do` | 150 words | 300 |\n");
+      expect(p.stdout.split("\n")).not.toContain("## Evidence index");
+      expect(p.stdout).toBe(`${contract.slice(start, end).trimEnd()}\n`);
+    }
+    for (const extra of [["--root", "."], ["plan.md"], ["--json"], ["--todo", "T1"]]) {
+      const p = cli("--grammar", ...extra);
+      expect([p.status, p.stdout.trimEnd().split("\n").length, p.stdout.startsWith("error: ")]).toEqual([2, 1, true]);
+    }
+  });
+
+  test("a copy of the script alone exits 2 for --grammar and still validates a plan", () => {
+    const dir = join(tempDir(), "scripts");
+    mkdirSync(dir);
+    const alone = join(dir, "validate-plan.ts");
+    copyFileSync(bundled, alone);
+    const grammar = spawnSync("bun", [alone, "--grammar"], { encoding: "utf8" });
+    expect(grammar.status).toBe(2);
+    expect(grammar.stdout.startsWith("error: cannot read ")).toBe(true);
+    const root = makeProject();
+    writePlan(root, planText(root));
+    const checked = spawnSync("bun", [alone, PLAN, "--root", root, "--json"], { encoding: "utf8" });
+    expect(checked.status).toBe(0);
+    expect(JSON.parse(checked.stdout).errors).toEqual([]);
+  });
+
+  test("--help lists --init and --grammar", () => {
+    const p = cli("--help");
+    expect(p.status).toBe(0);
+    expect(p.stdout).toContain("validate-plan --init --title <title> --slug <slug> --request <text>");
+    expect(p.stdout).toContain("validate-plan --grammar\n");
+    for (const flag of ["--init", "--grammar", "--title", "--slug", "--request", "--intent", "--tier", "--branch", "--source", "--date", "--ui"]) expect(p.stdout).toContain(flag);
+  });
+});
+
+describe("Design subsections", () => {
+  /** `--todo T2` on the fixture plan, as the validator printed it before it printed Design subsections. */
+  const BEFORE_T2 = [
+    "# Fixture plan: T2 — Add the flag",
+    "",
+    "Branch: `feat/fixture`",
+    "",
+    "### T2 — Add the flag",
+    "",
+    "- [ ] Open",
+    "- Do: add the flag.",
+    "- Must not: change register.",
+    "- Closes gap: G2.",
+    "- Depends on: T1.",
+    "- References: `src/cli.ts:1-2`, `src/app.ts:5-7`, `src/new.ts`.",
+    "- Acceptance: `bun test` passes.",
+    "- QA scenario: happy — flag works; failure — unknown flag.",
+    "- Strict: no.",
+    "- Commit: no.",
+    "",
+    "Gaps it closes:",
+    "",
+    "| G2 | `src/cli.ts:1` and `:2` — the CLI calls start | No flag |",
+    "",
+    "Depends on: T1 — Add the greeting",
+    "",
+    "Strict areas: none",
+    "Checks its pass receipt must record: `acceptance`, `qa:happy`, `qa:failure`",
+    "",
+    "Must have and must not have (whole plan):",
+    "",
+    "- MH1: A greeting.",
+    "- MH2: A flag.",
+    "- MN1: No network access.",
+  ].join("\n");
+  const CHECKS = "Checks its pass receipt must record: `acceptance`, `qa:happy`, `qa:failure`";
+  const MUST = "Must have and must not have (whole plan):";
+  const DIAGRAM = "Diagram: omitted — a two-file change.\n";
+  /** A subsection with a deeper heading inside it. */
+  const GREETING = ["### Greeting format", "", "The greeting is `hello <name>`.", "", "#### Empty name", "", "An empty name greets `hello`.", ""];
+  /** A subsection with a fenced heading inside it, and two blank lines at its end. */
+  const FLAG = ["### Flag parsing", "", "```text", "### Not a subsection", "```", "", "The flag is `--greet`, and it takes no value.", "", ""];
+  /** GREETING and FLAG as `--todo` prints them, without trailing blank lines. */
+  const GREETING_OUT = GREETING.slice(0, -1);
+  const FLAG_OUT = FLAG.slice(0, -2);
+  /** The fixture plan with these lines after the Design diagram line, and each [from, to] replacement applied. */
+  const designPlan = (design: string[], ...swaps: [string, string][]): string => {
+    const root = makeProject();
+    let text = planText(root).replace(DIAGRAM, `${DIAGRAM}\n${design.join("\n")}`);
+    for (const [from, to] of swaps) text = text.replace(from, to);
+    writePlan(root, text);
+    return root;
+  };
+  const brief = (root: string, id: string): string => {
+    const p = spawnSync("bun", [rootCli, PLAN, "--todo", id, "--root", root], { encoding: "utf8" });
+    expect(p.status).toBe(0);
+    return p.stdout;
+  };
+  const headers = (out: string): string[] => out.split("\n").filter((l) => l.startsWith("Design — "));
+
+  test("a todo that names one subsection gets that subsection and no other", () => {
+    const root = designPlan([...GREETING, ...FLAG], ["- Do: change start.", '- Do: change start as "Greeting format" in Design says.']);
+    const out = brief(root, "T1");
+    expect(out).toContain([CHECKS, "", "Design — Greeting format:", "", ...GREETING_OUT, "", MUST, ""].join("\n"));
+    expect(headers(out)).toEqual(["Design — Greeting format:"]);
+    expect(out).not.toContain("Flag parsing");
+  });
+
+  test("a todo that names two gets both, in document order, each once", () => {
+    const root = designPlan([...GREETING, ...FLAG], ["- Do: add the flag.", "- Do: add the flag as Flag parsing says, keep the Greeting format, and test the flag parsing."]);
+    const out = brief(root, "T2");
+    expect(out).toContain([CHECKS, "", "Design — Greeting format:", "", ...GREETING_OUT, "", "Design — Flag parsing:", "", ...FLAG_OUT, "", MUST, ""].join("\n"));
+    expect(headers(out)).toEqual(["Design — Greeting format:", "Design — Flag parsing:"]);
+  });
+
+  test("a todo that names none gets the output it had before, byte for byte", () => {
+    const root = designPlan([...GREETING, ...FLAG]);
+    expect(brief(root, "T2")).toBe(`${BEFORE_T2}\n`);
+    const plain = makeProject();
+    writePlan(plain, planText(plain));
+    for (const id of ["T0", "T1", "F1", "F2", "F3", "F4"]) expect(brief(root, id)).toBe(brief(plain, id));
+  });
+
+  test("a title written inside backticks, or in another letter case, still matches", () => {
+    const ticked = ["### The `--greet` flag", "", "It takes no value.", ""];
+    const root = designPlan([...GREETING, ...ticked], ["- Do: change start.", "- Do: change start as `GREETING   Format` says."], ["- Do: add the flag.", "- Do: add the --GREET flag."]);
+    const t1 = brief(root, "T1");
+    expect(t1).toContain(["", "Design — Greeting format:", "", ...GREETING_OUT, ""].join("\n"));
+    expect(headers(t1)).toEqual(["Design — Greeting format:"]);
+    const t2 = brief(root, "T2");
+    expect(t2).toContain(["", "Design — The `--greet` flag:", "", ...ticked.slice(0, -1), "", MUST].join("\n"));
+    expect(headers(t2)).toEqual(["Design — The `--greet` flag:"]);
+  });
+
+  test("a title that is only part of a longer word does not match", () => {
+    const root = designPlan(["### Greet", "", "Say hello.", "", "### Flag", "", "One flag.", ""], ["- Do: change start.", "- Do: change start; greet2, 2greet, and égreet are ids."]);
+    // T1 says greeting, greets, greet2, 2greet, and égreet, and never greet alone.
+    expect(headers(brief(root, "T1"))).toEqual([]);
+    // T2 says flag between a space and a full stop.
+    const t2 = brief(root, "T2");
+    expect(headers(t2)).toEqual(["Design — Flag:"]);
+    expect(t2).toContain(["", "Design — Flag:", "", "### Flag", "", "One flag.", "", MUST].join("\n"));
+  });
+
+  test("a final gate that names a subsection gets it, and so does the UI QA block", () => {
+    const ui = "### Automated UI QA\n\n- [ ] Open\n- Do: open the page as the Greeting format says.\n\n";
+    const root = designPlan([...GREETING, ...FLAG], ["- Do: run scenarios.", "- Do: run scenarios as Flag parsing says."], ["## Success criteria", `${ui}## Success criteria`]);
+    const f3 = brief(root, "F3");
+    expect(f3).toContain(["### F3 — Scenario QA", "", "- [ ] Open", "- Do: run scenarios as Flag parsing says.", "", "Design — Flag parsing:", "", ...FLAG_OUT, "", MUST, ""].join("\n"));
+    expect(headers(f3)).toEqual(["Design — Flag parsing:"]);
+    const block = brief(root, "UI");
+    expect(block).toContain(["- Do: open the page as the Greeting format says.", "", "Design — Greeting format:", "", ...GREETING_OUT, "", MUST, ""].join("\n"));
+    expect(headers(block)).toEqual(["Design — Greeting format:"]);
+    expect(headers(brief(root, "F1"))).toEqual([]);
+  });
+
+  test("a plan with no subsection under Design is unchanged", () => {
+    const plain = makeProject();
+    writePlan(plain, planText(plain));
+    expect(brief(plain, "T2")).toBe(`${BEFORE_T2}\n`);
+    // A fenced heading and a deeper heading are no subsections, though T2 says flag.
+    const other = designPlan(["```markdown", "### Flag", "```", "", "#### Flag", "", "The flag is `--greet`.", ""]);
+    expect(brief(other, "T2")).toBe(`${BEFORE_T2}\n`);
+    const none = makeProject();
+    writePlan(none, planText(none).replace(`## Design\n\n${DIAGRAM}\n`, ""));
+    expect(read(none, PLAN)).not.toContain("## Design");
+    expect(brief(none, "T2")).toBe(`${BEFORE_T2}\n`);
+  });
+});
+
+describe("record-receipt", () => {
+  const RECORD = join(repo, "skills/planning/plan-builder/scripts/record-receipt.ts");
+  const RUN = ".git/silly-skills/plan-builds/run";
+  /** One --check argument for a check that ran `bun test` and exited 0, with any field replaced or added. */
+  const arg = (id: string, more: Record<string, unknown> = {}): string[] => ["--check", JSON.stringify({ id, command: "bun test", exit: 0, ...more })];
+  /** The checks T1 and T2 need: each has a happy and a failure QA part. */
+  const CHECKS = ["acceptance", "qa:happy", "qa:failure"].flatMap((id) => arg(id));
+  const NOTE = (text: string): string[] => ["--note", text];
+  /** T1's edit, as the build fixture makes it. */
+  const editT1 = (root: string): void => writeFileSync(join(root, "src/app.ts"), APP.replace("return register(config);", "return register(`hello ${config}`);"));
+  /** Two slices: S1 ends with T1, and S2 holds T2. */
+  const SLICES = (t: string): string =>
+    t.replace(
+      "- Wave 1: T1\n- Wave 2: T2 — needs T1\n",
+      "- Slice S1 — greeting. Independent test: `bun test` greets a configured name.\n- Wave 1: T1\n- Slice S2 — flag. Independent test: the CLI accepts the flag.\n- Wave 2: T2 — needs T1\n",
+    );
+  /** T0 with `Commit: yes`, as a 2.1.0 writer leaves it. */
+  const T0_COMMIT = (t: string): string =>
+    t.replace("- QA scenario: happy — the file exists; failure — n/a.\n- Strict: no.\n- Commit: no.", "- QA scenario: happy — the file exists; failure — n/a.\n- Strict: no.\n- Commit: yes — `docs(plans): add fixture plan`.");
+  const ignorePlans = (root: string): void => {
+    write(root, ".gitignore", "/docs/plans/\n");
+    git(root, "add", ".gitignore");
+    git(root, "commit", "-q", "-m", "ignore plans");
+  };
+  const trackPlans = (root: string): void => {
+    git(root, "add", "--", DIR);
+    git(root, "commit", "-q", "-m", "docs(plans): add fixture plan");
+  };
+  const obligation = (targets: string[]): Obligation[] => [{ id: "O1", targets, evidenceIds: ["C1", "P1"], observed: "traced", plannedQa: "Q1", status: "verified" }];
+
+  const call = (root: string, todo: string, event: string, ...more: string[]) => {
+    const p = spawnSync("bun", [RECORD, PLAN, "--root", root, "--todo", todo, "--event", event, ...more], { encoding: "utf8" });
+    return { code: p.status, out: `${p.stdout}${p.stderr}`.trim() };
+  };
+  /** The receipts of the build file, read without the validator. */
+  const recorded = (root: string) => [...read(root, BUILD).matchAll(/```json\n([\s\S]*?)\n```/g)].flatMap((m) => JSON.parse(m[1]).receipts ?? []);
+  /** What a refused call leaves as it was: the bytes of the spec and the build file, and the entries of the run directory. */
+  const untouched = (root: string) => ({ plan: sha(readFileSync(join(root, PLAN))), build: sha(readFileSync(join(root, BUILD))), run: readdirSync(join(root, RUN)).sort() });
+  /** Runs the command, expects one refusal line that changed nothing, and returns the line. */
+  const refused = (root: string, todo: string, event: string, ...more: string[]): string => {
+    const before = untouched(root);
+    const result = call(root, todo, event, ...more);
+    expect(result.code).toBe(1);
+    expect(result.out).toMatch(new RegExp(`^RECEIPT: REFUSED ${todo} ${event}; [^\\n]+$`));
+    expect(untouched(root)).toEqual(before);
+    return result.out;
+  };
+  const resume = (root: string) => run(root, ["--review", "--resume"]);
+  /** The codes the validator's resume check reports when the fixture's own receipt writer appends `input` after `inputs`. The build file is restored. */
+  const orderCodes = (s: ReturnType<typeof buildScenario>, inputs: ReceiptInput[], input: ReceiptInput): string[] => {
+    const original = read(s.root, BUILD);
+    writeBuild(s.root, { ...s.record, receipts: receipts(s.baseline, [...inputs, input]) });
+    const found = codes(resume(s.root));
+    write(s.root, BUILD, original);
+    return found;
+  };
+
+  test("record-receipt records a pass", () => {
+    const { root } = buildScenario({ stopAfter: "T0" });
+    editT1(root);
+    expect(call(root, "T1", "pass", ...CHECKS)).toEqual({ code: 0, out: "RECEIPT: T1 pass seq 2; resumeEligible true; next T2" });
+    const [t0, t1] = recorded(root);
+    expect(Object.keys(t1)).toEqual(["seq", "todo", "event", "state", "prev", "before", "after", "checks", "prerequisites", "commit", "note"]);
+    expect([t1.seq, t1.todo, t1.event, t1.state, t1.prev, t1.before]).toEqual([2, "T1", "pass", "passed", sha(canon(t0)), t0.after]);
+    expect(t1.after.snapshot).toBe("silly-skills/plan-builds/run/2-T1");
+    expect(t1.checks).toEqual(["acceptance", "qa:happy", "qa:failure"].map((id) => ({ id, command: "bun test", exit: 0, expectedExit: 0, passed: true })));
+    expect([t1.prerequisites, t1.commit, t1.note]).toEqual([[], { none: "no commit" }, ""]);
+    expect(read(root, PLAN)).toContain("### T1 — Add the greeting\n\n- [x] Done");
+    const result = resume(root);
+    expect(result.errors).toEqual([]);
+    expect([result.resumeEligible, result.nextTodo]).toEqual([true, "T2"]);
+  });
+
+  test("record-receipt refuses a pass without a required check", () => {
+    const { root } = buildScenario({ stopAfter: "T0" });
+    editT1(root);
+    expect(refused(root, "T1", "pass", ...arg("acceptance"), ...arg("qa:happy"))).toContain('T1 has no passing check "qa:failure"');
+    expect(call(root, "T1", "pass", ...CHECKS).code).toBe(0);
+    expect(recorded(root).filter((r) => r.todo === "T1").length).toBe(1);
+    expect(resume(root).errors).toEqual([]);
+  });
+
+  test("record-receipt refuses a failing check, a check with another key, a second pass, and a slice's last todo without its slice check", () => {
+    const { root } = buildScenario({ stopAfter: "T0" });
+    editT1(root);
+    expect(refused(root, "T1", "pass", ...arg("acceptance"), ...arg("qa:happy"), ...arg("qa:failure", { exit: 1 }))).toContain('check "qa:failure" failed: exit 1, expected 0');
+    expect(refused(root, "T1", "pass", ...CHECKS, ...arg("lint", { passed: true }))).toContain('check "lint" has the key "passed"');
+    expect(call(root, "T1", "pass", ...CHECKS).code).toBe(0);
+    expect(refused(root, "T1", "pass", ...CHECKS)).toContain("T1 already has a pass receipt");
+    // In a plan whose slice S1 ends with T1, T1's pass also needs the slice's independent test.
+    const sliced = buildScenario({ stopAfter: "T0", mutatePlan: SLICES, obligations: obligation([...ALL_TARGETS, "slice:S1", "slice:S2"]) });
+    editT1(sliced.root);
+    expect(refused(sliced.root, "T1", "pass", ...CHECKS)).toContain('T1 has no passing check "slice:S1"');
+    expect(call(sliced.root, "T1", "pass", ...CHECKS, ...arg("slice:S1")).out).toBe("RECEIPT: T1 pass seq 2; resumeEligible true; next T2");
+  });
+
+  test("record-receipt needs the commit of a Commit: yes todo, and it must be HEAD", () => {
+    const { root } = buildScenario({ stopAfter: "T0", t1Commit: true });
+    editT1(root);
+    git(root, "commit", "-q", "-am", "feat: greet");
+    expect(refused(root, "T1", "pass", ...CHECKS)).toContain("T1 says Commit: yes; name its commit with --commit");
+    expect(refused(root, "T1", "pass", ...CHECKS, "--no-commit", "nothing to commit")).toContain("T1 says Commit: yes");
+    expect(refused(root, "T1", "pass", ...CHECKS, "--commit", "HEAD~1")).toContain("which is not HEAD");
+    expect(refused(root, "T1", "pass", ...CHECKS, "--commit", "no-such-revision")).toContain("does not resolve to a commit");
+    expect(refused(root, "T1", "pass", ...CHECKS, "--commit", "--output=x")).toContain("does not resolve to a commit");
+    expect(call(root, "T1", "pass", ...CHECKS, "--commit", "HEAD").out).toBe("RECEIPT: T1 pass seq 2; resumeEligible true; next T2");
+    expect(recorded(root)[1].commit).toEqual({ sha: git(root, "rev-parse", "HEAD").toString().trim() });
+    expect(resume(root).errors).toEqual([]);
+  });
+
+  test("record-receipt records a block with its note, and resume is not eligible", () => {
+    const { root } = buildScenario({ stopAfter: "T0" });
+    expect(refused(root, "T1", "block")).toContain("a block needs --note");
+    expect(call(root, "T1", "block", ...NOTE("needs a credential"))).toEqual({ code: 0, out: "RECEIPT: T1 block seq 2; resumeEligible false; next T1" });
+    const t1 = recorded(root)[1];
+    expect([t1.state, t1.note, t1.checks]).toEqual(["blocked", "needs a credential", []]);
+    expect(read(root, PLAN)).toContain("### T1 — Add the greeting\n\n- [ ] Open");
+    const result = resume(root);
+    expect(result.errors).toEqual([]);
+    expect(result.unresolvedAction).toContain("needs a credential");
+  });
+
+  test("record-receipt records a recovery after an unrecorded edit, and the todo is active", () => {
+    const { root } = buildScenario({ stopAfter: "T0" });
+    writeFileSync(join(root, "src/app.ts"), `${APP}// partial\n`);
+    expect(resume(root).recoveryRequired).toBe(true);
+    expect(refused(root, "T1", "recovery")).toContain("a recovery needs --note");
+    expect(call(root, "T1", "recovery", ...NOTE("T1 edits from an interrupted attempt; kept"))).toEqual({ code: 0, out: "RECEIPT: T1 recovery seq 2; resumeEligible true; next T1" });
+    expect(recorded(root)[1].state).toBe("active");
+    const result = resume(root);
+    expect(result.errors).toEqual([]);
+    expect([result.activeTodo, result.recoveryRequired]).toEqual(["T1", false]);
+  });
+
+  test("record-receipt records a fix naming F4 after every todo passed, and refuses a fix naming a todo or with a check that has no command", () => {
+    const s = buildScenario();
+    s.record.receipts = receipts(s.baseline, [...s.inputs, { todo: "T2", event: "pass", after: "same" }]);
+    writeBuild(s.root, s.record);
+    setBoxes(s.root, ["T2"]);
+    expect(refused(s.root, "T2", "fix", ...arg("blocking:D1"))).toContain("T2 is not a final gate of the plan");
+    expect(refused(s.root, "F4", "fix", "--check", JSON.stringify({ id: "blocking:D1", exit: 0 }))).toContain('check "blocking:D1" lacks a command or a numeric exit');
+    expect(refused(s.root, "F4", "fix")).toContain("a fix needs a check");
+    expect(call(s.root, "F4", "fix", ...arg("blocking:D1"), "--commit", "HEAD")).toEqual({ code: 0, out: "RECEIPT: F4 fix seq 4; resumeEligible true; next F1" });
+    expect(recorded(s.root)[3]).toMatchObject({ todo: "F4", event: "fix", state: "passed", commit: { sha: git(s.root, "rev-parse", "HEAD").toString().trim() } });
+    expect(resume(s.root).errors).toEqual([]);
+  });
+
+  test("record-receipt carries every earlier snapshot into the capture", () => {
+    const { root } = buildScenario({ stopAfter: "T0" });
+    editT1(root);
+    write(root, "notes.txt", "scratch notes from T1\n");
+    expect(call(root, "T1", "pass", ...CHECKS).code).toBe(0);
+    rmSync(join(root, "notes.txt"));
+    writeFileSync(join(root, "src/cli.ts"), `${CLI}// --greet\n`);
+    const recheck = { targets: ["T2.start"], paths: ["src/app.ts"], status: "holds", observed: "register is unchanged" };
+    expect(call(root, "T2", "pass", ...CHECKS, "--recheck", JSON.stringify(recheck)).out).toBe("RECEIPT: T2 pass seq 3; resumeEligible true; next F1");
+    const [t0, t1, t2] = recorded(root);
+    const row = (ref: { snapshot: string }) => JSON.parse(read(root, `.git/${ref.snapshot}/manifest.json`)).paths.find((p: { path: string }) => p.path === "notes.txt");
+    // Only T1's snapshot saw notes.txt; T2's snapshot keeps it, as absent, because the capture carried T1's.
+    expect(row(t0.after)).toBeUndefined();
+    expect(row(t1.after).worktree.state).toBe("file");
+    expect(row(t2.after)).toEqual({ path: "notes.txt", head: { state: "absent" }, index: { state: "absent" }, worktree: { state: "absent" } });
+    expect(t2.prerequisites).toEqual([{ targets: ["T2.start"], sources: [{ path: "src/app.ts", sha256: sha(readFileSync(join(root, "src/app.ts"))) }], status: "holds", observed: "register is unchanged" }]);
+    expect(resume(root).errors).toEqual([]);
+  });
+
+  test("record-receipt runs no command", () => {
+    const { root } = buildScenario({ stopAfter: "T0" });
+    editT1(root);
+    const marker = join(root, "marker");
+    const command = `touch ${marker} && echo $(touch ${marker}-2) \`touch ${marker}-3\``;
+    const r = call(root, "T1", "pass", "--check", JSON.stringify({ id: "acceptance", command, exit: 0, observed: `$(touch ${marker}-4)` }), ...arg("qa:happy"), ...arg("qa:failure"), ...NOTE(`$(touch ${marker}-5)`), "--log", `$(touch ${marker}-6)`);
+    expect(r).toEqual({ code: 0, out: "RECEIPT: T1 pass seq 2; resumeEligible true; next T2" });
+    const t1 = recorded(root)[1];
+    expect(t1.checks[0]).toEqual({ id: "acceptance", command, exit: 0, expectedExit: 0, passed: true, observed: `$(touch ${marker}-4)` });
+    expect([t1.note, t1.log]).toEqual([`$(touch ${marker}-5)`, `$(touch ${marker}-6)`]);
+    expect(readdirSync(root).filter((name) => name.startsWith("marker"))).toEqual([]);
+  });
+
+  test("record-receipt appends one block after one blank line, and the file ends with one newline", () => {
+    for (const ending of ["\n", "", "\n\n\n"]) {
+      const { root } = buildScenario({ stopAfter: "T0" });
+      const kept = read(root, BUILD).replace(/\n+$/, "");
+      write(root, BUILD, `${kept}${ending}`);
+      editT1(root);
+      expect(call(root, "T1", "pass", ...CHECKS).code).toBe(0);
+      const text = read(root, BUILD);
+      expect(text.startsWith(kept)).toBe(true);
+      expect(text.slice(kept.length)).toMatch(/^\n\n```json\n\{"receipts":\[\{"seq":2,[^\n]*\}\]\}\n```\n$/);
+    }
+  });
+
+  test("record-receipt lets a Commit: yes T0 name no commit only where git ignores the plan directory", () => {
+    for (const ignored of [true, false]) {
+      const s = buildScenario({ stopAfter: "T0", mutatePlan: T0_COMMIT, beforeBaseline: ignored ? ignorePlans : trackPlans });
+      writeBuild(s.root, { ...s.record, receipts: [] });
+      writePlan(s.root, read(s.root, PLAN).replace("- [x] Done", "- [ ] Open"));
+      const args = [...arg("acceptance"), ...arg("qa:happy"), "--no-commit", "git ignores the plan directory"];
+      if (!ignored) {
+        expect(refused(s.root, "T0", "pass", ...args)).toContain("T0 says Commit: yes");
+        continue;
+      }
+      expect(call(s.root, "T0", "pass", ...args)).toEqual({ code: 0, out: "RECEIPT: T0 pass seq 1; resumeEligible true; next T1" });
+      const [t0] = recorded(s.root);
+      expect([t0.prev, t0.before, t0.commit]).toEqual([null, s.baseline, { none: "git ignores the plan directory" }]);
+      expect(read(s.root, PLAN)).toContain("### T0 — Copy the plan into the project\n\n- [x] Done");
+    }
+  });
+
+  test("record-receipt --help exits 0, and no argument exits 2", () => {
+    const cli = (...args: string[]) => spawnSync("bun", [RECORD, ...args], { encoding: "utf8" });
+    const help = cli("--help");
+    expect(help.status).toBe(0);
+    expect(help.stdout.split("\n")[0]).toStartWith("Usage: record-receipt");
+    expect(cli().status).toBe(2);
+    const { root } = buildScenario({ stopAfter: "T0" });
+    const base = [PLAN, "--root", root, "--todo", "T1"];
+    for (const bad of [
+      [...base, "--event", "start"],
+      [...base, "--event", "pass", "--check", "[1]"],
+      [...base, "--event", "pass", "--check", "{not json"],
+      [...base, "--event", "pass", "--bogus"],
+      [...base, "--event", "pass", "--commit", "HEAD", "--no-commit", "none"],
+      ["../outside.md", "--root", root, "--todo", "T1", "--event", "pass"],
+    ]) {
+      expect({ bad, status: cli(...bad).status }).toEqual({ bad, status: 2 });
+    }
+    rmSync(join(root, BUILD));
+    expect(cli(...base, "--event", "pass", ...CHECKS).status).toBe(2);
+  });
+
+  test("record-receipt refuses an event out of order", () => {
+    // T2 depends on T1, which has not passed.
+    const s = buildScenario({ stopAfter: "T0" });
+    const cases: [string, string[], ReceiptInput][] = [
+      ["pass", CHECKS, { todo: "T2", event: "pass", after: "same" }],
+      ["block", NOTE("blocked early"), { todo: "T2", event: "block", after: "same", note: "blocked early" }],
+      ["recovery", NOTE("T2 edits found"), { todo: "T2", event: "recovery", after: "same", note: "T2 edits found" }],
+    ];
+    for (const [event, more, input] of cases) {
+      expect(refused(s.root, "T2", event, ...more)).toContain("T2 depends on T1, which has no pass receipt");
+      expect(orderCodes(s, s.inputs, input)).toContain("DEPENDENCY_ORDER");
+    }
+    expect(refused(s.root, "F4", "fix", ...arg("blocking:D1"))).toContain("T1, T2 have no pass receipt");
+    expect(orderCodes(s, s.inputs, { todo: "F4", event: "fix", after: "same", checks: [check("blocking:D1")] })).toContain("RECEIPT_ORDER");
+    editT1(s.root);
+    expect(call(s.root, "T1", "pass", ...CHECKS).out).toBe("RECEIPT: T1 pass seq 2; resumeEligible true; next T2");
+    expect(call(s.root, "T2", "pass", ...CHECKS).out).toBe("RECEIPT: T2 pass seq 3; resumeEligible true; next F1");
+    expect(resume(s.root).errors).toEqual([]);
+  });
+
+  test("record-receipt refuses a block or a recovery for a todo that passed", () => {
+    const s = buildScenario();
+    for (const event of ["block", "recovery"]) {
+      expect(refused(s.root, "T1", event, ...NOTE("one more try"))).toContain("T1 already has a pass receipt");
+      expect(orderCodes(s, s.inputs, { todo: "T1", event, after: "same", note: "one more try" })).toContain("RECEIPT_ORDER");
+    }
+  });
+
+  test("record-receipt refuses every event for another todo while one is active", () => {
+    // T2 depends only on T0, and a recovery receipt makes T1 active.
+    const T2_ON_T0 = (t: string): string => t.replace("- Closes gap: G2.\n- Depends on: T1.", "- Closes gap: G2.\n- Depends on: T0.");
+    const s = buildScenario({ stopAfter: "T0", mutatePlan: T2_ON_T0, obligations: obligation(ALL_TARGETS.map((t) => (t === "dep:T2:T1" ? "dep:T2:T0" : t))) });
+    writeFileSync(join(s.root, "src/app.ts"), `${APP}// partial\n`);
+    const partial = saveSnapshot(s.root, snapshot(s.root, "silly-skills/plan-builds/run/T1-recovery", { carry: s.carry }), s.spec);
+    const inputs: ReceiptInput[] = [...s.inputs, { todo: "T1", event: "recovery", after: partial, note: "T1 edits from an interrupted attempt; kept" }];
+    writeBuild(s.root, { ...s.record, receipts: receipts(s.baseline, inputs) });
+    const active = resume(s.root);
+    expect(active.errors).toEqual([]);
+    expect(active.activeTodo).toBe("T1");
+    const cases: [string, string[], ReceiptInput][] = [
+      ["pass", CHECKS, { todo: "T2", event: "pass", after: "same" }],
+      ["block", NOTE("blocked early"), { todo: "T2", event: "block", after: "same", note: "blocked early" }],
+      ["recovery", NOTE("T2 edits found"), { todo: "T2", event: "recovery", after: "same", note: "T2 edits found" }],
+    ];
+    for (const [event, more, input] of cases) {
+      expect(refused(s.root, "T2", event, ...more)).toContain("T1 is active until its pass or block receipt");
+      expect(orderCodes(s, inputs, input)).toContain("RECEIPT_ORDER");
+    }
+    editT1(s.root);
+    expect(call(s.root, "T1", "pass", ...CHECKS).out).toBe("RECEIPT: T1 pass seq 3; resumeEligible true; next T2");
+    expect(call(s.root, "T2", "pass", ...CHECKS).out).toBe("RECEIPT: T2 pass seq 4; resumeEligible true; next F1");
+    expect(resume(s.root).errors).toEqual([]);
   });
 });
