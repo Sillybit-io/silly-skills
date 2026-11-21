@@ -3,7 +3,7 @@ name: plan-loop
 description: Drives a plan from a request or a draft to a reviewed plan by launching fresh plan-writer and plan-reviewer children in turn, never itself. Each round's reviewer is a new named session with no prior round's verdict in its payload; the fix step between rounds is a new plan-writer child too, never the session that wrote or reviewed before it. Stops at OKAY, at the two-round consent boundary, or at a genuinely unavailable input, with a structured handback instead of an invented independence claim. Building is the next request after review. Use when asked to write and review a plan until it passes, loop a plan through review, or fully automate planning to a reviewed state.
 license: CC-BY-ND-4.0
 metadata:
-  version: "0.4.0"
+  version: "0.4.1"
   category: planning
   suggested-model: anthropic/claude-sonnet-5-5
   suggested-effort: high
@@ -53,7 +53,7 @@ PLAN-LOOP: HANDBACK (<kind>; <reason>)
 
 ```markdown
 PLAN-LOOP: REVIEWED
-<plan path>. Round <n> — PLAN-REVIEW: OKAY. Writer session <id>, reviewer session <id>. Ready to build: say "build this plan".
+<plan path>. Round <n> — PLAN-REVIEW: OKAY. Writer session <id>, reviewer session <id>. Ready to build: start a new session and say "build this plan" there.
 ```
 
 ```markdown

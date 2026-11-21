@@ -175,7 +175,7 @@ Fix these blockers and re-review until approved? (yes / I will fix them myself)
 
 ```markdown
 PLAN-REVIEW: OKAY
-Round <n> — <plan path>. Whole-plan gate passed: <verified/required obligations>, <verified/required critical flows>. Evidence recorded in the gate record. <k> optional notes.
+Round <n> — <plan path>. Whole-plan gate passed: <verified/required obligations>, <verified/required critical flows>. Evidence recorded in the gate record. <k> optional notes. Start the build in a new session: say "build this plan" there.
 ```
 
 ```markdown
