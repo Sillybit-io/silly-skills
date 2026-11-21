@@ -2524,3 +2524,133 @@ describe("skeleton and grammar commands", () => {
     for (const flag of ["--init", "--grammar", "--title", "--slug", "--request", "--intent", "--tier", "--branch", "--source", "--date", "--ui"]) expect(p.stdout).toContain(flag);
   });
 });
+
+describe("Design subsections", () => {
+  /** `--todo T2` on the fixture plan, as the validator printed it before it printed Design subsections. */
+  const BEFORE_T2 = [
+    "# Fixture plan: T2 — Add the flag",
+    "",
+    "Branch: `feat/fixture`",
+    "",
+    "### T2 — Add the flag",
+    "",
+    "- [ ] Open",
+    "- Do: add the flag.",
+    "- Must not: change register.",
+    "- Closes gap: G2.",
+    "- Depends on: T1.",
+    "- References: `src/cli.ts:1-2`, `src/app.ts:5-7`, `src/new.ts`.",
+    "- Acceptance: `bun test` passes.",
+    "- QA scenario: happy — flag works; failure — unknown flag.",
+    "- Strict: no.",
+    "- Commit: no.",
+    "",
+    "Gaps it closes:",
+    "",
+    "| G2 | `src/cli.ts:1` and `:2` — the CLI calls start | No flag |",
+    "",
+    "Depends on: T1 — Add the greeting",
+    "",
+    "Strict areas: none",
+    "Checks its pass receipt must record: `acceptance`, `qa:happy`, `qa:failure`",
+    "",
+    "Must have and must not have (whole plan):",
+    "",
+    "- MH1: A greeting.",
+    "- MH2: A flag.",
+    "- MN1: No network access.",
+  ].join("\n");
+  const CHECKS = "Checks its pass receipt must record: `acceptance`, `qa:happy`, `qa:failure`";
+  const MUST = "Must have and must not have (whole plan):";
+  const DIAGRAM = "Diagram: omitted — a two-file change.\n";
+  /** A subsection with a deeper heading inside it. */
+  const GREETING = ["### Greeting format", "", "The greeting is `hello <name>`.", "", "#### Empty name", "", "An empty name greets `hello`.", ""];
+  /** A subsection with a fenced heading inside it, and two blank lines at its end. */
+  const FLAG = ["### Flag parsing", "", "```text", "### Not a subsection", "```", "", "The flag is `--greet`, and it takes no value.", "", ""];
+  /** GREETING and FLAG as `--todo` prints them, without trailing blank lines. */
+  const GREETING_OUT = GREETING.slice(0, -1);
+  const FLAG_OUT = FLAG.slice(0, -2);
+  /** The fixture plan with these lines after the Design diagram line, and each [from, to] replacement applied. */
+  const designPlan = (design: string[], ...swaps: [string, string][]): string => {
+    const root = makeProject();
+    let text = planText(root).replace(DIAGRAM, `${DIAGRAM}\n${design.join("\n")}`);
+    for (const [from, to] of swaps) text = text.replace(from, to);
+    writePlan(root, text);
+    return root;
+  };
+  const brief = (root: string, id: string): string => {
+    const p = spawnSync("bun", [rootCli, PLAN, "--todo", id, "--root", root], { encoding: "utf8" });
+    expect(p.status).toBe(0);
+    return p.stdout;
+  };
+  const headers = (out: string): string[] => out.split("\n").filter((l) => l.startsWith("Design — "));
+
+  test("a todo that names one subsection gets that subsection and no other", () => {
+    const root = designPlan([...GREETING, ...FLAG], ["- Do: change start.", '- Do: change start as "Greeting format" in Design says.']);
+    const out = brief(root, "T1");
+    expect(out).toContain([CHECKS, "", "Design — Greeting format:", "", ...GREETING_OUT, "", MUST, ""].join("\n"));
+    expect(headers(out)).toEqual(["Design — Greeting format:"]);
+    expect(out).not.toContain("Flag parsing");
+  });
+
+  test("a todo that names two gets both, in document order, each once", () => {
+    const root = designPlan([...GREETING, ...FLAG], ["- Do: add the flag.", "- Do: add the flag as Flag parsing says, keep the Greeting format, and test the flag parsing."]);
+    const out = brief(root, "T2");
+    expect(out).toContain([CHECKS, "", "Design — Greeting format:", "", ...GREETING_OUT, "", "Design — Flag parsing:", "", ...FLAG_OUT, "", MUST, ""].join("\n"));
+    expect(headers(out)).toEqual(["Design — Greeting format:", "Design — Flag parsing:"]);
+  });
+
+  test("a todo that names none gets the output it had before, byte for byte", () => {
+    const root = designPlan([...GREETING, ...FLAG]);
+    expect(brief(root, "T2")).toBe(`${BEFORE_T2}\n`);
+    const plain = makeProject();
+    writePlan(plain, planText(plain));
+    for (const id of ["T0", "T1", "F1", "F2", "F3", "F4"]) expect(brief(root, id)).toBe(brief(plain, id));
+  });
+
+  test("a title written inside backticks, or in another letter case, still matches", () => {
+    const ticked = ["### The `--greet` flag", "", "It takes no value.", ""];
+    const root = designPlan([...GREETING, ...ticked], ["- Do: change start.", "- Do: change start as `GREETING   Format` says."], ["- Do: add the flag.", "- Do: add the --GREET flag."]);
+    const t1 = brief(root, "T1");
+    expect(t1).toContain(["", "Design — Greeting format:", "", ...GREETING_OUT, ""].join("\n"));
+    expect(headers(t1)).toEqual(["Design — Greeting format:"]);
+    const t2 = brief(root, "T2");
+    expect(t2).toContain(["", "Design — The `--greet` flag:", "", ...ticked.slice(0, -1), "", MUST].join("\n"));
+    expect(headers(t2)).toEqual(["Design — The `--greet` flag:"]);
+  });
+
+  test("a title that is only part of a longer word does not match", () => {
+    const root = designPlan(["### Greet", "", "Say hello.", "", "### Flag", "", "One flag.", ""], ["- Do: change start.", "- Do: change start; greet2, 2greet, and égreet are ids."]);
+    // T1 says greeting, greets, greet2, 2greet, and égreet, and never greet alone.
+    expect(headers(brief(root, "T1"))).toEqual([]);
+    // T2 says flag between a space and a full stop.
+    const t2 = brief(root, "T2");
+    expect(headers(t2)).toEqual(["Design — Flag:"]);
+    expect(t2).toContain(["", "Design — Flag:", "", "### Flag", "", "One flag.", "", MUST].join("\n"));
+  });
+
+  test("a final gate that names a subsection gets it, and so does the UI QA block", () => {
+    const ui = "### Automated UI QA\n\n- [ ] Open\n- Do: open the page as the Greeting format says.\n\n";
+    const root = designPlan([...GREETING, ...FLAG], ["- Do: run scenarios.", "- Do: run scenarios as Flag parsing says."], ["## Success criteria", `${ui}## Success criteria`]);
+    const f3 = brief(root, "F3");
+    expect(f3).toContain(["### F3 — Scenario QA", "", "- [ ] Open", "- Do: run scenarios as Flag parsing says.", "", "Design — Flag parsing:", "", ...FLAG_OUT, "", MUST, ""].join("\n"));
+    expect(headers(f3)).toEqual(["Design — Flag parsing:"]);
+    const block = brief(root, "UI");
+    expect(block).toContain(["- Do: open the page as the Greeting format says.", "", "Design — Greeting format:", "", ...GREETING_OUT, "", MUST, ""].join("\n"));
+    expect(headers(block)).toEqual(["Design — Greeting format:"]);
+    expect(headers(brief(root, "F1"))).toEqual([]);
+  });
+
+  test("a plan with no subsection under Design is unchanged", () => {
+    const plain = makeProject();
+    writePlan(plain, planText(plain));
+    expect(brief(plain, "T2")).toBe(`${BEFORE_T2}\n`);
+    // A fenced heading and a deeper heading are no subsections, though T2 says flag.
+    const other = designPlan(["```markdown", "### Flag", "```", "", "#### Flag", "", "The flag is `--greet`.", ""]);
+    expect(brief(other, "T2")).toBe(`${BEFORE_T2}\n`);
+    const none = makeProject();
+    writePlan(none, planText(none).replace(`## Design\n\n${DIAGRAM}\n`, ""));
+    expect(read(none, PLAN)).not.toContain("## Design");
+    expect(brief(none, "T2")).toBe(`${BEFORE_T2}\n`);
+  });
+});

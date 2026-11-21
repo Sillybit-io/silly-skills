@@ -2617,12 +2617,43 @@ function blockText(plan: ParsedPlan, id: string): { title: string; text: string 
   return null;
 }
 
+/** A block's text or a Design title as `--todo` compares them: lower case, no backticks, runs of whitespace as one space. */
+function designKey(text: string): string {
+  return text.toLowerCase().replace(/`/g, "").replace(/\s+/g, " ").trim();
+}
+
+/**
+ * The `###` subsections of `## Design` that a todo's or a gate's block names,
+ * in document order, each from its heading up to the next `###` or `##`
+ * heading, without trailing blank lines. A block names a subsection when the
+ * subsection's title appears in the block's text, both compared by designKey,
+ * between characters that are not letters or digits. A heading in a fence is
+ * not a subsection. Nothing here is validated.
+ */
+function namedDesignSubsections(plan: ParsedPlan, text: string): { title: string; lines: string[] }[] {
+  const design = section(plan, "Design");
+  if (!design) return [];
+  const block = designKey(text);
+  const out: { title: string; lines: string[] }[] = [];
+  for (const sub of sectionsOf(plan.lines, 3, design.start, design.end)) {
+    const title = designKey(sub.title);
+    if (title === "") continue;
+    const escaped = title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    if (!new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, "u").test(block)) continue;
+    const body = plan.lines.slice(sub.start, sub.end).map((l) => l.text);
+    while (body.length > 0 && body[body.length - 1].trim() === "") body.pop();
+    out.push({ title: sub.title, lines: [`### ${sub.title}`, ...body] });
+  }
+  return out;
+}
+
 /**
  * One todo with what a todo child needs around it: its slice, the gaps it
  * closes, the Behavior lines it serves, the titles of its dependencies, its
- * strict areas, and the check ids its pass receipt must record. About one
- * todo's worth of text instead of the whole spec. With `planIgnored`, a line
- * under the branch says that git ignores the plan directory.
+ * strict areas, the check ids its pass receipt must record, and the Design
+ * subsections it names. About one todo's worth of text instead of the whole
+ * spec. With `planIgnored`, a line under the branch says that git ignores the
+ * plan directory.
  */
 export function todoBrief(plan: ParsedPlan, id: string, options: { planIgnored?: boolean } = {}): string | null {
   const block = blockText(plan, id);
@@ -2646,6 +2677,7 @@ export function todoBrief(plan: ParsedPlan, id: string, options: { planIgnored?:
     const ends = sliceEndingAt(plan, todo.id);
     if (ends) out.push(`Independent test of ${ends.id}, recorded as \`slice:${ends.id}\`: ${ends.test}`);
   }
+  for (const sub of namedDesignSubsections(plan, block.text)) out.push("", `Design — ${sub.title}:`, "", ...sub.lines);
   const must = [...plan.mustHave, ...plan.mustNotHave].map((r) => plan.lines[r.line - 1].text);
   if (must.length > 0) out.push("", "Must have and must not have (whole plan):", "", ...must);
   return `${out.join("\n")}\n`;
@@ -3134,8 +3166,8 @@ docs/plans/<stem>/<stem>.md; the four sibling files are found beside it.
                   and for a plan with slices nextSlice and sliceStart.
   --todo <id>     Print one todo or final gate with its slice, the gaps it
                   closes, the Behavior lines it serves, its dependencies, its
-                  strict areas, and the check ids its pass receipt must
-                  record. Does not validate.
+                  strict areas, the check ids its pass receipt must record,
+                  and the Design subsections it names. Does not validate.
   --gate-skeleton Print a gate record for the next round with every required
                   target in an obligation and every status unverified, for the
                   reviewer to fill in. Does not validate.
