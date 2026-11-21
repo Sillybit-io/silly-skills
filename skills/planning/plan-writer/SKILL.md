@@ -3,7 +3,7 @@ name: plan-writer
 description: Writes an implementation plan after investigating the codebase one step around the change, and to the end in security and production areas. Classifies the request, checks the changed inventory, verifies external contracts at the target version, and asks product questions before technical ones. Writes a plan directory, docs/plans/<date>-<slug>/, with hashed line citations, strict-area flows, a baseline, todos tested one at a time, and a final verification wave, then validates it. Resumes a draft from its open frontier. Use when writing a plan, planning a feature or refactor, making an implementation plan, breaking work into tasks, resuming a draft plan, or fixing a rejected plan.
 license: CC-BY-ND-4.0
 metadata:
-  version: "2.1.0"
+  version: "2.2.0"
   category: planning
   suggested-model: anthropic/claude-fable-5-2
   suggested-effort: xhigh
@@ -63,7 +63,7 @@ Do NOT use plan-writer when you:
 
 The spec and its evidence index are built in small independent edits. A large write or a large replacement fails more often and costs more to retry than many small ones, and files that are always current are already a resumable draft.
 
-- **Skeleton first.** Right after step 4, create `docs/plans/<stem>/` and write two files once each with the Write tool. `<stem>.md` holds the frontmatter with `status: draft`, the H1 and the links line under it, all ten top-level headings in order, `## Behavior` included, the six Scope subsections, and `### Product` and `### Technical` under Questions. `<stem>.evidence-index.md` holds `# Evidence index: <title>` and one empty block (the Shape in [references/evidence-index.md](references/evidence-index.md)). Every empty slot holds one line, `<!-- todo: <slot> -->`, which never parses as a bullet, a row, or an identifier. These are the only times you use Write on the plan. About 2 KB.
+- **Skeleton first.** Right after step 4, run `bun <plan-review-base>/scripts/validate-plan.ts --init --title <title> --slug <slug> --request <request> --intent <intent> --tier <tier> --branch <branch>`: it creates `docs/plans/<stem>/` with both skeleton files, appends `-2` on a collision, fills the baseline's revision and dirty paths, and prints the spec path. With only `--grammar`, it prints the plan grammar and field caps. Every empty slot holds one line, `<!-- todo: <slot> -->`, which never parses as a bullet, a row, or an identifier. Without Bun or `plan-review`, write both files by hand, from Output format.
 - **Edit, never rewrite.** After the skeleton, change the file only with the Edit tool. One edit replaces one placeholder, one subsection, one table row, one list item, one todo, or adds or changes one evidence index entry. No edit rewrites a whole top-level section that has more than one subsection, and none rewrites the file. When an edit fails, re-read the few lines around it and retry with a smaller anchor. Do not fall back to Write.
 - **Anchors.** Replace the placeholder line itself, or insert before the next heading. Keep the placeholder until you fill that slot, so the anchor stays unique. Name each todo and each gate in its heading, so `### T3 —` is a unique anchor.
 - **Append a new evidence index entry as a block.** Each new citation, coverage row, frontier item, flow, or baseline check is one new fenced `json` block at the end of the evidence index file, on one line, holding only that key, for example `{"citations": [{"id": "C7", "kind": "source", "path": "src/app.ts", "startLine": 10, "endLine": 24, "sha256": ""}]}`. The validator merges the blocks and concatenates their arrays, so an appended entry never replaces an earlier entry with the same id.
@@ -193,13 +193,13 @@ A todo passes its Acceptance and every QA part, commits when it says `Commit: ye
 ### T0 — Copy the plan into the project
 
 - [ ] Open
-- Do: copy the plan directory into `docs/plans/` when it is not already there, and commit it
+- Do: copy the plan directory into `docs/plans/` when it is not already there, and commit it unless git ignores it
 - Must not: overwrite a conflicting destination
 - Closes gap: none
 - Depends on: none
 - References: this file
 - Acceptance: `test -f docs/plans/<stem>/<stem>.md` exits 0
-- QA scenario: happy — the plan directory is in `docs/plans/` and committed; failure — n/a
+- QA scenario: happy — the plan directory is in `docs/plans/`, and committed unless git ignores it; failure — n/a
 - Strict: no
 - Commit: yes — `docs(plans): add <slug> plan`
 
@@ -318,7 +318,7 @@ MUST:
 - MUST run the bundled validator and fix every error before setting `status: planned`.
 - MUST write the spec to `docs/plans/<stem>/<stem>.md` with its evidence index beside it, and set `status: draft` before `status: planned`.
 - MUST re-read the plan from disk, recheck cited sources, and work the open frontier on every resume or follow-up.
-- MUST write the skeleton right after the branch name, and build the rest with small Edit calls: one placeholder, subsection, row, item, todo, or evidence index block per edit.
+- MUST create the skeleton right after the branch name, and build the rest with small Edit calls: one placeholder, subsection, row, item, todo, or evidence index block per edit.
 - MUST append each citation, coverage row, frontier item, flow, and baseline check to the evidence index as it is produced.
 - MUST answer a hedged remark with reasoning and a question before changing the plan.
 
@@ -360,7 +360,7 @@ NEVER:
 - [ ] `## Questions` has `### Product` before `### Technical`, and neither group is empty. No question asks the owner to read code.
 - [ ] The branch name traces to a stated convention, an observed one, or the documented default, and appears in both the frontmatter and the TL;DR.
 - [ ] Every gap is closed by at least one implementation todo, and every implementation todo closes at least one gap. T0, F1–F4, and the UI QA todo do not need a gap.
-- [ ] T0 is first, in its short standard form, and commits the directory as `docs(plans): add <slug> plan`.
+- [ ] T0 is first, in its short standard form, and commits the directory as `docs(plans): add <slug> plan` unless git ignores it.
 - [ ] Every todo and every final-wave gate starts with `- [ ] Open`. The `## Todos` introduction is the standard test-before-next sentence, and the final wave does not use it.
 - [ ] "Must NOT have" is present, numbered, and lists anything the slop check removed.
 - [ ] `## Design` is a mermaid block or `Diagram: omitted — <reason>`.
