@@ -119,6 +119,14 @@ describe("planning agents: OpenCode mode and delegation", () => {
     expect(effect(fm.permissions, "edit", "*")).toBe("allow");
   });
 
+  test("plan-builder may run record-receipt.ts, and its Claude Code and Cursor personas name it", () => {
+    const fm = frontmatterOf("plan-builder", "opencode.md");
+    expect(effect(fm.permissions, "shell", "bun */record-receipt.ts *")).toBe("allow");
+    for (const file of ["claude-code.md", "cursor.md"]) {
+      expect({ file, names: readWrapper("plan-builder", file).includes("`record-receipt.ts`") }).toEqual({ file, names: true });
+    }
+  });
+
   test("plan-loop never edits natively", () => {
     const fm = frontmatterOf("plan-loop", "opencode.md");
     expect(effect(fm.permissions, "edit", "*")).toBe("deny");

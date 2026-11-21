@@ -2654,3 +2654,289 @@ describe("Design subsections", () => {
     expect(brief(none, "T2")).toBe(`${BEFORE_T2}\n`);
   });
 });
+
+describe("record-receipt", () => {
+  const RECORD = join(repo, "skills/planning/plan-builder/scripts/record-receipt.ts");
+  const RUN = ".git/silly-skills/plan-builds/run";
+  /** One --check argument for a check that ran `bun test` and exited 0, with any field replaced or added. */
+  const arg = (id: string, more: Record<string, unknown> = {}): string[] => ["--check", JSON.stringify({ id, command: "bun test", exit: 0, ...more })];
+  /** The checks T1 and T2 need: each has a happy and a failure QA part. */
+  const CHECKS = ["acceptance", "qa:happy", "qa:failure"].flatMap((id) => arg(id));
+  const NOTE = (text: string): string[] => ["--note", text];
+  /** T1's edit, as the build fixture makes it. */
+  const editT1 = (root: string): void => writeFileSync(join(root, "src/app.ts"), APP.replace("return register(config);", "return register(`hello ${config}`);"));
+  /** Two slices: S1 ends with T1, and S2 holds T2. */
+  const SLICES = (t: string): string =>
+    t.replace(
+      "- Wave 1: T1\n- Wave 2: T2 — needs T1\n",
+      "- Slice S1 — greeting. Independent test: `bun test` greets a configured name.\n- Wave 1: T1\n- Slice S2 — flag. Independent test: the CLI accepts the flag.\n- Wave 2: T2 — needs T1\n",
+    );
+  /** T0 with `Commit: yes`, as a 2.1.0 writer leaves it. */
+  const T0_COMMIT = (t: string): string =>
+    t.replace("- QA scenario: happy — the file exists; failure — n/a.\n- Strict: no.\n- Commit: no.", "- QA scenario: happy — the file exists; failure — n/a.\n- Strict: no.\n- Commit: yes — `docs(plans): add fixture plan`.");
+  const ignorePlans = (root: string): void => {
+    write(root, ".gitignore", "/docs/plans/\n");
+    git(root, "add", ".gitignore");
+    git(root, "commit", "-q", "-m", "ignore plans");
+  };
+  const trackPlans = (root: string): void => {
+    git(root, "add", "--", DIR);
+    git(root, "commit", "-q", "-m", "docs(plans): add fixture plan");
+  };
+  const obligation = (targets: string[]): Obligation[] => [{ id: "O1", targets, evidenceIds: ["C1", "P1"], observed: "traced", plannedQa: "Q1", status: "verified" }];
+
+  const call = (root: string, todo: string, event: string, ...more: string[]) => {
+    const p = spawnSync("bun", [RECORD, PLAN, "--root", root, "--todo", todo, "--event", event, ...more], { encoding: "utf8" });
+    return { code: p.status, out: `${p.stdout}${p.stderr}`.trim() };
+  };
+  /** The receipts of the build file, read without the validator. */
+  const recorded = (root: string) => [...read(root, BUILD).matchAll(/```json\n([\s\S]*?)\n```/g)].flatMap((m) => JSON.parse(m[1]).receipts ?? []);
+  /** What a refused call leaves as it was: the bytes of the spec and the build file, and the entries of the run directory. */
+  const untouched = (root: string) => ({ plan: sha(readFileSync(join(root, PLAN))), build: sha(readFileSync(join(root, BUILD))), run: readdirSync(join(root, RUN)).sort() });
+  /** Runs the command, expects one refusal line that changed nothing, and returns the line. */
+  const refused = (root: string, todo: string, event: string, ...more: string[]): string => {
+    const before = untouched(root);
+    const result = call(root, todo, event, ...more);
+    expect(result.code).toBe(1);
+    expect(result.out).toMatch(new RegExp(`^RECEIPT: REFUSED ${todo} ${event}; [^\\n]+$`));
+    expect(untouched(root)).toEqual(before);
+    return result.out;
+  };
+  const resume = (root: string) => run(root, ["--review", "--resume"]);
+  /** The codes the validator's resume check reports when the fixture's own receipt writer appends `input` after `inputs`. The build file is restored. */
+  const orderCodes = (s: ReturnType<typeof buildScenario>, inputs: ReceiptInput[], input: ReceiptInput): string[] => {
+    const original = read(s.root, BUILD);
+    writeBuild(s.root, { ...s.record, receipts: receipts(s.baseline, [...inputs, input]) });
+    const found = codes(resume(s.root));
+    write(s.root, BUILD, original);
+    return found;
+  };
+
+  test("record-receipt records a pass", () => {
+    const { root } = buildScenario({ stopAfter: "T0" });
+    editT1(root);
+    expect(call(root, "T1", "pass", ...CHECKS)).toEqual({ code: 0, out: "RECEIPT: T1 pass seq 2; resumeEligible true; next T2" });
+    const [t0, t1] = recorded(root);
+    expect(Object.keys(t1)).toEqual(["seq", "todo", "event", "state", "prev", "before", "after", "checks", "prerequisites", "commit", "note"]);
+    expect([t1.seq, t1.todo, t1.event, t1.state, t1.prev, t1.before]).toEqual([2, "T1", "pass", "passed", sha(canon(t0)), t0.after]);
+    expect(t1.after.snapshot).toBe("silly-skills/plan-builds/run/2-T1");
+    expect(t1.checks).toEqual(["acceptance", "qa:happy", "qa:failure"].map((id) => ({ id, command: "bun test", exit: 0, expectedExit: 0, passed: true })));
+    expect([t1.prerequisites, t1.commit, t1.note]).toEqual([[], { none: "no commit" }, ""]);
+    expect(read(root, PLAN)).toContain("### T1 — Add the greeting\n\n- [x] Done");
+    const result = resume(root);
+    expect(result.errors).toEqual([]);
+    expect([result.resumeEligible, result.nextTodo]).toEqual([true, "T2"]);
+  });
+
+  test("record-receipt refuses a pass without a required check", () => {
+    const { root } = buildScenario({ stopAfter: "T0" });
+    editT1(root);
+    expect(refused(root, "T1", "pass", ...arg("acceptance"), ...arg("qa:happy"))).toContain('T1 has no passing check "qa:failure"');
+    expect(call(root, "T1", "pass", ...CHECKS).code).toBe(0);
+    expect(recorded(root).filter((r) => r.todo === "T1").length).toBe(1);
+    expect(resume(root).errors).toEqual([]);
+  });
+
+  test("record-receipt refuses a failing check, a check with another key, a second pass, and a slice's last todo without its slice check", () => {
+    const { root } = buildScenario({ stopAfter: "T0" });
+    editT1(root);
+    expect(refused(root, "T1", "pass", ...arg("acceptance"), ...arg("qa:happy"), ...arg("qa:failure", { exit: 1 }))).toContain('check "qa:failure" failed: exit 1, expected 0');
+    expect(refused(root, "T1", "pass", ...CHECKS, ...arg("lint", { passed: true }))).toContain('check "lint" has the key "passed"');
+    expect(call(root, "T1", "pass", ...CHECKS).code).toBe(0);
+    expect(refused(root, "T1", "pass", ...CHECKS)).toContain("T1 already has a pass receipt");
+    // In a plan whose slice S1 ends with T1, T1's pass also needs the slice's independent test.
+    const sliced = buildScenario({ stopAfter: "T0", mutatePlan: SLICES, obligations: obligation([...ALL_TARGETS, "slice:S1", "slice:S2"]) });
+    editT1(sliced.root);
+    expect(refused(sliced.root, "T1", "pass", ...CHECKS)).toContain('T1 has no passing check "slice:S1"');
+    expect(call(sliced.root, "T1", "pass", ...CHECKS, ...arg("slice:S1")).out).toBe("RECEIPT: T1 pass seq 2; resumeEligible true; next T2");
+  });
+
+  test("record-receipt needs the commit of a Commit: yes todo, and it must be HEAD", () => {
+    const { root } = buildScenario({ stopAfter: "T0", t1Commit: true });
+    editT1(root);
+    git(root, "commit", "-q", "-am", "feat: greet");
+    expect(refused(root, "T1", "pass", ...CHECKS)).toContain("T1 says Commit: yes; name its commit with --commit");
+    expect(refused(root, "T1", "pass", ...CHECKS, "--no-commit", "nothing to commit")).toContain("T1 says Commit: yes");
+    expect(refused(root, "T1", "pass", ...CHECKS, "--commit", "HEAD~1")).toContain("which is not HEAD");
+    expect(refused(root, "T1", "pass", ...CHECKS, "--commit", "no-such-revision")).toContain("does not resolve to a commit");
+    expect(refused(root, "T1", "pass", ...CHECKS, "--commit", "--output=x")).toContain("does not resolve to a commit");
+    expect(call(root, "T1", "pass", ...CHECKS, "--commit", "HEAD").out).toBe("RECEIPT: T1 pass seq 2; resumeEligible true; next T2");
+    expect(recorded(root)[1].commit).toEqual({ sha: git(root, "rev-parse", "HEAD").toString().trim() });
+    expect(resume(root).errors).toEqual([]);
+  });
+
+  test("record-receipt records a block with its note, and resume is not eligible", () => {
+    const { root } = buildScenario({ stopAfter: "T0" });
+    expect(refused(root, "T1", "block")).toContain("a block needs --note");
+    expect(call(root, "T1", "block", ...NOTE("needs a credential"))).toEqual({ code: 0, out: "RECEIPT: T1 block seq 2; resumeEligible false; next T1" });
+    const t1 = recorded(root)[1];
+    expect([t1.state, t1.note, t1.checks]).toEqual(["blocked", "needs a credential", []]);
+    expect(read(root, PLAN)).toContain("### T1 — Add the greeting\n\n- [ ] Open");
+    const result = resume(root);
+    expect(result.errors).toEqual([]);
+    expect(result.unresolvedAction).toContain("needs a credential");
+  });
+
+  test("record-receipt records a recovery after an unrecorded edit, and the todo is active", () => {
+    const { root } = buildScenario({ stopAfter: "T0" });
+    writeFileSync(join(root, "src/app.ts"), `${APP}// partial\n`);
+    expect(resume(root).recoveryRequired).toBe(true);
+    expect(refused(root, "T1", "recovery")).toContain("a recovery needs --note");
+    expect(call(root, "T1", "recovery", ...NOTE("T1 edits from an interrupted attempt; kept"))).toEqual({ code: 0, out: "RECEIPT: T1 recovery seq 2; resumeEligible true; next T1" });
+    expect(recorded(root)[1].state).toBe("active");
+    const result = resume(root);
+    expect(result.errors).toEqual([]);
+    expect([result.activeTodo, result.recoveryRequired]).toEqual(["T1", false]);
+  });
+
+  test("record-receipt records a fix naming F4 after every todo passed, and refuses a fix naming a todo or with a check that has no command", () => {
+    const s = buildScenario();
+    s.record.receipts = receipts(s.baseline, [...s.inputs, { todo: "T2", event: "pass", after: "same" }]);
+    writeBuild(s.root, s.record);
+    setBoxes(s.root, ["T2"]);
+    expect(refused(s.root, "T2", "fix", ...arg("blocking:D1"))).toContain("T2 is not a final gate of the plan");
+    expect(refused(s.root, "F4", "fix", "--check", JSON.stringify({ id: "blocking:D1", exit: 0 }))).toContain('check "blocking:D1" lacks a command or a numeric exit');
+    expect(refused(s.root, "F4", "fix")).toContain("a fix needs a check");
+    expect(call(s.root, "F4", "fix", ...arg("blocking:D1"), "--commit", "HEAD")).toEqual({ code: 0, out: "RECEIPT: F4 fix seq 4; resumeEligible true; next F1" });
+    expect(recorded(s.root)[3]).toMatchObject({ todo: "F4", event: "fix", state: "passed", commit: { sha: git(s.root, "rev-parse", "HEAD").toString().trim() } });
+    expect(resume(s.root).errors).toEqual([]);
+  });
+
+  test("record-receipt carries every earlier snapshot into the capture", () => {
+    const { root } = buildScenario({ stopAfter: "T0" });
+    editT1(root);
+    write(root, "notes.txt", "scratch notes from T1\n");
+    expect(call(root, "T1", "pass", ...CHECKS).code).toBe(0);
+    rmSync(join(root, "notes.txt"));
+    writeFileSync(join(root, "src/cli.ts"), `${CLI}// --greet\n`);
+    const recheck = { targets: ["T2.start"], paths: ["src/app.ts"], status: "holds", observed: "register is unchanged" };
+    expect(call(root, "T2", "pass", ...CHECKS, "--recheck", JSON.stringify(recheck)).out).toBe("RECEIPT: T2 pass seq 3; resumeEligible true; next F1");
+    const [t0, t1, t2] = recorded(root);
+    const row = (ref: { snapshot: string }) => JSON.parse(read(root, `.git/${ref.snapshot}/manifest.json`)).paths.find((p: { path: string }) => p.path === "notes.txt");
+    // Only T1's snapshot saw notes.txt; T2's snapshot keeps it, as absent, because the capture carried T1's.
+    expect(row(t0.after)).toBeUndefined();
+    expect(row(t1.after).worktree.state).toBe("file");
+    expect(row(t2.after)).toEqual({ path: "notes.txt", head: { state: "absent" }, index: { state: "absent" }, worktree: { state: "absent" } });
+    expect(t2.prerequisites).toEqual([{ targets: ["T2.start"], sources: [{ path: "src/app.ts", sha256: sha(readFileSync(join(root, "src/app.ts"))) }], status: "holds", observed: "register is unchanged" }]);
+    expect(resume(root).errors).toEqual([]);
+  });
+
+  test("record-receipt runs no command", () => {
+    const { root } = buildScenario({ stopAfter: "T0" });
+    editT1(root);
+    const marker = join(root, "marker");
+    const command = `touch ${marker} && echo $(touch ${marker}-2) \`touch ${marker}-3\``;
+    const r = call(root, "T1", "pass", "--check", JSON.stringify({ id: "acceptance", command, exit: 0, observed: `$(touch ${marker}-4)` }), ...arg("qa:happy"), ...arg("qa:failure"), ...NOTE(`$(touch ${marker}-5)`), "--log", `$(touch ${marker}-6)`);
+    expect(r).toEqual({ code: 0, out: "RECEIPT: T1 pass seq 2; resumeEligible true; next T2" });
+    const t1 = recorded(root)[1];
+    expect(t1.checks[0]).toEqual({ id: "acceptance", command, exit: 0, expectedExit: 0, passed: true, observed: `$(touch ${marker}-4)` });
+    expect([t1.note, t1.log]).toEqual([`$(touch ${marker}-5)`, `$(touch ${marker}-6)`]);
+    expect(readdirSync(root).filter((name) => name.startsWith("marker"))).toEqual([]);
+  });
+
+  test("record-receipt appends one block after one blank line, and the file ends with one newline", () => {
+    for (const ending of ["\n", "", "\n\n\n"]) {
+      const { root } = buildScenario({ stopAfter: "T0" });
+      const kept = read(root, BUILD).replace(/\n+$/, "");
+      write(root, BUILD, `${kept}${ending}`);
+      editT1(root);
+      expect(call(root, "T1", "pass", ...CHECKS).code).toBe(0);
+      const text = read(root, BUILD);
+      expect(text.startsWith(kept)).toBe(true);
+      expect(text.slice(kept.length)).toMatch(/^\n\n```json\n\{"receipts":\[\{"seq":2,[^\n]*\}\]\}\n```\n$/);
+    }
+  });
+
+  test("record-receipt lets a Commit: yes T0 name no commit only where git ignores the plan directory", () => {
+    for (const ignored of [true, false]) {
+      const s = buildScenario({ stopAfter: "T0", mutatePlan: T0_COMMIT, beforeBaseline: ignored ? ignorePlans : trackPlans });
+      writeBuild(s.root, { ...s.record, receipts: [] });
+      writePlan(s.root, read(s.root, PLAN).replace("- [x] Done", "- [ ] Open"));
+      const args = [...arg("acceptance"), ...arg("qa:happy"), "--no-commit", "git ignores the plan directory"];
+      if (!ignored) {
+        expect(refused(s.root, "T0", "pass", ...args)).toContain("T0 says Commit: yes");
+        continue;
+      }
+      expect(call(s.root, "T0", "pass", ...args)).toEqual({ code: 0, out: "RECEIPT: T0 pass seq 1; resumeEligible true; next T1" });
+      const [t0] = recorded(s.root);
+      expect([t0.prev, t0.before, t0.commit]).toEqual([null, s.baseline, { none: "git ignores the plan directory" }]);
+      expect(read(s.root, PLAN)).toContain("### T0 — Copy the plan into the project\n\n- [x] Done");
+    }
+  });
+
+  test("record-receipt --help exits 0, and no argument exits 2", () => {
+    const cli = (...args: string[]) => spawnSync("bun", [RECORD, ...args], { encoding: "utf8" });
+    const help = cli("--help");
+    expect(help.status).toBe(0);
+    expect(help.stdout.split("\n")[0]).toStartWith("Usage: record-receipt");
+    expect(cli().status).toBe(2);
+    const { root } = buildScenario({ stopAfter: "T0" });
+    const base = [PLAN, "--root", root, "--todo", "T1"];
+    for (const bad of [
+      [...base, "--event", "start"],
+      [...base, "--event", "pass", "--check", "[1]"],
+      [...base, "--event", "pass", "--check", "{not json"],
+      [...base, "--event", "pass", "--bogus"],
+      [...base, "--event", "pass", "--commit", "HEAD", "--no-commit", "none"],
+      ["../outside.md", "--root", root, "--todo", "T1", "--event", "pass"],
+    ]) {
+      expect({ bad, status: cli(...bad).status }).toEqual({ bad, status: 2 });
+    }
+    rmSync(join(root, BUILD));
+    expect(cli(...base, "--event", "pass", ...CHECKS).status).toBe(2);
+  });
+
+  test("record-receipt refuses an event out of order", () => {
+    // T2 depends on T1, which has not passed.
+    const s = buildScenario({ stopAfter: "T0" });
+    const cases: [string, string[], ReceiptInput][] = [
+      ["pass", CHECKS, { todo: "T2", event: "pass", after: "same" }],
+      ["block", NOTE("blocked early"), { todo: "T2", event: "block", after: "same", note: "blocked early" }],
+      ["recovery", NOTE("T2 edits found"), { todo: "T2", event: "recovery", after: "same", note: "T2 edits found" }],
+    ];
+    for (const [event, more, input] of cases) {
+      expect(refused(s.root, "T2", event, ...more)).toContain("T2 depends on T1, which has no pass receipt");
+      expect(orderCodes(s, s.inputs, input)).toContain("DEPENDENCY_ORDER");
+    }
+    expect(refused(s.root, "F4", "fix", ...arg("blocking:D1"))).toContain("T1, T2 have no pass receipt");
+    expect(orderCodes(s, s.inputs, { todo: "F4", event: "fix", after: "same", checks: [check("blocking:D1")] })).toContain("RECEIPT_ORDER");
+    editT1(s.root);
+    expect(call(s.root, "T1", "pass", ...CHECKS).out).toBe("RECEIPT: T1 pass seq 2; resumeEligible true; next T2");
+    expect(call(s.root, "T2", "pass", ...CHECKS).out).toBe("RECEIPT: T2 pass seq 3; resumeEligible true; next F1");
+    expect(resume(s.root).errors).toEqual([]);
+  });
+
+  test("record-receipt refuses a block or a recovery for a todo that passed", () => {
+    const s = buildScenario();
+    for (const event of ["block", "recovery"]) {
+      expect(refused(s.root, "T1", event, ...NOTE("one more try"))).toContain("T1 already has a pass receipt");
+      expect(orderCodes(s, s.inputs, { todo: "T1", event, after: "same", note: "one more try" })).toContain("RECEIPT_ORDER");
+    }
+  });
+
+  test("record-receipt refuses every event for another todo while one is active", () => {
+    // T2 depends only on T0, and a recovery receipt makes T1 active.
+    const T2_ON_T0 = (t: string): string => t.replace("- Closes gap: G2.\n- Depends on: T1.", "- Closes gap: G2.\n- Depends on: T0.");
+    const s = buildScenario({ stopAfter: "T0", mutatePlan: T2_ON_T0, obligations: obligation(ALL_TARGETS.map((t) => (t === "dep:T2:T1" ? "dep:T2:T0" : t))) });
+    writeFileSync(join(s.root, "src/app.ts"), `${APP}// partial\n`);
+    const partial = saveSnapshot(s.root, snapshot(s.root, "silly-skills/plan-builds/run/T1-recovery", { carry: s.carry }), s.spec);
+    const inputs: ReceiptInput[] = [...s.inputs, { todo: "T1", event: "recovery", after: partial, note: "T1 edits from an interrupted attempt; kept" }];
+    writeBuild(s.root, { ...s.record, receipts: receipts(s.baseline, inputs) });
+    const active = resume(s.root);
+    expect(active.errors).toEqual([]);
+    expect(active.activeTodo).toBe("T1");
+    const cases: [string, string[], ReceiptInput][] = [
+      ["pass", CHECKS, { todo: "T2", event: "pass", after: "same" }],
+      ["block", NOTE("blocked early"), { todo: "T2", event: "block", after: "same", note: "blocked early" }],
+      ["recovery", NOTE("T2 edits found"), { todo: "T2", event: "recovery", after: "same", note: "T2 edits found" }],
+    ];
+    for (const [event, more, input] of cases) {
+      expect(refused(s.root, "T2", event, ...more)).toContain("T1 is active until its pass or block receipt");
+      expect(orderCodes(s, inputs, input)).toContain("RECEIPT_ORDER");
+    }
+    editT1(s.root);
+    expect(call(s.root, "T1", "pass", ...CHECKS).out).toBe("RECEIPT: T1 pass seq 3; resumeEligible true; next T2");
+    expect(call(s.root, "T2", "pass", ...CHECKS).out).toBe("RECEIPT: T2 pass seq 4; resumeEligible true; next F1");
+    expect(resume(s.root).errors).toEqual([]);
+  });
+});
