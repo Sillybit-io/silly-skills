@@ -20,7 +20,7 @@ The helper ships with this skill. It needs Bun and the `plan-review` skill insta
 bun <plan-result-review-base>/scripts/inventory-changes.ts <plan> --root <project> [--baseline <snapshot>] [--base <revision>] [--brief] [--json]
 ```
 
-With `--brief`, it prints the summary the review starts from instead of diffs: the Must Haves and Must NOT Haves, the Behavior lines with the todos that serve them, each todo with its box, strict areas, receipts, recorded checks, and commit, the slices with their branches and todos, each changed path with the todo whose receipt interval changed it or `unattributed`, and any commit no receipt names. The Behavior lines and the slices appear only when the plan has them. Read it first, then the full inventory for the diffs.
+With `--brief`, it prints the summary the review starts from instead of diffs: the Must Haves and Must NOT Haves, the Behavior lines with the todos that serve them, each todo with its box, strict areas, receipts, recorded checks, and commit, the slices with their branches and todos, each changed path with the todo whose receipt interval changed it or `unattributed`, and any commit no receipt names. The Behavior lines and the slices appear only when the plan has them. When git ignores the plan directory, the line after the baseline line says `Plan directory: ignored by git; no commit holds it.`, and the JSON has `planIgnored: true`. Read it first, then the full inventory for the diffs.
 
 It verifies the baseline snapshot, reads the current HEAD, index, and working tree for every path the baseline, the receipts, or git knows about, and prints each path whose layers changed. For each path, it prints:
 
@@ -30,7 +30,7 @@ It verifies the baseline snapshot, reads the current HEAD, index, and working tr
 - a line diff for text, `binary` for binary files, the old and new target for a symlink, and a mode-only change;
 - the commits since the base with their files, git's own staged, unstaged, and untracked lists, and the receipts.
 
-It leaves out every path in the plan's own directory and reports that directory as `planDir`: the build commits the plan by design, so those files are not implementation changes. The commit list still shows them.
+It leaves out every path in the plan's own directory and reports that directory as `planDir`: the build commits the plan by design, or leaves it out of every commit when git ignores it, so those files are not implementation changes. The commit list still shows any plan file the build committed. When git ignores the directory, the report has `planIgnored: true`.
 
 Exit 0 means the inventory is complete. Exit 1 means the baseline is corrupt or the state is unsupported. Exit 2 means an argument, the plan, the baseline, or the `plan-review` dependency is missing. A missing or corrupt baseline object makes owner-work preservation uncertifiable: record INCOMPLETE with the snapshot path and the object named in the error.
 

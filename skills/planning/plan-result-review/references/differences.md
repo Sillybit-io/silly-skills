@@ -49,7 +49,7 @@ The validator refuses a pass receipt that lacks its Acceptance and QA checks, so
 
 A reason does not make a violation acceptable. Only an owner's recorded approval does, and the difference stays listed, as one line under Approved deviations.
 
-These are not differences: a commit subject the builder shortened but kept in type, scope, and meaning; a todo that edits a file an earlier wave also edited, within its own `Do`; the plan directory in a todo commit; a slice commit, `docs(plans): complete <slug> slice S<n>`; a merge or squash commit that only brings an earlier slice's commits onto the current branch.
+These are not differences: a commit subject the builder shortened but kept in type, scope, and meaning; a todo that edits a file an earlier wave also edited, within its own `Do`; the plan directory in a todo commit; a slice commit, `docs(plans): complete <slug> slice S<n>`; a merge or squash commit that only brings an earlier slice's commits onto the current branch; when the brief says git ignores the plan directory, T0 without a commit, a todo commit without the plan directory, and no closing commit `docs(plans): complete <slug> build`.
 
 ## Verdict
 
