@@ -37,7 +37,7 @@ Do NOT use plan-builder when you:
 ### Coordinator, in the main session
 
 1. Resolve the plan path from the request or conversation: `docs/plans/<stem>/<stem>.md`. Read [references/receipts.md](references/receipts.md). Do not read the spec whole; the validator and `--todo` give you what you need.
-2. **New build** (no build file). Run `bun <plan-review-base>/scripts/validate-plan.ts <plan> --review --root <project> --json`, where `<plan-review-base>` is the plan-review skill directory installed beside this one. Require `gateEligible: true`; otherwise report the validator's errors and stop. A `FORMAT_1` error means the plan finishes on the old install: say so and stop. When the JSON lists `slices`, check the first slice's branch by the reference's Slices section. Then capture the baseline with `capture-build-state.ts` to a fresh, durable run directory, write `<stem>.build.md` as the reference describes, and run T0 yourself: copy the plan directory into `docs/plans/` only when needed, commit it as `docs(plans): add <slug> plan` unless git ignores it, as the reference's Commits section says, append its pass receipt, and set its box to Done. These are the only project writes you make yourself.
+2. **New build** (no build file). Run `bun <plan-review-base>/scripts/validate-plan.ts <plan> --review --root <project> --json`, where `<plan-review-base>` is the plan-review skill directory installed beside this one. Require `gateEligible: true`; otherwise report the validator's errors and stop. A `FORMAT_1` error means the plan finishes on the old install: say so and stop. When the JSON lists `slices`, check the first slice's branch by the reference's Slices section. Then capture the baseline with `capture-build-state.ts` to a fresh, durable run directory, write `<stem>.build.md` as the reference describes, and run T0 yourself: copy the plan directory into `docs/plans/` only when needed, commit it as `docs(plans): add <slug> plan` unless git ignores it, as the reference's Commits section says, and record its pass receipt with [scripts/record-receipt.ts](scripts/record-receipt.ts), as the reference's Recording a receipt section says. These are the only project writes you make yourself.
 3. **Each step.** Run the same command with `--resume` added and act on its JSON:
    - `reconcileBoxes` not empty: set those boxes to Done yourself, without repeating any work.
    - `sliceStart` true: follow the reference's Slices section before you launch a child.
@@ -58,9 +58,9 @@ Do NOT use plan-builder when you:
 
 ### Children
 
-- **Todo child.** Run `validate-plan.ts <plan> --todo <id> --root <project>` and read only that, the files it references, and what the work needs. In recovery mode, investigate the drift first, as the reference's Recovery section says, and append a `recovery` receipt. Record any required recheck. Make the todo's edits. Run its Acceptance and every labelled QA part for real, and fix the implementation until they pass. Commit when it says `Commit: yes`, with its owned paths and the plan directory only; the reference's Commits section says when the plan directory stays out. Capture the after-snapshot, append one `pass` receipt whose checks use the ids `--todo` printed, and set the todo's box to Done. When it cannot finish, append a `block` receipt that names what is missing.
-- **Final-wave child.** Run each gate as the reference's Final wave section describes, mark each box Done when its work is done, and fix a failure in place: re-run the affected checks and append a `fix` receipt that names the gate.
-- **Fix child.** Read the blocking differences of the given round in `<stem>.reviews.md`, and nothing the round only recorded. Fix each one, re-run the checks it affects and the todo checks of every todo it touches, commit, and append one `fix` receipt with `F4` as its todo.
+- **Todo child.** Run `validate-plan.ts <plan> --todo <id> --root <project>` and read only that, the files it references, and what the work needs. In recovery mode, investigate the drift first, as the reference's Recovery section says, and record a `recovery` receipt. Record any required recheck. Make the todo's edits. Run its Acceptance and every labelled QA part for real, and fix the implementation until they pass. Commit when it says `Commit: yes`, with its owned paths and the plan directory only; the reference's Commits section says when the plan directory stays out. Then run `record-receipt.ts` once for the `pass` receipt, with a check for each id `--todo` printed, and reply with the `TODO-RESULT` line. When it cannot finish, record a `block` receipt that names what is missing.
+- **Final-wave child.** Run each gate as the reference's Final wave section describes, mark each box Done when its work is done, and fix a failure in place: re-run the affected checks, then run `record-receipt.ts` for a `fix` receipt that names the gate.
+- **Fix child.** Read the blocking differences of the given round in `<stem>.reviews.md`, and nothing the round only recorded. Fix each one, re-run the checks it affects and the todo checks of every todo it touches, commit, and run `record-receipt.ts` for one `fix` receipt with `F4` as its todo.
 - Every child replies with one line, nothing else.
 
 ### Recovery
@@ -126,7 +126,7 @@ MUST:
 - MUST require `gateEligible: true` (new build) or `resumeEligible: true` (resume) from the real validator run before any application edit.
 - MUST run as coordinator only in the main session, and give each todo, the final wave, F4, and each fix a fresh child when the host allows it.
 - MUST keep the coordinator's context to validator output, child replies, and verdict lines.
-- MUST capture the baseline and every receipt snapshot with `capture-build-state.ts`, never by hand.
+- MUST capture the baseline with `capture-build-state.ts` and record every receipt with `record-receipt.ts`, never by hand.
 - MUST write a todo's pass receipt only after its real Acceptance and every QA part passed and any required commit landed, with the check ids `--todo` printed.
 - MUST commit only a todo's owned paths plus the plan directory, and checkpoint instead of whole-file staging when owner content or unaccounted edits collide with an owned path. The reference's Commits section covers a plan directory that git ignores.
 - MUST keep receipts to the contract's keys and fields under their caps; put long output in a log file named by `log`.
@@ -155,7 +155,7 @@ NEVER:
 - [ ] The preflight ran the real validator and required `gateEligible`/`resumeEligible` before any edit.
 - [ ] A durable baseline snapshot exists, captured by `capture-build-state.ts`, and its location is recorded in the build file.
 - [ ] Each todo was built by a fresh child, or the reply names it as built inline because no child was available.
-- [ ] Every todo has one passed receipt with a real snapshot reference, a passing `acceptance` check, and one passing check per QA part.
+- [ ] Every todo has one passed receipt, recorded by `record-receipt.ts`, with a passing `acceptance` check and one passing check per QA part.
 - [ ] T0 committed the plan directory; every `Commit: yes` todo's commit touches only its owned paths and the plan directory. When git ignores the plan directory, the commits follow the reference's Commits section instead.
 - [ ] A Done build ends with the plan-only `docs(plans): complete <slug> build` commit, unless git ignores the plan directory, as the reference's Commits section says; a checkpoint or a stop made none.
 - [ ] Every todo's box is `- [x] Done` only after its passed receipt, and every gate's box only after its own work.

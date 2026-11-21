@@ -17,19 +17,15 @@ approximately.
 
 ## Snapshots
 
-Take every snapshot with `bun <this-skill-base>/scripts/capture-build-state.ts
-<plan> --root <project> --output <destination> [--carry <snapshot>]...
-[--include <path>]... [--report <path>]... --run-id <id> --base-revision
-<revision> --approved-spec <digest>`. It only reads the project and writes its
-own output; it never stages, commits, restores, edits the project, or runs a
-plan-supplied command. Pass every earlier snapshot in this run's chain as
-`--carry` so unchanged files are hard-linked, not recopied, and so the path
-union stays complete even after a file is later deleted or ignored. Exit 0
-prints the snapshot's location and digests; exit 1 means the project changed
-while capturing or holds an unsupported state (a submodule, an unmerged index
-entry, a file the manifest format cannot represent) and needs a checkpoint,
-not a retry with different flags; exit 2 means a bad argument or an unreadable
-input, including a destination that already exists.
+Capture the baseline with `bun <this-skill-base>/scripts/capture-build-state.ts
+<plan> --root <project> --output <destination> [--include <path>]...
+[--report <path>]... --run-id <id> --base-revision <revision> --approved-spec
+<digest>`. Exit 0 prints the snapshot's location and digests; exit 1 means
+the project changed while capturing or holds an unsupported state (a
+submodule, an unmerged index entry, a file the manifest format cannot
+represent) and needs a checkpoint, not a retry with different flags; exit 2
+means a bad argument or an unreadable input, including a destination that
+already exists. The receipt command captures every later snapshot.
 
 The run directory is `git rev-parse --git-path silly-skills/plan-builds/<run-id>`
 in a git project, or a durable path you choose outside the project when there
@@ -45,9 +41,8 @@ snapshot must outlive this session.
 `capture-build-state.ts` always declares the plan's `<stem>.reviews.md` and
 `<stem>.build.md` as reports, so appending a receipt or a result review round
 is not drift. Pass the spec path T0 builds in, so the declared paths are the
-right ones. `--report <path>` adds further report outputs; `--carry` does not
-inherit them, so repeat them on every capture. Never declare a wildcard or a
-source file as a report to hide drift.
+right ones. `--report <path>` adds further report outputs. Never declare a
+wildcard or a source file as a report to hide drift.
 
 ## Keep receipts short
 
@@ -60,16 +55,26 @@ and the output matters, save it to
 `<run directory>/logs/<seq>-<todo>.log` and name that path in the receipt's
 `log`.
 
+## Recording a receipt
+
+```text
+bun <this-skill-base>/scripts/record-receipt.ts <plan> --todo <T<n>|F<n>> --event <pass|block|fix|recovery>
+  [--check <json>]... [--recheck <json>]... [--commit <revision> | --no-commit <reason>]
+  [--note <text>] [--log <path>] [--root <project>]
+```
+
+A check is `{"id", "command", "exit", "observed"}`, plus `"expectedExit"` when not 0; a recheck is `{"targets", "paths", "status", "observed"}`. A pass takes a check per id `--todo` printed, each required recheck, and `--commit HEAD` after its commit. A block or a recovery takes `--note`, and a fix its gate as `--todo`.
+
+The command appends the receipt, sets a passed todo's box, and prints `RECEIPT: <todo> <event> seq <n>; resumeEligible <true|false>; next <id|none>`, plus `; errors: <CODE>, ...` when the resume check reports errors. Exit 0: recorded. Exit 1: recorded with errors, or refused with `RECEIPT: REFUSED <todo> <event>; <reason>` and nothing written. Exit 2: a bad argument or an unreadable input.
+
 ## One receipt per todo
 
-A todo child writes one receipt, after its work:
+A todo child records one receipt after its work:
 
-- **pass.** Only after the todo's real Acceptance command and every QA part ran and passed, and its commit (if `Commit: yes`) landed. `before` is the previous receipt's end state (the baseline, for the first). `after` is a fresh snapshot taken once the commit has landed; its `headRevision` must equal the commit you recorded. `checks` lists each command actually run, its actual exit code, the expected one, whether it passed, and what it printed — never a planned command you did not execute. Use the ids `validate-plan.ts --todo` prints: `acceptance`, and `qa:<label>` for each labelled QA part that is not `n/a`. The validator refuses a pass without them (`MISSING_CHECK`). Only after this receipt is durable does the todo's box become `- [x] Done`.
-- **block.** When the todo cannot finish. `after` is a fresh snapshot of the state you leave, and `note` names what is missing.
+- **pass.** Only after the todo's real Acceptance command and every QA part ran and passed, and its commit (if `Commit: yes`) landed. Each check is a command that was really run, with its real exit code and what it printed, under the ids `--todo` prints: `acceptance`, and `qa:<label>` for each labelled QA part that is not `n/a`.
+- **block.** When the todo cannot finish; its note names what is missing.
 
-A todo with no edits (a pure verification step) may have an `after` equal to its `before`. A todo's first receipt comes only after its dependencies passed.
-
-A fix child writes one **fix** receipt with `F4` as its todo after a result round, and a final-wave child writes one naming the gate it repaired. Its checks are the commands it re-ran, all passing.
+A fix child records one **fix** receipt with `F4` as its todo after a result round, and a final-wave child records one naming the gate it repaired. Its checks are the commands it re-ran, all passing.
 
 ## Commits
 
