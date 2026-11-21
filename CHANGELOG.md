@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 
 - `plan-review` 2.2.0, validator: a plan directory that git ignores. When `git check-ignore` matches the spec, the JSON adds `planIgnored: true` in every mode, the resume check accepts a T0 pass receipt that names no commit, and `--todo` prints `Plan directory: ignored by git. Leave it out of every commit.` under the branch. Every other `Commit: yes` todo still needs its commit, and a plan that git does not ignore gets the same results as before. The writer contract's Check J lets T0 skip its commit there.
+- `plan-builder` 2.2.0: a plan directory that git ignores stays out of every commit. The builder takes that state from the validator, `planIgnored: true` in its JSON or the plan-directory line of `--todo`, and runs no git command of its own to find it. Each commit then names only its owned paths. T0 makes no commit and records `{"none": "git ignores the plan directory"}`, a slice stop and the step after the result review make no commit, and the DONE reply says `Commits: <n>; git ignores the plan directory, so no commit holds it.` The builder never adds the plan directory with force. The rule lives in the Commits section of `references/receipts.md`, and a plan directory that git does not ignore builds as before.
 
 ## [1.0.0] - 2026-11-20
 

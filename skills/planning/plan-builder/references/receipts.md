@@ -90,6 +90,18 @@ todo and gets no receipt. A CHECKPOINT or BLOCKED stop makes no commit of its
 own; the next todo commit or the resumed build's final commit carries the
 plan directory forward.
 
+When git ignores the plan directory, leave it out of every commit. The
+validator reports it: its JSON has `planIgnored: true`, and `--todo` prints
+`Plan directory: ignored by git. Leave it out of every commit.` under the
+branch line. Take the state from there, never from a git command of your
+own. Each commit then names only its owned paths, without
+`docs/plans/<stem>`, and its file list is checked against those paths alone.
+T0 makes no commit, and its pass receipt records
+`{"none": "git ignores the plan directory"}` as its `commit`. The step after
+the result review makes no commit either, and a slice stop skips its commit,
+as Slices says. A plan directory that git does not ignore keeps every rule
+above.
+
 If an owned path also holds the project owner's pre-existing changes, or an
 edit this build did not intend, do not whole-file stage it and do not attempt
 to split its hunks automatically. Record a `block` receipt describing the
@@ -161,7 +173,7 @@ These rules apply only to a plan with slice lines; for any other plan the resume
 - **Stop slice.** The slice before `nextSlice` is the request's stop slice. "Build slice S1" and "build through slice S2" name it. "The next slice" means the slice of `nextTodo` when the request arrives. A request that names no slice has none. After a compaction that lost the request, the slice just built is the stop slice.
 - **Branch.** The slice about to start, `nextSlice` on a resume, names a branch, and `git branch --show-current` prints another. "On the current branch" in the request turns this rule off.
 
-When a rule applies and an earlier slice is built, the coordinator stops. It makes one plan-only commit for the slice just built, `docs(plans): complete <slug> slice S<n>`, and skips it when the plan directory has nothing to commit. It appends no receipt and replies with the `SLICE` verdict. When the branch rule applies and no slice is built yet, it replies `BLOCKED` with that branch as the missing input.
+When a rule applies and an earlier slice is built, the coordinator stops. It makes one plan-only commit for the slice just built, `docs(plans): complete <slug> slice S<n>`, and skips it when the plan directory has nothing to commit or git ignores it. It appends no receipt and replies with the `SLICE` verdict. When the branch rule applies and no slice is built yet, it replies `BLOCKED` with that branch as the missing input.
 
 A resume after a slice stop sees the slice commit, and any merge, as drift. The Recovery section handles it: the first todo child of the next slice appends one recovery receipt and then builds.
 
