@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-11-21
+
 ### Added
 
 - `plan-review` 2.2.0, validator: `--init` creates a new plan in one call and prints the spec path. It takes the title, slug, request, intent, tier, and branch, and optionally the source, date, and ui, and writes `docs/plans/<date>-<slug>/` with two skeleton files: a draft spec with every section and Scope subsection in order, T0, an empty todo template, the four final gates, and a placeholder line in each empty slot, and an evidence index whose baseline holds the HEAD revision and the dirty paths. It never overwrites: an existing name gets `-2`, `-3`, and so on, the files are built in a temporary directory and renamed into place, and a `docs/plans` that resolves outside the root is refused. `--grammar` prints the Plan grammar and Field caps sections of `references/validator-contract.md`, which the validator reads only for that flag.
