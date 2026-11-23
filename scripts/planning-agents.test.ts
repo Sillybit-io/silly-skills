@@ -3,13 +3,16 @@
  * goes beyond `validate.ts`'s generic AGENT_WRAPPERS shape check: it asserts
  * the actual semantics each host needs — OpenCode mode and effective
  * delegation, Claude Code's question-routing and subagent-restriction text,
- * and Cursor's readonly flag and depth-limit fallback.
+ * and Cursor's readonly flag and depth-limit fallback. The last describe
+ * checks every directory under `agents/`, planning or not, against the Launch
+ * table: its OpenCode mode and the exact set of agents it may launch. It also
+ * checks the README's copy of that table against the same rows.
  */
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type PermissionRule, parseFrontmatter } from "./validate.ts";
+import { AGENT_WRAPPERS, type PermissionRule, parseFrontmatter } from "./validate.ts";
 
 const repo = join(import.meta.dir, "..");
 
@@ -31,10 +34,21 @@ const EXPECTED_DELEGATES: Record<Persona, Persona[]> = {
   "plan-writer": ["plan-scout"],
   "plan-reviewer": ["plan-scout"],
   "plan-scout": [],
-  "plan-builder": ["plan-builder", "plan-result-reviewer"],
+  "plan-builder": ["plan-builder", "plan-result-reviewer", "plan-writer", "plan-reviewer"],
   "plan-loop": ["plan-writer", "plan-reviewer"],
   "plan-result-reviewer": ["plan-scout"],
 };
+
+// The Launch table: for each directory under agents/, its OpenCode mode and
+// the exact set of agents it may launch. The six planning rows are the
+// fixtures above; tech-writer and ui-engineer launch no agent.
+type LaunchRow = { mode: string; launches: readonly string[] };
+
+const LAUNCH_TABLE: ReadonlyMap<string, LaunchRow> = new Map<string, LaunchRow>([
+  ...PERSONAS.map((persona): [string, LaunchRow] => [persona, { mode: EXPECTED_MODE[persona], launches: EXPECTED_DELEGATES[persona] }]),
+  ["tech-writer", { mode: "subagent", launches: [] }],
+  ["ui-engineer", { mode: "subagent", launches: [] }],
+]);
 
 function readWrapper(persona: string, file: string): string {
   return readFileSync(join(repo, "agents", persona, file), "utf8");
@@ -47,18 +61,131 @@ function frontmatterOf(persona: string, file: string) {
   return fm;
 }
 
-/** Last matching rule wins; an exact resource match outranks a "*" fallback
- * regardless of order, matching how every wrapper here is actually written
- * (a "*" deny baseline, then specific-resource exceptions). */
-function effect(rules: PermissionRule[], action: string, resource: string): string | null {
-  let wildcard: string | null = null;
-  let exact: string | null = null;
+/** Evaluates the rules as OpenCode does (https://opencode.ai/docs/permissions/):
+ * walk them in order and keep the effect of the last rule whose action equals
+ * `action` and whose resource pattern matches `resource`. Order decides, so a
+ * "*" rule after an exact one wins. With no matching rule the answer is
+ * "allow", OpenCode's base policy. */
+function effect(rules: PermissionRule[], action: string, resource: string): string {
+  let result = "allow";
   for (const r of rules) {
-    if (r.action !== action) continue;
-    if (r.resource === resource) exact = r.effect;
-    else if (r.resource === "*") wildcard = r.effect;
+    if (r.action === action && resourceMatches(r.resource, resource)) result = r.effect;
   }
-  return exact ?? wildcard;
+  return result;
+}
+
+/** Matches a whole resource against an OpenCode pattern: "*" is any run of
+ * characters, "/" included, "?" is one character, and every other character
+ * stands for itself. */
+function resourceMatches(pattern: string, resource: string): boolean {
+  const source = pattern
+    .replace(/[.+^${}()|[\]\\]/g, "\\$&")
+    .replace(/\*/g, ".*")
+    .replace(/\?/g, ".");
+  return new RegExp(`^${source}$`, "s").test(resource);
+}
+
+/** Lists the agent directories under `agentsRoot`, sorted. Like validate.ts,
+ * it counts every entry that is a directory as a persona. */
+function listAgentDirs(agentsRoot: string): string[] {
+  return readdirSync(agentsRoot)
+    .filter((name) => statSync(join(agentsRoot, name), { throwIfNoEntry: false })?.isDirectory() === true)
+    .sort();
+}
+
+/** Checks the OpenCode file of one agent directory under `agentsRoot` against
+ * its Launch table row, and returns each difference as a line that names the
+ * agent; an empty list means it matches. "mode" compares the mode. "launch"
+ * wants a first `subagent` rule that denies "*", allow for each agent in the
+ * row, and deny for every other agent directory or row and for "general", a
+ * name no row lists. A directory without a row gets one line that says so,
+ * for either part. */
+function launchTableDifferences(agentsRoot: string, persona: string, part: "mode" | "launch"): string[] {
+  const row = LAUNCH_TABLE.get(persona);
+  if (row === undefined) return [`${persona}: no Launch table row`];
+  const text = readFileSync(join(agentsRoot, persona, "opencode.md"), "utf8");
+  const fm = parseFrontmatter(text.split(/\r?\n/), { permissionList: true });
+  if (fm.problems.length > 0) return fm.problems.map((p) => `${persona}: opencode.md line ${p.line}: ${p.message}`);
+  if (part === "mode") return fm.top.mode === row.mode ? [] : [`${persona}: mode is ${fm.top.mode ?? "unset"}, not ${row.mode}`];
+  const differences: string[] = [];
+  const first = fm.permissions.find((r) => r.action === "subagent");
+  if (first?.resource !== "*" || first.effect !== "deny") {
+    differences.push(`${persona}: the first subagent rule is not a deny on "*"`);
+  }
+  const names = new Set([...row.launches, ...listAgentDirs(agentsRoot), ...LAUNCH_TABLE.keys(), "general"]);
+  for (const name of names) {
+    const expected = row.launches.includes(name) ? "allow" : "deny";
+    const actual = effect(fm.permissions, "subagent", name);
+    if (actual !== expected) differences.push(`${persona}: subagent ${name} is ${actual}, not ${expected}`);
+  }
+  return differences;
+}
+
+/** Writes a launch set for comparison: its names sorted, or "none" when it is
+ * empty. */
+function launchList(names: readonly string[]): string {
+  return names.length === 0 ? "none" : [...names].sort().join(", ");
+}
+
+/** Splits a markdown table line into its trimmed cells, without backticks. */
+function tableCells(line: string): string[] {
+  return line
+    .trim()
+    .replace(/^\|/, "")
+    .replace(/\|$/, "")
+    .split("|")
+    .map((cell) => cell.trim().replaceAll("`", ""));
+}
+
+/** Reads the README table under `### Which agent to start` whose first header
+ * cell is "Agent", and compares it with the Launch table: one row per agent,
+ * the OpenCode mode, "yes" in the picker exactly for `primary` and `all`, and
+ * the launch set in any order, "none" meaning empty. Returns each difference
+ * as a line that names the agent; an empty list means they match. A missing
+ * heading, table, column, or row is a difference too. */
+function readmeLaunchTableDifferences(readme: string): string[] {
+  const lines = readme.split(/\r?\n/);
+  const start = lines.indexOf("### Which agent to start");
+  if (start === -1) return ["README: no ### Which agent to start heading"];
+  const end = lines.findIndex((line, i) => i > start && /^#{1,3} /.test(line));
+  const section = lines.slice(start + 1, end === -1 ? lines.length : end);
+  const header = section.findIndex((line) => line.startsWith("|") && tableCells(line)[0] === "Agent");
+  if (header === -1) return ["README: no Agent table under ### Which agent to start"];
+  const columns = tableCells(section[header] ?? "");
+  const agentAt = columns.indexOf("Agent");
+  const modeAt = columns.indexOf("OpenCode mode");
+  const pickerAt = columns.indexOf("In the picker");
+  const launchAt = columns.indexOf("May launch");
+  if (modeAt === -1 || pickerAt === -1 || launchAt === -1) return [`README: the Agent table's columns are ${columns.join(", ")}`];
+  // The rows run from below the separator line to the first line that is not
+  // a table line.
+  const below = section.slice(header + 2);
+  const stop = below.findIndex((line) => !line.startsWith("|"));
+  const differences: string[] = [];
+  const seen = new Set<string>();
+  for (const line of stop === -1 ? below : below.slice(0, stop)) {
+    const cells = tableCells(line);
+    const agent = cells[agentAt] ?? "";
+    const row = LAUNCH_TABLE.get(agent);
+    if (row === undefined || seen.has(agent)) {
+      differences.push(`${agent}: ${row === undefined ? "no tested row" : "listed twice"}`);
+      continue;
+    }
+    seen.add(agent);
+    const mode = cells[modeAt] ?? "";
+    if (mode !== row.mode) differences.push(`${agent}: README mode is ${mode}, not ${row.mode}`);
+    const picker = cells[pickerAt] ?? "";
+    const inPicker = row.mode === "primary" || row.mode === "all" ? "yes" : "no";
+    if (picker !== inPicker) differences.push(`${agent}: README picker is ${picker}, not ${inPicker}`);
+    const cell = cells[launchAt] ?? "";
+    const launches = launchList(cell === "none" ? [] : cell.split(",").map((name) => name.trim()));
+    const expected = launchList(row.launches);
+    if (launches !== expected) differences.push(`${agent}: README launches ${launches}, not ${expected}`);
+  }
+  for (const agent of LAUNCH_TABLE.keys()) {
+    if (!seen.has(agent)) differences.push(`${agent}: no README row`);
+  }
+  return differences;
 }
 
 describe("planning agents: OpenCode mode and delegation", () => {
@@ -127,6 +254,18 @@ describe("planning agents: OpenCode mode and delegation", () => {
     }
   });
 
+  test("plan-builder child launches no agent: each file states it", () => {
+    // OpenCode's rules are per agent and cannot tell the coordinator from its
+    // child, and a host may allow deeper launches, so the prompt holds the
+    // rule: as the agent's own, not as a claim about the host.
+    for (const file of AGENT_WRAPPERS) {
+      const body = readWrapper("plan-builder", file);
+      const states = body.includes("A child launches no agent");
+      const hostClaim = body.includes("cannot launch children");
+      expect({ file, states, hostClaim }).toEqual({ file, states: true, hostClaim: false });
+    }
+  });
+
   test("plan-loop never edits natively", () => {
     const fm = frontmatterOf("plan-loop", "opencode.md");
     expect(effect(fm.permissions, "edit", "*")).toBe("deny");
@@ -156,14 +295,20 @@ describe("planning agents: Claude Code question routing and subagent restriction
       expect({ persona, routesQuestion }).toEqual({ persona, routesQuestion: true });
     });
 
-    test(`${persona}/claude-code.md's delegation matches opencode.md's`, () => {
-      const body = readWrapper(persona, "claude-code.md");
+    test(`${persona} names every agent in its row`, () => {
       const expected = EXPECTED_DELEGATES[persona];
+      // Claude Code and Cursor hold the launch rule in the prompt only, so
+      // every file names each agent its OpenCode rules allow.
+      for (const file of AGENT_WRAPPERS) {
+        const body = readWrapper(persona, file);
+        const missing = expected.filter((other) => !body.includes(`\`${other}\``));
+        expect({ persona, file, missing }).toEqual({ persona, file, missing: [] });
+      }
+      const body = readWrapper(persona, "claude-code.md");
       if (expected.length === 0) {
         expect(body.includes("Agent")).toBe(false);
         return;
       }
-      for (const other of expected) expect(body.includes(`\`${other}\``)).toBe(true);
       // Claude Code enforces no subagent type list inside a subagent: the
       // wrapper's own prose must hold that restriction instead.
       expect(body.includes("does not enforce a subagent type list")).toBe(true);
@@ -235,5 +380,83 @@ describe("planning agents: mutation detection", () => {
       const body = readFileSync(join(dir, "cursor.md"), "utf8");
       expect(body.includes("third level")).toBe(false);
     });
+  });
+
+  test("rule order: a deny on * after the allows denies the launch", () => {
+    const denyAll = '  - action: subagent\n    resource: "*"\n    effect: deny\n';
+    const lastAllow = '  - action: subagent\n    resource: "plan-reviewer"\n    effect: allow\n';
+    withMutated("plan-loop", "opencode.md", (t) => t.replace(denyAll, "").replace(lastAllow, lastAllow + denyAll), (dir) => {
+      const fm = parseFrontmatter(readFileSync(join(dir, "opencode.md"), "utf8").split(/\r?\n/), { permissionList: true });
+      expect(fm.problems).toEqual([]);
+      // The copy really moved the deny: it is now the last subagent rule.
+      const order = fm.permissions.filter((r) => r.action === "subagent").map((r) => `${r.resource} ${r.effect}`);
+      expect(order).toEqual(["plan-writer allow", "plan-reviewer allow", "* deny"]);
+      // OpenCode takes the last matching rule, so the later "*" deny wins.
+      expect(effect(fm.permissions, "subagent", "plan-writer")).toBe("deny");
+    });
+  });
+
+  test("a plan-builder file without the plan-writer rule is detected", () => {
+    const writerRule = '  - action: subagent\n    resource: "plan-writer"\n    effect: allow\n';
+    withMutated("plan-builder", "opencode.md", (t) => t.replace(writerRule, ""), (dir) => {
+      const fm = parseFrontmatter(readFileSync(join(dir, "opencode.md"), "utf8").split(/\r?\n/), { permissionList: true });
+      expect(fm.problems).toEqual([]);
+      // The copy really lost that one rule.
+      const order = fm.permissions.filter((r) => r.action === "subagent").map((r) => `${r.resource} ${r.effect}`);
+      expect(order).toEqual(["* deny", "plan-builder allow", "plan-result-reviewer allow", "plan-reviewer allow"]);
+      // The "*" deny now decides the writer, so the launch set misses an agent
+      // of plan-builder's row, which the delegation test reports.
+      expect(effect(fm.permissions, "subagent", "plan-writer")).toBe("deny");
+      const launches = PERSONAS.filter((other) => effect(fm.permissions, "subagent", other) === "allow");
+      const missing = EXPECTED_DELEGATES["plan-builder"].filter((other) => !launches.includes(other));
+      expect(missing).toEqual(["plan-writer"]);
+    });
+  });
+});
+
+describe("every persona: mode and launch set", () => {
+  const agentsRoot = join(repo, "agents");
+
+  // One pair of tests per directory, not per row, so a new persona without a
+  // row fails both by name instead of going unchecked.
+  for (const persona of listAgentDirs(agentsRoot)) {
+    test(`${persona}/opencode.md mode matches the Launch table`, () => {
+      expect(launchTableDifferences(agentsRoot, persona, "mode")).toEqual([]);
+    });
+
+    test(`${persona}/opencode.md launch set matches the Launch table`, () => {
+      expect(launchTableDifferences(agentsRoot, persona, "launch")).toEqual([]);
+    });
+  }
+
+  test("a persona directory with no table row is reported", () => {
+    const root = mkdtempSync(join(tmpdir(), "planning-agents-root-"));
+    try {
+      for (const persona of listAgentDirs(agentsRoot)) {
+        cpSync(join(agentsRoot, persona), join(root, persona), { recursive: true });
+      }
+      // A complete persona under a new name: valid files, but no row.
+      cpSync(join(agentsRoot, "plan-scout"), join(root, "new-persona"), { recursive: true });
+      const listed = listAgentDirs(root);
+      expect(listed).toEqual([...listAgentDirs(agentsRoot), "new-persona"].sort());
+      // Each listed directory gets a mode test and a launch test. Only the new
+      // one's report a missing row, and they name it.
+      const noRow = listed
+        .flatMap((persona) => [...launchTableDifferences(root, persona, "mode"), ...launchTableDifferences(root, persona, "launch")])
+        .filter((line) => line.endsWith(": no Launch table row"));
+      expect(noRow).toEqual(["new-persona: no Launch table row", "new-persona: no Launch table row"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("README launch table matches the tested rows", () => {
+    const readme = readFileSync(join(repo, "README.md"), "utf8");
+    expect(readmeLaunchTableDifferences(readme)).toEqual([]);
+    // The comparison sees a wrong row: in a copy where ui-engineer may launch
+    // plan-scout, the difference names that row.
+    const changed = readme.replace("| ui-engineer | subagent | no | none |", "| ui-engineer | subagent | no | plan-scout |");
+    expect(changed).not.toBe(readme);
+    expect(readmeLaunchTableDifferences(changed)).toEqual(["ui-engineer: README launches plan-scout, not none"]);
   });
 });

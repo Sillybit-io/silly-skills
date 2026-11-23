@@ -145,6 +145,8 @@ since the baseline or its receipts: the coordinator passes it to that todo's
 child, which records the recheck, per the section above. A new build reaches
 the resume command with only T0's receipt; `nextTodo` names the first todo.
 
+`SPEC_CHANGED` and `APPROVAL_CHANGED` mean that the plan, or its live review, no longer matches the approval in force. They lead to Amend below: once an OKAY round on the plan as it is exists, the amend receipt records that round as the new approval, and the build goes on from its next todo. A changed plan never starts a second build file, run directory, or baseline.
+
 ## Recovery
 
 `recoveryRequired: true` and a non-empty `drift` mean the current project
@@ -171,6 +173,69 @@ contract that changed, a Must Have the current code contradicts — is not
 something a recovery receipt can wave through. It needs a new plan and a new
 review. Checkpoint and say so.
 
+## Amend
+
+An approved plan change is one `amend` receipt in the same build file and receipt chain. The plan-review contract's "Resume rules after a change" says what the resume check accepts.
+
+```text
+bun <this-skill-base>/scripts/record-receipt.ts <plan> --event amend --note <the change in one line>
+  [--commit HEAD | --no-commit <reason>] [--log <path>] [--root <project>]
+```
+
+The command takes no `--todo`, `--check`, or `--recheck`. The receipt names `plan` as its todo, holds no checks and no prerequisites, and holds `approval`: the spec digest, the round, the verdict, and the gate record digest that the validator's review mode reports for the plan as it is. Before the command writes anything, it refuses, in this order, when:
+
+1. the reviews file holds a result review round: a build takes no plan change after its first result review, so later work is a new plan;
+2. a pass receipt has no `todoDigest`: a build begun before plan-builder 2.3.0 finishes on its approved plan;
+3. a todo is active;
+4. review mode does not report `gateEligible: true` for the plan as it is, as when the change altered a todo that already passed;
+5. the reviewed round is not above the round of the approval in force;
+6. anything outside the plan directory, apart from HEAD, differs from the last recorded state;
+7. git tracks the plan directory, and `--commit` is missing or does not name HEAD.
+
+A refusal prints `RECEIPT: REFUSED plan amend; <reason>` and writes nothing. Otherwise the command captures the after-snapshot with the new spec digest as the approved spec, appends the receipt, sets every Done final gate box, `Automated UI QA` among them, back to Open, and runs the resume check. It prints `RECEIPT: plan amend seq <n>; resumeEligible <true|false>; next <id|none>`, plus `; errors: <CODE>, ...` when the resume check reports errors. Every later capture names the spec digest of the approval in force.
+
+The plan-only commit comes before the receipt. Commit the plan directory alone as `docs(plans): amend <slug> plan`, with `git --literal-pathspecs commit --only -- docs/plans/<stem>`, and pass `--commit HEAD`. When the plan directory has nothing to commit, pass `--commit HEAD` all the same. When git ignores the plan directory, make no commit and pass `--no-commit "git ignores the plan directory"`.
+
+A plan change starts with no todo active. A failed recheck is recorded in a recovery receipt, which leaves its todo active. Once that todo's child has replied, and with no drift, the coordinator closes the todo with a block receipt before the writer starts: `record-receipt.ts <plan> --todo <id> --event block --note <the reason in one line>`. The printed line may end with `errors: PREREQUISITE_FAILED`; the block receipt is recorded all the same, and the amend receipt clears the failed recheck. The todo stays open and is built after the change. Close a todo only before the plan changes: a block receipt recorded after the change would take in the changed plan. So a plan that changed while a todo was still active stays refused.
+
+## Branch
+
+**When.** At a new build in a git project, after review mode reports `gateEligible: true` and before the baseline, so the baseline and the build record name the branch the build runs on. Slices also sends a first slice here, when its branch is not checked out and no slice is built yet. A project without git has no branch rule. "On the current branch" in the request turns the rule off.
+
+**Wanted branch.** The first slice's branch, when the first entry of `slices` in the JSON names one. Otherwise the plan's `branch:`, from the `Branch:` line that `--todo T0` prints. From Slices, it is that slice's branch.
+
+**Commands.** Four reads, then the one write, in this order. `<plan directory>` is the directory that holds the spec, relative to the project root.
+
+```text
+git branch --show-current
+git rev-parse --verify --quiet refs/heads/<branch>
+git status --porcelain --untracked-files=all -- ':(exclude)<plan directory>'
+git rev-parse HEAD
+git switch -c <branch>
+```
+
+**Cases.** The coordinator runs the reads in order and stops at the first of the first four cases that holds. When none holds, it runs the fourth command, keeps the commit it prints, and runs the fifth command once. What follows picks one of the last three cases.
+
+| Case | Holds when | Git write | Reply | Reason | Command |
+| --- | --- | --- | --- | --- | --- |
+| `off` | the request says "on the current branch"; no command runs | none | none | — | — |
+| `current` | the first command prints the wanted branch | none | none | — | — |
+| `exists` | the second command exits 0 | none | `BLOCKED` | It already exists. | `git switch <branch>` |
+| `not clean` | the third command prints a line: a path outside the plan directory is modified, staged, or untracked | none | `BLOCKED` | `<n>` paths outside the plan directory are not clean: `<paths>`. | `git switch -c <branch>` |
+| `created` | the fifth command exits 0 | `git switch -c <branch>` | none | — | — |
+| `refused` | the fifth command does not exit 0, and the four reads, run again, give what they gave before | `git switch -c <branch>` | `BLOCKED` | Git did not create it: `<message>`. | `git switch -c <branch>` |
+| `changed` | the fifth command does not exit 0, and a read, run again, gives something else | `git switch -c <branch>` | `CHECKPOINT` | — | — |
+
+A reply of none means the build goes on. `<n>` is the number of lines the third command printed, and `<paths>` holds the first five of their paths. `<message>` is the last line git printed. A command the host did not run counts as one that does not exit 0, with the host's refusal as the message. For `not clean`, the owner's `git switch -c <branch>` takes the changes along.
+
+**After a create that fails.** Git can exit non-zero after it created the branch and checked it out, as when a `post-checkout` hook fails. So only the second run of the reads tells `refused` from `changed`: the branch the first command prints, the exit of the second, the lines of the third, and the commit of the fourth. The coordinator never runs the fifth command a second time, and never undoes what git did.
+
+**Trace.** At a new build, after the case `created`, T0's pass receipt gets a `--note` that names the created branch and what it was cut from: the branch the first command printed, or a detached HEAD.
+
+**Never.** A start point, `-C`, `--force`, `--discard-changes`, `git checkout`, `git stash`, a switch to an existing branch, a second run of the fifth command, an undo of a branch git created, or a push. An ignored file never makes the tree not clean.
+
+**What a stop writes.** Nothing. A `BLOCKED` reply follows no change at all: no branch, no baseline, no build file, and no commit. A `CHECKPOINT` reply follows git's own change, and the coordinator adds none. After either, the next "build this plan" runs this section again; at a new build it is a new build.
+
 ## Slices
 
 These rules apply only to a plan with slice lines; for any other plan the resume JSON has no `sliceStart`. When `sliceStart` is true, the coordinator checks two stop rules:
@@ -178,7 +243,7 @@ These rules apply only to a plan with slice lines; for any other plan the resume
 - **Stop slice.** The slice before `nextSlice` is the request's stop slice. "Build slice S1" and "build through slice S2" name it. "The next slice" means the slice of `nextTodo` when the request arrives. A request that names no slice has none. After a compaction that lost the request, the slice just built is the stop slice.
 - **Branch.** The slice about to start, `nextSlice` on a resume, names a branch, and `git branch --show-current` prints another. "On the current branch" in the request turns this rule off.
 
-When a rule applies and an earlier slice is built, the coordinator stops. It makes one plan-only commit for the slice just built, `docs(plans): complete <slug> slice S<n>`, and skips it when the plan directory has nothing to commit or git ignores it. It appends no receipt and replies with the `SLICE` verdict. When the branch rule applies and no slice is built yet, it replies `BLOCKED` with that branch as the missing input.
+When a rule applies and an earlier slice is built, the coordinator stops. It makes one plan-only commit for the slice just built, `docs(plans): complete <slug> slice S<n>`, and skips it when the plan directory has nothing to commit or git ignores it. It appends no receipt and replies with the `SLICE` verdict. When the branch rule applies and no slice is built yet, the coordinator follows the Branch section, with that slice's branch as the wanted branch.
 
 A resume after a slice stop sees the slice commit, and any merge, as drift. The Recovery section handles it: the first todo child of the next slice appends one recovery receipt and then builds.
 

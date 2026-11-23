@@ -96,6 +96,26 @@ describe("planning-install: detached installation, one persona per tool", () => 
     expect(r.code).not.toBe(0);
     expect(readFileSync(installed, "utf8")).toBe("tampered\n");
   });
+
+  test("plan-scout takes an OpenAI model: only the model line changes", () => {
+    const overrides = [
+      { tool: "opencode", model: "openai/gpt-6-luna" },
+      { tool: "cursor", model: "gpt-5.6-luna" },
+    ] as const;
+    for (const { tool, model } of overrides) {
+      const dest = tempDir();
+      const r = sh("sh", [INSTALLER, "--tool", tool, "--agent", "plan-scout", "--model", model, "--dest", dest], repo);
+      expect({ tool, exit: r.code, out: r.out }).toEqual({ tool, exit: 0, out: r.out });
+      const source = readFileSync(join(repo, "agents", "plan-scout", SOURCE_FILE[tool]), "utf8").split("\n");
+      const installed = readFileSync(join(dest, "plan-scout.md"), "utf8").split("\n");
+      const modelAt = source.findIndex((line) => line.startsWith("model: "));
+      expect({ tool, sourceHasModelLine: modelAt > 0 }).toEqual({ tool, sourceHasModelLine: true });
+      // The exact line rules out an effort part: no OpenCode #<variant> and no
+      // Cursor [effort=...] suffix.
+      expect({ tool, line: installed[modelAt] }).toEqual({ tool, line: `model: ${model}` });
+      expect({ tool, rest: installed.filter((_, i) => i !== modelAt) }).toEqual({ tool, rest: source.filter((_, i) => i !== modelAt) });
+    }
+  });
 });
 
 describe("planning-install: catalogue regression check is meaningful", () => {

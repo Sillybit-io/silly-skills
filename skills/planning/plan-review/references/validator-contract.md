@@ -54,9 +54,10 @@ A directory name that differs from the stem, a missing or different links line, 
 `--json` prints one object: `schemaVersion`, `validationMode` (`plan`, `review`, or `resume`), `plan`, `files` (`plan`, `evidenceIndex`, `reviews`, `gateRecord`, `build`), `errors`, `gaps`, `planDigest`, `sourceDigests`, `expectedVerdict`, `recordedVerdict`, `gateRecordDigest`, `gateEligible`, `resumeEligible`, `nextTodo`, `activeTodo`, `recoveryRequired`, `unresolvedAction`, `requiredRechecks`, `reconcileBoxes`, `drift`, and `exitCode`.
 
 - `gateEligible` is true only in review mode, for a complete, consistent OKAY on the current plan and current source bytes.
-- `resumeEligible` is true only in resume mode, after the baseline, the unchanged spec, the live approval, the receipt chain, and the current state all check out. Resume mode always reports `gateEligible: false`.
+- `resumeEligible` is true only in resume mode, after the baseline, the spec and the live review against the approval in force, the receipt chain, and the current state all check out. Resume mode always reports `gateEligible: false`.
 - A plan with slices adds `slices` in every mode: one `{id, name, branch, todos}` per slice, in order, with `branch` null when the slice names none. Resume mode then adds `nextSlice`, the slice of `nextTodo`, or null for T0 and a final gate, and `sliceStart`, true when no todo is active and `nextTodo` is the first todo of `nextSlice`. A plan without slices gets none of the three keys.
 - A plan whose spec git ignores adds `planIgnored: true` in every mode, before the slice keys. The spec is ignored when the project root is a git repository and `git check-ignore -q -- <spec>` exits 0 there. Git never reports a tracked file as ignored. Any other plan gets no such key. `--todo` then prints `Plan directory: ignored by git. Leave it out of every commit.` under the branch line.
+- Resume mode adds `amendRefusal`, after the slice keys, when the receipt command would refuse to record a plan change now. Its value is the reason, as text; see Resume rules after a change. Any other build gets no such key.
 - A well-formed REJECT or INCOMPLETE round exits 0 and is not eligible. A blocked build receipt exits 0 and is not eligible.
 
 The validator never edits files, except that `--init` creates a new plan directory, and it never calls a model, fetches a URL, or runs a command from a plan. It checks shape, identity, arithmetic, and agreement. It cannot prove that a reviewer read the code or that a flow works.
@@ -235,11 +236,14 @@ A receipt:
   "prerequisites": [{ "targets": ["T2.start"], "sources": [{ "path": "src/app.ts", "sha256": "..." }], "status": "holds", "observed": "..." }],
   "commit": { "sha": "<commit>" },
   "note": "",
+  "todoDigest": "<digest of T1>",
   "log": "silly-skills/plan-builds/<run-id>/logs/t1.log"
 }
 ```
 
-A receipt holds only `seq`, `todo`, `event`, `state`, `prev`, `before`, `after`, `checks`, `prerequisites`, `commit`, `note`, and `log`; any other key is `RECEIPT_FIELD`. What changed is the difference between the `before` and `after` snapshots, so a receipt never lists it. `log` is optional. `prev` is the SHA-256 of the previous receipt's canonical JSON, or `null` for the first receipt. A todo with no commit records `{"none": "<reason>"}`. Every receipt has an `after` snapshot.
+A receipt holds only `seq`, `todo`, `event`, `state`, `prev`, `before`, `after`, `checks`, `prerequisites`, `commit`, `note`, and `log`, plus `todoDigest` on a pass receipt and `approval` on an amend receipt; any other key, and either of those two on another event, is `RECEIPT_FIELD`. What changed is the difference between the `before` and `after` snapshots, so a receipt never lists it. `log` is optional. `prev` is the SHA-256 of the previous receipt's canonical JSON, or `null` for the first receipt. A todo with no commit records `{"none": "<reason>"}`. Every receipt has an `after` snapshot.
+
+`todoDigest` ties a pass receipt to the text of the todo it passed. It is the SHA-256 of the canonical JSON `{"id": "<id>", "title": "<title>", "fields": {...}}`, where `fields` holds every field the validator reads from the todo, the todo fields and `Serves`, except `References`, keyed by field name, each value as written after `- <Field>:` and trimmed. The box is not part of it, and neither is `References`, which a built todo's own edits make stale. The validator exports it as `todoDigest(todo)`, for the receipt command, which writes it after `note`. Pass receipts written before plan-builder 2.3.0 have none.
 
 One record per todo. `event` is one of:
 
@@ -249,6 +253,7 @@ One record per todo. `event` is one of:
 | `block` | `blocked` | The todo cannot finish. `note` names what is missing. Resume is not eligible after it. |
 | `recovery` | `active` | State the record did not explain, investigated and recorded. It makes its todo active until that todo passes or blocks. |
 | `fix` | `passed` | A fix child repaired blocking result-review differences. Its `todo` is a final gate such as `F4`, every todo has passed before it, and its checks all pass. |
+| `amend` | `amended` | An approved plan change. Its `todo` is `plan`. `approval` holds the new approval: `specDigest`, `round`, `verdict`, and `gateRecordDigest`. `checks` and `prerequisites` are empty, `note` names the change, and `commit` is the plan-only commit. See Resume rules after a change. |
 
 `start` and `checkpoint` belong to format 1.
 
@@ -256,10 +261,10 @@ One record per todo. `event` is one of:
 
 `--review --resume` passes only when all of these hold:
 
-- The current spec digest equals `approval.specDigest`.
-- The live plan is `status: reviewed`, its latest round and the gate record file's `round` are `approval.round`, the gate record digest equals `approval.gateRecordDigest`, and its verdict is OKAY. A later REJECT, INCOMPLETE, or superseding round blocks resume.
+- The current spec digest equals the `specDigest` of the approval in force: the record's `approval`, or after a plan change the last amend receipt's (see Resume rules after a change).
+- The live plan is `status: reviewed`, its latest round and the gate record file's `round` are the `round` of the approval in force, the gate record digest equals its `gateRecordDigest`, and its verdict is OKAY. A later REJECT, INCOMPLETE, or superseding round blocks resume.
 - The baseline and every receipt snapshot exist, match their recorded manifest digests, and verify: every object's length and digest, and the recomputed `stateDigest`. The baseline's repository matches the build record and the current project, and the baseline declares the reviews and build files as reports.
-- The gate record's sources and the evidence index citations match the baseline bytes, not the current files.
+- The gate record's sources and the evidence index citations match the bytes of the reference snapshot, not the current files: the baseline, or after a plan change the last amend receipt's `after` snapshot.
 - The receipts chain: sequential `seq`, correct `prev`, and each `before` equals the previous end state. One todo is active at a time. A todo's first receipt comes only after its dependencies passed, and a todo has no receipt after its pass.
 - A `pass` receipt records checks that all passed. For `Commit: yes`, it names the commit, and its after-state HEAD equals that commit. With `planIgnored`, T0's pass receipt may name no commit; a commit it names is still checked. Every other todo keeps the rule.
 - Every `- [x] Done` box has a passed receipt. A passed receipt with an Open box is listed in `reconcileBoxes`; set the box without repeating the work.
@@ -267,6 +272,24 @@ One record per todo. `event` is one of:
 - No recorded prerequisite recheck for a pending todo says `fails`. Pending todos whose referenced paths changed get `requiredRechecks`. Record those rechecks in that todo's pass receipt, or in a recovery receipt when one fails before any work.
 
 `nextTodo` is the active todo, or else the first todo without a passed receipt in T0-then-wave order, or else the first open final gate. Resume mode reports `nextTodo` even with an empty receipt chain, so a new build asks it for the first todo. A `recovery` receipt records observed effects after drift, such as a todo interrupted before its pass. It makes its todo active.
+
+## Resume rules after a change
+
+A reviewed plan change during a build is one `amend` receipt in the same build file and receipt chain. A build record with no `amend` receipt is checked as before.
+
+- **Approval in force.** The `approval` of the last `amend` receipt, or the record's `approval` when there is none. The spec digest and the live review are compared with it (`SPEC_CHANGED`, `APPROVAL_CHANGED`).
+- **Reference snapshot.** The `after` snapshot of the last `amend` receipt, or the baseline. The gate record's sources and the evidence index citations are compared with its bytes (`APPROVAL_BASELINE_MISMATCH`, `CITATION_DRIFT`). The baseline itself is still checked against the record's first approval.
+- **An amend receipt.** No todo is active (`RECEIPT_ORDER`). Its `todo` is `plan` and its `state` is `amended`. `approval` holds `specDigest`, `round`, `verdict`, and `gateRecordDigest` and nothing else, its verdict is OKAY, and its round is above the round of the approval before it. `checks` and `prerequisites` are empty, and `note` names the change. From the last recorded state to its `after` snapshot, nothing outside the plan directory changed, apart from HEAD and the reports the baseline declares. A miss is `AMENDMENT`. `commit` names the after-state HEAD, or is `{"none": "<reason>"}` where git ignores the plan directory or the project has no git; a miss is `COMMIT`.
+- **Passed todos.** A pass receipt's `todoDigest` equals the digest of its todo in the plan as it is; a todo that is missing or whose digest differs is `PASSED_TODO_CHANGED`. A pass receipt without `todoDigest` is accepted only when no `amend` receipt follows it; otherwise it is `AMENDMENT`.
+- **Earlier receipts.** A block, recovery, or fix receipt before the last `amend` receipt may name a todo the plan no longer has, and is not checked for dependency order or for every todo having passed. A pass receipt keeps every rule.
+- **Rechecks.** An `amend` receipt clears the recorded rechecks, the changed-path list, and a `blocked` last state, because the new review read the code as it is.
+- **Boxes.** A Done box needs a pass receipt (`DONE_WITHOUT_RECEIPT`); a pass receipt with an Open box is reconciled.
+- **Keys.** `approval` only on an `amend` receipt, and `todoDigest` only on a `pass` receipt (`RECEIPT_FIELD`).
+- **`amendRefusal`.** Resume mode adds this key when one of the receipt command's first three refusals of an `amend` receipt applies. They are, in order: the reviews file holds a result review round (a `## Result review` or `### Result round <n>` heading); a pass receipt has no `todoDigest`; a todo is active. The value is the first reason that applies, as text, so it names an active todo only when the other two do not hold. Any other build gets no such key. The validator exports the check as `amendRefusal(receipts, reviewsText)`.
+
+In plan and review modes, when the build file holds receipts, the validator also applies the Passed todos and Boxes rules, and the required check ids of each pass receipt (`MISSING_CHECK`), from the build file alone. So the writer's run and the reviewer's run refuse a changed built todo before the build resumes. A build file that cannot be parsed is reported in resume mode only.
+
+`nextTodo` keeps its rule.
 
 ## Error codes
 
@@ -285,8 +308,10 @@ One record per todo. `event` is one of:
 | GATE_RECORD, GATE_EVIDENCE, GATE_BLOCKER, PLANNED_QA_AS_EVIDENCE, VERDICT, STATUS, RENDERED_MISMATCH | Review round |
 | STALE_REVIEW, SOURCE_DRIFT | The review no longer matches the current plan or sources |
 | BUILD_RECORD, SNAPSHOT_MISSING, SNAPSHOT_CORRUPT, REPOSITORY_MISMATCH, APPROVAL_BASELINE_MISMATCH | Build file and snapshots |
-| SPEC_CHANGED, APPROVAL_CHANGED | The approval a build started from no longer holds |
+| SPEC_CHANGED, APPROVAL_CHANGED | The approval in force no longer holds: the one the build started from, or the last amend receipt's |
 | RECEIPT_CHAIN, RECEIPT_ORDER, RECEIPT_FIELD, DEPENDENCY_ORDER, PASS_WITHOUT_CHECKS, MISSING_CHECK, COMMIT, DONE_WITHOUT_RECEIPT | Receipts |
+| AMENDMENT | An amend receipt outside its rules, or a pass receipt without `todoDigest` before one |
+| PASSED_TODO_CHANGED | A todo with a pass receipt that is no longer in the plan, or whose digest differs |
 | FORMAT_1 | A format 1 record; finish it on the old install |
 | STATE_DRIFT, PREREQUISITE_FAILED | The current state or a premise no longer matches the record |
 | UNREADABLE | The plan cannot be read |

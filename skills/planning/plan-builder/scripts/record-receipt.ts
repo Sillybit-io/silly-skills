@@ -3,18 +3,22 @@
  * record-receipt — records one plan-builder receipt in one call. It reads the
  * plan and the build record, checks the call against them, captures the
  * after-snapshot, appends the receipt to <stem>.build.md, sets the box of a
- * passed todo, and runs the validator's resume check. `--help` prints the
- * arguments, the printed line, and the exit codes.
+ * passed todo, and runs the validator's resume check. With `--event amend`
+ * it records an approved plan change instead: the new approval, with every
+ * Done final gate box set back to Open. `--help` prints the arguments, the
+ * printed line, and the exit codes.
  *
  * Every refusal, the receipt order rules of the resume check among them, is
  * checked before the capture, so a refused call writes nothing. The script
  * never runs a command taken from a check, a plan, or an argument: every
  * argument is data. The only processes it starts are git commands with fixed
  * arguments, through the validator and capture-build-state.ts and to resolve
- * --commit. Parsing, digests, the required check ids, the ignored-directory
- * check, and the resume check come from the plan-review validator installed
- * beside this skill (`../../plan-review/scripts/validate-plan.ts`). The
- * snapshot comes from the `run` function of capture-build-state.ts.
+ * --commit. Parsing, digests, the todo digest, the required check ids, the
+ * ignored-directory check, the state inventory, the review and resume
+ * checks, and the first three refusals of an amend come from the plan-review
+ * validator installed beside this skill
+ * (`../../plan-review/scripts/validate-plan.ts`). The snapshot comes from the
+ * `run` function of capture-build-state.ts.
  */
 
 import { spawnSync } from "node:child_process";
@@ -26,14 +30,18 @@ import { run as capture } from "./capture-build-state.ts";
 const VALIDATOR = resolve(dirname(import.meta.path), "../../plan-review/scripts/validate-plan.ts");
 
 export const USAGE = `Usage: record-receipt <plan> --todo <T<n>|F<n>> --event <pass|block|fix|recovery>
-  [--check <json>]... [--recheck <json>]... [--commit <revision> | --no-commit <reason>]
-  [--note <text>] [--log <path>] [--root <project>]
+         [--check <json>]... [--recheck <json>]... [--commit <revision> | --no-commit <reason>]
+         [--note <text>] [--log <path>] [--root <project>]
+       record-receipt <plan> --event amend --note <text>
+         [--commit <revision> | --no-commit <reason>] [--log <path>] [--root <project>]
 
-Records one receipt in the plan's <stem>.build.md: for a todo, or for a final
-gate with --event fix. A call that the build record does not allow is refused
-and writes nothing. Otherwise the script captures the after-snapshot with every
-earlier snapshot carried, appends the receipt, sets the todo's box to Done for
-a pass, and runs the validator's resume check.
+Records one receipt in the plan's <stem>.build.md: for a todo, for a final
+gate with --event fix, or for an approved plan change with --event amend. A
+call that the build record does not allow is refused and writes nothing.
+Otherwise the script captures the after-snapshot with every earlier snapshot
+carried, appends the receipt, sets the todo's box to Done for a pass, and runs
+the validator's resume check. A pass receipt holds todoDigest, the digest of
+its todo.
 
   --check <json>     One check you ran: {"id", "command", "exit"}, and
                      optionally "expectedExit" (default 0) and "observed".
@@ -45,14 +53,26 @@ a pass, and runs the validator's resume check.
   --commit <rev>     The commit the receipt names. It must resolve to HEAD.
   --no-commit <why>  The reason the receipt names no commit. Without either
                      flag, the receipt records "no commit".
-  --note <text>      The receipt's note. A block or a recovery needs one.
+  --note <text>      The receipt's note. A block, a recovery, or an amend
+                     needs one.
   --log <path>       A log file you wrote. Its path is recorded, not opened.
   --root <dir>       Project root. Default: cwd.
   --help             Show this message.
 
+An amend takes no --todo, --check, or --recheck: its receipt names "plan" and
+takes its approval from the validator's review mode. It is refused, in this
+order, when the reviews file holds a result review round, a pass receipt has
+no todoDigest, a todo is active, review mode does not report gateEligible:
+true for the plan as it is, the reviewed round is not above the round of the
+approval in force, anything outside the plan directory, apart from HEAD,
+differs from the last recorded state, or git tracks the plan directory and
+--commit does not name HEAD. Otherwise the capture names the new spec digest,
+and every Done final gate box is set back to Open.
+
 Prints one line: "RECEIPT: <todo> <event> seq <n>; resumeEligible <true|false>;
-next <id|none>", followed by "; errors: <CODE>, ..." when the resume check
-reports errors. A refused call prints "RECEIPT: REFUSED <todo> <event>; <reason>".
+next <id|none>", with "plan" as the todo of an amend, followed by
+"; errors: <CODE>, ..." when the resume check reports errors. A refused call
+prints "RECEIPT: REFUSED <todo> <event>; <reason>".
 
 Exit codes: 0 recorded, and the resume check reports no error; 1 refused, with
 nothing written, or recorded, and the resume check reports an error; 2 invalid
@@ -63,6 +83,7 @@ type Ref = { snapshot: string; manifestSha256: string; stateDigest: string };
 type Receipt = Record<string, unknown>;
 type Check = { id: string; command: string; exit: number; expectedExit: number; passed: boolean; observed?: string };
 type Prerequisite = { targets: string[]; sources: { path: string; sha256: string }[]; status: string; observed: string };
+type Approval = { specDigest: string; round: number; verdict: string; gateRecordDigest: string };
 type Args = {
   plan: string;
   root: string;
@@ -85,10 +106,11 @@ type Loaded = {
   record: Record<string, unknown>;
   receipts: Receipt[];
 };
-type Parts = { checks: Check[]; prerequisites: Prerequisite[]; commit: Record<string, string> };
+/** What a call records once no refusal applies; only an amend has an approval. */
+type Parts = { checks: Check[]; prerequisites: Prerequisite[]; commit: Record<string, string>; approval?: Approval };
 
-const EVENTS = ["pass", "block", "recovery", "fix"];
-const STATE: Record<string, string> = { pass: "passed", block: "blocked", recovery: "active", fix: "passed" };
+const EVENTS = ["pass", "block", "recovery", "fix", "amend"];
+const STATE: Record<string, string> = { pass: "passed", block: "blocked", recovery: "active", fix: "passed", amend: "amended" };
 const CHECK_KEYS = ["id", "command", "exit", "expectedExit", "observed"];
 const RECHECK_KEYS = ["targets", "paths", "status", "observed"];
 /** Flags that take one value and may be given once. */
@@ -148,13 +170,17 @@ function parseArgs(argv: string[]): Args | "help" | string {
     else return `unexpected argument ${quote(arg)}`;
   }
   if (plan === undefined) return "a plan path is required";
-  if (given.todo === undefined || !/^[TF]\d+$/.test(given.todo)) return "--todo needs a todo or final gate id such as T3 or F4";
-  if (given.event === undefined || !EVENTS.includes(given.event)) return "--event needs pass, block, recovery, or fix";
+  if (given.event === undefined || !EVENTS.includes(given.event)) return "--event needs pass, block, recovery, fix, or amend";
+  if (given.event === "amend") {
+    // An approved plan change names the plan, not a todo, and records no checks.
+    if (given.todo !== undefined) return "--event amend takes no --todo; an amend receipt names plan";
+    if (checks.length > 0 || rechecks.length > 0) return "--event amend takes no --check or --recheck; an amend receipt records none";
+  } else if (given.todo === undefined || !/^[TF]\d+$/.test(given.todo)) return "--todo needs a todo or final gate id such as T3 or F4";
   if (given.commit !== undefined && given.noCommit !== undefined) return "--commit and --no-commit cannot be combined";
   for (const [flag, value] of [["--no-commit", given.noCommit], ["--log", given.log], ["--root", given.root]] as const) {
     if (value !== undefined && !isText(value)) return `${flag} needs a value`;
   }
-  return { ...given, plan, root: given.root ?? ".", todo: given.todo, event: given.event, checks, rechecks };
+  return { ...given, plan, root: given.root ?? ".", todo: given.event === "amend" ? "plan" : (given.todo as string), event: given.event, checks, rechecks };
 }
 
 /** Step 1: the plan and the build record, read through the validator. A problem here is exit 2. */
@@ -298,14 +324,121 @@ function refusal(v: V, args: Args, loaded: Loaded): Parts | { reason: string } {
     prerequisites.push({ targets: r.targets, sources, status: r.status, observed: r.observed });
   }
 
-  let commit: Record<string, string> = { none: args.noCommit ?? "no commit" };
-  if (args.commit !== undefined) {
-    const sha = commitOf(root, args.commit);
-    if (sha === null) return { reason: `--commit ${quote(args.commit)} does not resolve to a commit` };
-    if (sha !== commitOf(root, "HEAD")) return { reason: `--commit ${quote(args.commit)} is ${sha.slice(0, 12)}, which is not HEAD` };
-    commit = { sha };
+  const commit = commitPart(root, args);
+  if ("reason" in commit) return commit;
+  return { checks, prerequisites, commit: commit.commit };
+}
+
+/** The receipt's commit: the full id that --commit names, which must be HEAD, or none with its reason. */
+function commitPart(root: string, args: Args): { commit: Record<string, string> } | { reason: string } {
+  if (args.commit === undefined) return { commit: { none: args.noCommit ?? "no commit" } };
+  const sha = commitOf(root, args.commit);
+  if (sha === null) return { reason: `--commit ${quote(args.commit)} does not resolve to a commit` };
+  if (sha !== commitOf(root, "HEAD")) return { reason: `--commit ${quote(args.commit)} is ${sha.slice(0, 12)}, which is not HEAD` };
+  return { commit: { sha } };
+}
+
+/** The baseline, then each receipt's before and after snapshot, as the record names them. */
+function recordedRefs(loaded: Loaded): Ref[] {
+  return [refOf(loaded.record.baseline) as Ref, ...loaded.receipts.flatMap((r) => [refOf(r.before) as Ref, refOf(r.after) as Ref])];
+}
+
+/** The approval in force, as the resume check takes it: the last amend receipt's, or the record's when there is none. */
+function approvalInForce(loaded: Loaded): Record<string, unknown> {
+  for (let i = loaded.receipts.length - 1; i >= 0; i--) {
+    const r = loaded.receipts[i];
+    if (r.event === "amend") return isObject(r.approval) ? r.approval : {};
   }
-  return { checks, prerequisites, commit };
+  return isObject(loaded.record.approval) ? loaded.record.approval : {};
+}
+
+/**
+ * Refusal 6 of an amend: what differs between the last recorded state and the
+ * project as it is, outside the plan directory and apart from HEAD. The
+ * project is inventoried as the capture inventories it, with the paths and
+ * includes of every snapshot the record names, and compared as the resume
+ * check compares an amend receipt's snapshots: without the reports the
+ * baseline declares.
+ */
+function changedOutsidePlan(v: V, loaded: Loaded): { changed: string[] } | { reason: string } {
+  const { root, files } = loaded;
+  const inGit = v.isGitRoot(root);
+  const refs = recordedRefs(loaded);
+  const manifests = new Map<string, Validator.Manifest>();
+  for (const ref of refs) {
+    if (manifests.has(ref.snapshot)) continue;
+    try {
+      manifests.set(ref.snapshot, v.verifySnapshot(v.resolveSnapshot(root, ref.snapshot, inGit)).manifest);
+    } catch (error) {
+      return { reason: `cannot read the snapshot ${quote(ref.snapshot)}: ${oneLine((error as Error).message)}` };
+    }
+  }
+  const recorded = manifests.get(refs[refs.length - 1].snapshot) as Validator.Manifest;
+  const carry = new Set<string>();
+  const include = new Set<string>();
+  for (const m of manifests.values()) {
+    for (const row of m.paths) carry.add(row.path);
+    for (const inc of m.includes ?? []) include.add(inc);
+  }
+  let current: Validator.StateBody;
+  try {
+    current = v.inventoryState(root, { carry: [...carry], include: [...include] }).body;
+  } catch (error) {
+    return { reason: `cannot inventory the project: ${oneLine((error as Error).message)}` };
+  }
+  const declared = (manifests.get(refs[0].snapshot) as Validator.Manifest).administrative?.reports ?? [];
+  const headMove = `HEAD ${recorded.headRevision ?? "none"} → ${current.headRevision ?? "none"}`;
+  return { changed: v.diffStates(recorded, current, declared).filter((d) => d !== headMove && !d.startsWith(`${files.dir}/`)) };
+}
+
+/**
+ * Step 2 of an amend: its note, then its seven refusals in a fixed order.
+ * The validator's `amendRefusal` decides the first three. Returns the
+ * receipt's commit and the new approval, taken from the validator's review
+ * mode on the plan as it is, when none applies. Nothing here writes.
+ */
+function amendRefusals(v: V, args: Args, loaded: Loaded): Parts | { reason: string } {
+  const { root, planRel, plan, files } = loaded;
+  const cap = v.CAPS.recordProse.hard;
+  if (!isText(args.note)) return { reason: "an amend needs --note, the change in one line" };
+  if (args.note.length > cap) return { reason: `the note is ${args.note.length} characters; the cap is ${cap}` };
+  // 1 to 3: a result review round, a pass receipt without todoDigest, an active todo.
+  let reviews: string | null = null;
+  try {
+    reviews = readFileSync(resolve(root, files.reviews), "utf8");
+  } catch {
+    reviews = null;
+  }
+  const early = v.amendRefusal(loaded.receipts, reviews);
+  if (early !== null) return { reason: early };
+  // 4: an OKAY round on the plan as it is, with every check of review mode, a changed built todo among them.
+  const review = v.validatePlan(planRel, { root, review: true });
+  if (!review.gateEligible || review.planDigest === null || review.gateRecordDigest === null || review.recordedVerdict === null) {
+    const first = review.errors[0];
+    const why = first ? `${first.code}: ${first.message}${review.errors.length > 1 ? `, and ${review.errors.length - 1} more` : ""}` : `the latest round's verdict is ${review.recordedVerdict ?? "missing"}`;
+    return { reason: `review mode does not report gateEligible: true for the plan as it is (${oneLine(why)}); a plan change needs an OKAY round on the changed plan` };
+  }
+  // Review mode holds the round to the latest round, the gate record's round, and the plan's review_round.
+  const approval: Approval = { specDigest: review.planDigest, round: Number(plan.frontmatter.review_round), verdict: review.recordedVerdict, gateRecordDigest: review.gateRecordDigest };
+  // 5: a round above the approval in force.
+  const inForce = approvalInForce(loaded);
+  if (typeof inForce.round !== "number" || approval.round <= inForce.round) {
+    return { reason: `the reviewed round ${approval.round} is not above round ${String(inForce.round)} of the approval in force; review the change in a new round` };
+  }
+  // 6: since the last receipt, nothing changed outside the plan directory but HEAD.
+  const outside = changedOutsidePlan(v, loaded);
+  if ("reason" in outside) return outside;
+  if (outside.changed.length > 0) {
+    const listed = `${outside.changed.slice(0, 5).join(", ")}${outside.changed.length > 5 ? ", …" : ""}`;
+    return { reason: `a plan change may change only the plan directory and HEAD, but ${listed} changed since the last receipt` };
+  }
+  // 7: where git tracks the plan directory, the plan-only commit, which is HEAD.
+  if (args.commit === undefined && v.isGitRoot(root) && !v.planIgnored(root, planRel)) {
+    return { reason: "git tracks the plan directory, so an amend names its plan-only commit with --commit HEAD" };
+  }
+  const commit = commitPart(root, args);
+  if ("reason" in commit) return commit;
+  return { checks: [], prerequisites: [], commit: commit.commit, approval };
 }
 
 /** The full id of the commit a revision names, or null. The revision is one argument to git, never an option. */
@@ -318,9 +451,13 @@ function commitOf(root: string, revision: string): string | null {
   return p.status === 0 ? p.stdout.toString().trim() : null;
 }
 
-/** Step 3: the after-snapshot, from the capture helper's own `run`, with every snapshot the record names carried. */
-function captureAfter(v: V, loaded: Loaded, seq: number, id: string): { after: Ref } | { reason: string } {
-  const { root, planRel, files, record, receipts } = loaded;
+/**
+ * Step 3: the after-snapshot, from the capture helper's own `run`, with every
+ * snapshot the record names carried. `approvedSpec` is the spec digest of the
+ * approval in force, or of the new approval for an amend.
+ */
+function captureAfter(v: V, loaded: Loaded, seq: number, id: string, approvedSpec: string): { after: Ref } | { reason: string } {
+  const { root, planRel, files, record } = loaded;
   const inGit = v.isGitRoot(root);
   const baseline = refOf(record.baseline) as Ref;
   let declared: unknown;
@@ -330,14 +467,14 @@ function captureAfter(v: V, loaded: Loaded, seq: number, id: string): { after: R
     return { reason: `cannot read the baseline snapshot's manifest: ${oneLine((error as Error).message)}` };
   }
   const reports = [...new Set((Array.isArray(declared) ? declared : []).filter((r): r is string => isText(r) && r !== files.reviews && r !== files.build))];
-  const carries = [...new Set([baseline, ...receipts.flatMap((r) => [refOf(r.before), refOf(r.after)])].map((ref) => (ref as Ref).snapshot))];
+  const carries = [...new Set(recordedRefs(loaded).map((ref) => ref.snapshot))];
   const runDir = (record.runDir as string).replace(/[\\/]+$/, "");
   let output = `${runDir}/${seq}-${id}`;
   for (let n = 2; existsSync(v.resolveSnapshot(root, output, inGit)); n++) output = `${runDir}/${seq}-${id}-${n}`;
   const argv = [planRel, "--root", root, "--output", output];
   for (const c of carries) argv.push("--carry", c);
   for (const r of reports) argv.push("--report", r);
-  argv.push("--run-id", typeof record.runId === "string" ? record.runId : "", "--approved-spec", String((record.approval as Record<string, unknown>).specDigest));
+  argv.push("--run-id", typeof record.runId === "string" ? record.runId : "", "--approved-spec", approvedSpec);
   if (isText(record.baseRevision)) argv.push("--base-revision", record.baseRevision);
   const printed: string[] = [];
   let code: number;
@@ -361,12 +498,8 @@ function appendReceipt(path: string, receipt: Receipt): void {
   appendFileSync(path, `\n\n\`\`\`json\n${JSON.stringify({ receipts: [receipt] })}\n\`\`\`\n`);
 }
 
-/** Step 6: the first line under the todo's heading, `- [ ] Open`, becomes `- [x] Done`, in place and byte for byte. */
-function setBox(path: string, plan: Validator.ParsedPlan, id: string): void {
-  const todo = plan.todos.find((t) => t.id === id);
-  if (!todo) return;
-  const bytes = readFileSync(path);
-  // Where each line starts, counted as the validator counts lines: CRLF, CR, and LF each end one.
+/** Where each line starts, counted as the validator counts lines: CRLF, CR, and LF each end one. */
+function lineStarts(bytes: Buffer): number[] {
   const starts = [0];
   for (let i = 0; i < bytes.length; i++) {
     if (bytes[i] === 0x0d) {
@@ -374,6 +507,15 @@ function setBox(path: string, plan: Validator.ParsedPlan, id: string): void {
       starts.push(i + 1);
     } else if (bytes[i] === 0x0a) starts.push(i + 1);
   }
+  return starts;
+}
+
+/** Step 6: the first line under the todo's heading, `- [ ] Open`, becomes `- [x] Done`, in place and byte for byte. */
+function setBox(path: string, plan: Validator.ParsedPlan, id: string): void {
+  const todo = plan.todos.find((t) => t.id === id);
+  if (!todo) return;
+  const bytes = readFileSync(path);
+  const starts = lineStarts(bytes);
   for (let i = todo.line; i < plan.lines.length; i++) {
     const line = plan.lines[i];
     if (line.fenced || line.fenceMarker || line.text.trim() === "") continue;
@@ -385,6 +527,39 @@ function setBox(path: string, plan: Validator.ParsedPlan, id: string): void {
       closeSync(fd);
     }
     return;
+  }
+}
+
+/**
+ * Step 6 of an amend: the box of every final gate, `### F<n> —` and
+ * `### Automated UI QA`, that reads `- [x] Done` becomes `- [ ] Open`, in
+ * place and byte for byte, because the final wave checks the changed plan.
+ */
+function reopenGates(path: string, plan: Validator.ParsedPlan): void {
+  const wave = plan.sections.find((s) => s.title === "Final verification wave");
+  if (!wave) return;
+  const bytes = readFileSync(path);
+  const starts = lineStarts(bytes);
+  const boxes: number[] = [];
+  let gate = false;
+  for (let i = wave.start; i < wave.end; i++) {
+    const line = plan.lines[i];
+    if (line.fenced || line.fenceMarker || line.text.trim() === "") continue;
+    if (line.text.startsWith("### ")) {
+      const title = line.text.slice(4).trim();
+      gate = /^F\d+ — /.test(title) || title === "Automated UI QA";
+      continue;
+    }
+    // Only a gate's first line holds its box.
+    if (gate && line.text.trimEnd() === "- [x] Done" && bytes.toString("utf8", starts[i], starts[i] + 10) === "- [x] Done") boxes.push(starts[i]);
+    gate = false;
+  }
+  if (boxes.length === 0) return;
+  const fd = openSync(path, "r+");
+  try {
+    for (const at of boxes) writeSync(fd, "- [ ] Open", at);
+  } finally {
+    closeSync(fd);
   }
 }
 
@@ -404,6 +579,10 @@ export function main(argv: string[], write: (text: string) => void = (t) => cons
   }
   // biome-ignore lint: dynamic require resolves the bundled validator at its installed path
   const v: V = require(VALIDATOR);
+  if (typeof v.todoDigest !== "function" || typeof v.amendRefusal !== "function") {
+    write(`error: the plan-review skill beside this skill is older than 2.3.0 (${VALIDATOR}); update the planning skills together`);
+    return 2;
+  }
   const loaded = load(v, args);
   if ("error" in loaded) {
     write(`error: ${loaded.error}`);
@@ -414,13 +593,13 @@ export function main(argv: string[], write: (text: string) => void = (t) => cons
     return 1;
   };
 
-  const parts = refusal(v, args, loaded);
+  const parts = args.event === "amend" ? amendRefusals(v, args, loaded) : refusal(v, args, loaded);
   if ("reason" in parts) return refuse(parts.reason);
   const seq = loaded.receipts.length + 1;
-  const snap = captureAfter(v, loaded, seq, args.todo);
+  const snap = captureAfter(v, loaded, seq, args.todo, parts.approval?.specDigest ?? String(approvalInForce(loaded).specDigest ?? ""));
   if ("reason" in snap) return refuse(snap.reason);
 
-  // Step 4: the contract's keys only; `log` only when given.
+  // Step 4: the contract's keys only; `todoDigest` only on a pass, `approval` only on an amend, `log` only when given.
   const last = loaded.receipts[loaded.receipts.length - 1];
   const receipt: Receipt = {
     seq,
@@ -435,6 +614,8 @@ export function main(argv: string[], write: (text: string) => void = (t) => cons
     commit: parts.commit,
     note: args.note ?? "",
   };
+  if (args.event === "pass") receipt.todoDigest = v.todoDigest(loaded.plan.todos.find((t) => t.id === args.todo) as Validator.Todo);
+  if (parts.approval) receipt.approval = parts.approval;
   if (args.log !== undefined) receipt.log = args.log;
   try {
     appendReceipt(loaded.buildAbs, receipt);
@@ -445,8 +626,9 @@ export function main(argv: string[], write: (text: string) => void = (t) => cons
   const head = `RECEIPT: ${args.todo} ${args.event} seq ${seq}`;
   try {
     if (args.event === "pass") setBox(loaded.planAbs, loaded.plan, args.todo);
+    if (args.event === "amend") reopenGates(loaded.planAbs, loaded.plan);
   } catch (error) {
-    write(`${head}; recorded, but the box was not set: ${oneLine((error as Error).message)}`);
+    write(`${head}; recorded, but the ${args.event === "amend" ? "final gate boxes were not set to Open" : "box was not set"}: ${oneLine((error as Error).message)}`);
     return 1;
   }
 
