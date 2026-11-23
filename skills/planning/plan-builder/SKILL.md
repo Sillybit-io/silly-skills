@@ -3,7 +3,7 @@ name: plan-builder
 description: Builds a reviewed plan from the main session, which coordinates while a fresh child session builds each todo, keeping a durable, resumable record of one receipt per todo. Captures a byte-exact baseline snapshot before touching anything, requires each todo's real Acceptance and QA, commits only that todo's owned paths, and never claims Done without a passed receipt. Resumes an interrupted build from its last record. Runs an independent result review with at most two rounds before reporting complete. Use when asked to build this plan, implement this reviewed plan, or resume this plan.
 license: CC-BY-ND-4.0
 metadata:
-  version: "2.3.0"
+  version: "2.4.0"
   category: planning
   suggested-model: anthropic/claude-opus-5-5
   suggested-effort: max
@@ -37,7 +37,7 @@ Do NOT use plan-builder when you:
 ### Coordinator, in the main session
 
 1. Resolve the plan path from the request or conversation: `docs/plans/<stem>/<stem>.md`. Read [references/receipts.md](references/receipts.md). Do not read the spec whole; the validator and `--todo` give you what you need.
-2. **New build** (no build file). Run `bun <plan-review-base>/scripts/validate-plan.ts <plan> --review --root <project> --json`, where `<plan-review-base>` is the plan-review skill directory installed beside this one. Require `gateEligible: true`; otherwise report the validator's errors and stop. A `FORMAT_1` error means the plan finishes on the old install: say so and stop. When the JSON lists `slices`, check the first slice's branch by the reference's Slices section. Then capture the baseline with `capture-build-state.ts` to a fresh, durable run directory, write `<stem>.build.md` as the reference describes, and run T0 yourself: copy the plan directory into `docs/plans/` only when needed, commit it as `docs(plans): add <slug> plan` unless git ignores it, as the reference's Commits section says, and record its pass receipt with [scripts/record-receipt.ts](scripts/record-receipt.ts), as the reference's Recording a receipt section says. These are the only project writes you make yourself.
+2. **New build** (no build file). Run `bun <plan-review-base>/scripts/validate-plan.ts <plan> --review --root <project> --json`, where `<plan-review-base>` is the plan-review skill directory installed beside this one. Require `gateEligible: true`; otherwise report the validator's errors and stop. A `FORMAT_1` error means the plan finishes on the old install: say so and stop. For every plan, run the same script with `--todo T0` in place of `--review` and `--json`, and check the branch by the reference's Branch section. A case there with a reply stops the build with that reply, as Output format shows it. Then capture the baseline with `capture-build-state.ts` to a fresh, durable run directory, write `<stem>.build.md` as the reference describes, and run T0 yourself: copy the plan directory into `docs/plans/` only when needed, commit it as `docs(plans): add <slug> plan` unless git ignores it, as the reference's Commits section says, and record its pass receipt with [scripts/record-receipt.ts](scripts/record-receipt.ts), as the reference's Recording a receipt section says. These are the only project writes you make yourself.
 3. **Each step.** Run the same command with `--resume` added and act on its JSON:
    - `reconcileBoxes` not empty: set those boxes to Done yourself, without repeating any work.
    - `errors` holds `SPEC_CHANGED` or `APPROVAL_CHANGED`: the plan changed outside step 10. Go to its record part, ahead of `recoveryRequired`, which a changed plan can also set.
@@ -116,6 +116,20 @@ PLAN-BUILD: CHECKPOINT (T<n>; <reason>)
 <plan path>. Receipts through seq <n>. <n> of <total> todos Done. Next: <what resumes this, or what the caller must supply>.
 ```
 
+```markdown
+PLAN-BUILD: BLOCKED (branch <branch>)
+<plan path>. The build needs branch `<branch>`; <checked out> is checked out. <reason> Run `<command>`, then say "build this plan" again, or say "build this plan on the current branch". Nothing was changed.
+```
+
+In this reply, `<checked out>` is the branch the first command of the reference's Branch section printed, in backticks, or `a detached HEAD`, and `<reason>` and `<command>` are the Reason and Command cells of the case there.
+
+```markdown
+PLAN-BUILD: CHECKPOINT (<next todo>; git switch -c <branch> exited <code>)
+<plan path>. Git reported: <message>. Before the command, <checked out before> was checked out at `<start commit>`. Now <checked out> is checked out at `<commit>`, branch `<branch>` <exists | does not exist>, and <n> paths outside the plan directory are not clean<: `<paths>`>. The build did not run the command again, undid nothing, and wrote nothing else. Next: say "build this plan" again; the build goes on when `<branch>` is checked out.
+```
+
+This is the reply of the case `changed`: its values come from the two runs of the reads in the reference's Branch section, before and after the create command, and `<next todo>` is `T0` at a new build.
+
 A child's reply is one line:
 
 ```text
@@ -156,13 +170,14 @@ NEVER:
 - NEVER replay a commit or another irreversible command because its outcome was not recorded; investigate the real current state first.
 - NEVER push.
 - NEVER add the plan directory with force when git ignores it.
-- NEVER create, switch, or push a branch; the owner does that between slices.
+- NEVER switch to an existing branch, run `git switch -c` a second time, or undo a branch git created. Create a new branch only as the reference's Branch section says; between slices, the owner creates and switches branches.
 - NEVER mark a todo Done without its own durable passed receipt.
 - NEVER rely on temporary storage, an unreferenced Git blob, or any location that will not survive a session end for a baseline or a receipt snapshot.
 
 ## QA checklist
 
 - [ ] The preflight ran the real validator and required `gateEligible`/`resumeEligible` before any edit.
+- [ ] A new build checked the branch by the reference's Branch section before the baseline. It ran `git switch -c` at most once, never switched to an existing branch, never undid a create, and a stop wrote nothing of its own.
 - [ ] A durable baseline snapshot exists, captured by `capture-build-state.ts`, and its location is recorded in the build file.
 - [ ] Each todo was built by a fresh child, or the reply names it as built inline because no child was available.
 - [ ] Every todo has one passed receipt, recorded by `record-receipt.ts`, with a passing `acceptance` check and one passing check per QA part.
