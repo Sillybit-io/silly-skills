@@ -5,7 +5,8 @@
  * delegation, Claude Code's question-routing and subagent-restriction text,
  * and Cursor's readonly flag and depth-limit fallback. The last describe
  * checks every directory under `agents/`, planning or not, against the Launch
- * table: its OpenCode mode and the exact set of agents it may launch.
+ * table: its OpenCode mode and the exact set of agents it may launch. It also
+ * checks the README's copy of that table against the same rows.
  */
 import { describe, expect, test } from "bun:test";
 import { cpSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
@@ -116,6 +117,73 @@ function launchTableDifferences(agentsRoot: string, persona: string, part: "mode
     const expected = row.launches.includes(name) ? "allow" : "deny";
     const actual = effect(fm.permissions, "subagent", name);
     if (actual !== expected) differences.push(`${persona}: subagent ${name} is ${actual}, not ${expected}`);
+  }
+  return differences;
+}
+
+/** Writes a launch set for comparison: its names sorted, or "none" when it is
+ * empty. */
+function launchList(names: readonly string[]): string {
+  return names.length === 0 ? "none" : [...names].sort().join(", ");
+}
+
+/** Splits a markdown table line into its trimmed cells, without backticks. */
+function tableCells(line: string): string[] {
+  return line
+    .trim()
+    .replace(/^\|/, "")
+    .replace(/\|$/, "")
+    .split("|")
+    .map((cell) => cell.trim().replaceAll("`", ""));
+}
+
+/** Reads the README table under `### Which agent to start` whose first header
+ * cell is "Agent", and compares it with the Launch table: one row per agent,
+ * the OpenCode mode, "yes" in the picker exactly for `primary` and `all`, and
+ * the launch set in any order, "none" meaning empty. Returns each difference
+ * as a line that names the agent; an empty list means they match. A missing
+ * heading, table, column, or row is a difference too. */
+function readmeLaunchTableDifferences(readme: string): string[] {
+  const lines = readme.split(/\r?\n/);
+  const start = lines.indexOf("### Which agent to start");
+  if (start === -1) return ["README: no ### Which agent to start heading"];
+  const end = lines.findIndex((line, i) => i > start && /^#{1,3} /.test(line));
+  const section = lines.slice(start + 1, end === -1 ? lines.length : end);
+  const header = section.findIndex((line) => line.startsWith("|") && tableCells(line)[0] === "Agent");
+  if (header === -1) return ["README: no Agent table under ### Which agent to start"];
+  const columns = tableCells(section[header] ?? "");
+  const agentAt = columns.indexOf("Agent");
+  const modeAt = columns.indexOf("OpenCode mode");
+  const pickerAt = columns.indexOf("In the picker");
+  const launchAt = columns.indexOf("May launch");
+  if (modeAt === -1 || pickerAt === -1 || launchAt === -1) return [`README: the Agent table's columns are ${columns.join(", ")}`];
+  // The rows run from below the separator line to the first line that is not
+  // a table line.
+  const below = section.slice(header + 2);
+  const stop = below.findIndex((line) => !line.startsWith("|"));
+  const differences: string[] = [];
+  const seen = new Set<string>();
+  for (const line of stop === -1 ? below : below.slice(0, stop)) {
+    const cells = tableCells(line);
+    const agent = cells[agentAt] ?? "";
+    const row = LAUNCH_TABLE.get(agent);
+    if (row === undefined || seen.has(agent)) {
+      differences.push(`${agent}: ${row === undefined ? "no tested row" : "listed twice"}`);
+      continue;
+    }
+    seen.add(agent);
+    const mode = cells[modeAt] ?? "";
+    if (mode !== row.mode) differences.push(`${agent}: README mode is ${mode}, not ${row.mode}`);
+    const picker = cells[pickerAt] ?? "";
+    const inPicker = row.mode === "primary" || row.mode === "all" ? "yes" : "no";
+    if (picker !== inPicker) differences.push(`${agent}: README picker is ${picker}, not ${inPicker}`);
+    const cell = cells[launchAt] ?? "";
+    const launches = launchList(cell === "none" ? [] : cell.split(",").map((name) => name.trim()));
+    const expected = launchList(row.launches);
+    if (launches !== expected) differences.push(`${agent}: README launches ${launches}, not ${expected}`);
+  }
+  for (const agent of LAUNCH_TABLE.keys()) {
+    if (!seen.has(agent)) differences.push(`${agent}: no README row`);
   }
   return differences;
 }
@@ -380,5 +448,15 @@ describe("every persona: mode and launch set", () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
+  });
+
+  test("README launch table matches the tested rows", () => {
+    const readme = readFileSync(join(repo, "README.md"), "utf8");
+    expect(readmeLaunchTableDifferences(readme)).toEqual([]);
+    // The comparison sees a wrong row: in a copy where ui-engineer may launch
+    // plan-scout, the difference names that row.
+    const changed = readme.replace("| ui-engineer | subagent | no | none |", "| ui-engineer | subagent | no | plan-scout |");
+    expect(changed).not.toBe(readme);
+    expect(readmeLaunchTableDifferences(changed)).toEqual(["ui-engineer: README launches plan-scout, not none"]);
   });
 });

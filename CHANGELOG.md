@@ -16,6 +16,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 
 - `plan-result-review` 2.3.0: the plan-only commit of an approved plan change, `docs(plans): amend <slug> plan`, is not a difference. `inventory-changes.ts --brief` counts the commit that an `amend` receipt names as named, beside the commits of pass and fix receipts, so the brief does not list it under `Commits no receipt names`. A commit that only a block or a recovery receipt names is still listed there, and a build with no amend receipt gets the same brief as before. Step 7, which checks the execution commitments, says so.
+- README: a new subsection, Which agent to start, follows the suggested-model table. Its Start table says which agent to start for each planning job in OpenCode, and which session to use in Claude Code and Cursor. Its Launch table lists each agent's OpenCode mode, whether it is in the picker, and the agents it may launch. Three sentences say what holds the launch rule and how deep launches go in OpenCode, Claude Code, and Cursor, and one says that a plan-builder child launches no agent. The planning flow names `plan-builder` as the OpenCode agent to switch to for a build, says that a plan change during a build goes to a writer and a reviewer and that the build then goes on with its done todos kept, and no longer says that a child session cannot launch children. A new agent test compares the README's Launch table with the tested rows.
 
 ### Fixed
 
