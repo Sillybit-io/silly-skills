@@ -116,6 +116,14 @@ Claude Code runs Claude models only, so a wrapper for a skill that suggests a no
 | ui-engineering | `anthropic/claude-opus-5-5` | max | `anthropic/claude-sonnet-5-5` at high |
 | tech-writing | `anthropic/claude-fable-5-2` | medium | `anthropic/claude-sonnet-5-5` at medium |
 
+In OpenCode and Cursor, `plan-scout` can also run on an OpenAI model. The installer changes only the model line, so the scout keeps its read-only rules.
+
+- OpenCode: `sh scripts/agent-install.sh --tool opencode --agent plan-scout --model openai/gpt-6-luna --force` writes `model: openai/gpt-6-luna`. The OpenAI provider must be connected in OpenCode. Any `openai/<model>` it lists works, and `--effort <level>` adds a variant.
+- Cursor: `sh scripts/agent-install.sh --tool cursor --agent plan-scout --model gpt-5.6-luna --force` writes `model: gpt-5.6-luna`. Cursor takes an id from its own model list, with no provider part. That list has GPT-5.6 Luna, whose page names it for subagents and high-volume loops. When the account's plan or a team admin does not allow a model, Cursor falls back to another one.
+- Claude Code: no OpenAI model. Claude Code runs Claude models only, so the plan-scout file stays on `sonnet`. `--model haiku` is the cheaper Claude choice.
+
+Add `--global` to either command for a user-wide install.
+
 ### Which agent to start
 
 | The owner wants to | OpenCode: switch to | Claude Code and Cursor |
