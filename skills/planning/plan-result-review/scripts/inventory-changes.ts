@@ -299,7 +299,8 @@ type Brief = { json: Record<string, unknown>; text: string };
  * the todo whose receipt interval changed it. A plan with Behavior lines gets
  * each line with the todos that serve it, and a plan with slices gets each
  * slice with its branch and todos. A plan directory that git ignores gets one
- * line that says so. It is not a verdict.
+ * line that says so. The commits that no pass, fix, or amend receipt names
+ * come last. It is not a verdict.
  */
 function resultBrief(
   v: any,
@@ -346,6 +347,11 @@ function resultBrief(
     if (sha) named.add(sha);
     return { gate: r.todo, seq: r.seq, commit: sha || null };
   });
+  // An amend receipt names the plan-only commit of a plan change, `docs(plans): amend <slug> plan`.
+  for (const r of receipts) {
+    const sha = r.event === "amend" && typeof r.commit === "object" && r.commit ? String((r.commit as Record<string, unknown>).sha ?? "") : "";
+    if (sha) named.add(sha);
+  }
   const changes = ((report.changes as Record<string, unknown>[] | undefined) ?? []).map((c) => ({
     path: c.path,
     layers: c.changedLayers,

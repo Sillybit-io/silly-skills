@@ -4,7 +4,7 @@
  * the actual validator, tested together, not a reimplementation of either.
  */
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -239,5 +239,120 @@ describe("ignored plan directory", () => {
     expect(JSON.parse(inventory("--brief", "--json"))).not.toHaveProperty("planIgnored");
     expect(inventory("--brief")).not.toContain("Plan directory");
     expect(JSON.parse(inventory("--json"))).not.toHaveProperty("planIgnored");
+  });
+});
+
+describe("commits no receipt names", () => {
+  const EVIDENCE = "```json\n{}\n```\n";
+  const STATE: Record<string, string> = { pass: "passed", recovery: "active", amend: "amended" };
+  const ACCEPTANCE = { id: "acceptance", command: "python app.py", exit: 0, expectedExit: 0, passed: true, observed: "hello" };
+  const KEYS = ["plan", "baseline", "headRevision", "ownerWorkCertifiable", "requirements", "todos", "fixes", "changes", "unnamedCommits"];
+  const HEADING = "## Commits no receipt names";
+  const todoCommits = (brief: { todos: { id: string; events: string[]; commit: { sha: string } | null }[] }) => brief.todos.map((t) => [t.id, t.events, t.commit?.sha ?? null]);
+
+  /**
+   * A git project whose first commit, the base revision, holds app.py and a
+   * tracked plan with one `Commit: yes` todo, with a baseline captured there.
+   * `record` appends a receipt chained as the receipt command chains it, with
+   * a snapshot of the state after it. `brief` writes the build file and runs
+   * --brief from the build record's baseline.
+   */
+  function fixture(stem: string) {
+    const dir = tempDir();
+    const planDir = `docs/plans/${stem}`;
+    const plan = `${planDir}/${stem}.md`;
+    const env = { ...process.env, GIT_AUTHOR_NAME: "Fixture", GIT_AUTHOR_EMAIL: "fixture@example.com", GIT_COMMITTER_NAME: "Fixture", GIT_COMMITTER_EMAIL: "fixture@example.com", GIT_CONFIG_NOSYSTEM: "1" };
+    const git = (...args: string[]): string => {
+      const p = Bun.spawnSync(["git", "-c", "commit.gpgSign=false", ...args], { cwd: dir, env, stdout: "pipe", stderr: "pipe" });
+      expect(p.exitCode).toBe(0);
+      return p.stdout.toString().trim();
+    };
+    const commit = (subject: string, ...paths: string[]): string => {
+      git("add", "--", ...paths);
+      git("commit", "-q", "-m", subject);
+      return git("rev-parse", "HEAD");
+    };
+    git("init", "-q");
+    mkdirSync(join(dir, planDir), { recursive: true });
+    writeFileSync(
+      join(dir, plan),
+      "---\ntitle: Commit fixture\n---\n\n# Commit fixture\n\n## Scope\n\n### Must have\n\n- MH1: A greeting.\n\n## Todos\n\n### T1 — Add the greeting\n\n- [ ] Open\n- Do: greet.\n- Strict: no\n- Commit: yes — `feat(app): greet`\n",
+    );
+    writeFileSync(join(dir, `${planDir}/${stem}.evidence-index.md`), EVIDENCE);
+    writeFileSync(join(dir, "app.py"), "print('hi')\n");
+    const base = commit("init", "app.py", planDir);
+    const v = require(VALIDATOR);
+    let last: string | null = null;
+    const snapshot = () => {
+      const output = join(tempDir(), "snapshot");
+      const r = run([plan, "--root", dir, "--output", output, "--base-revision", base, ...(last ? ["--carry", last] : [])], dir);
+      expect(r.code).toBe(0);
+      last = output;
+      const s = JSON.parse(r.out);
+      return { snapshot: output, manifestSha256: s.manifestSha256, stateDigest: s.stateDigest };
+    };
+    const baseline = snapshot();
+    const receipts: Record<string, unknown>[] = [];
+    const record = (todo: string, event: string, sha: string, extra: Record<string, unknown>) => {
+      const prior = receipts[receipts.length - 1];
+      const before = prior ? prior.after : baseline;
+      receipts.push({ seq: receipts.length + 1, todo, event, state: STATE[event], prev: prior ? v.sha256(v.canonicalJson(prior)) : null, before, after: snapshot(), checks: [], prerequisites: [], commit: { sha }, note: "", ...extra });
+    };
+    const brief = (...flags: string[]): string => {
+      writeFileSync(join(dir, `${planDir}/${stem}.build.md`), `# Build: ${stem}\n\n\`\`\`json\n${JSON.stringify({ schemaVersion: 2, baseline, receipts })}\n\`\`\`\n`);
+      const p = Bun.spawnSync(["bun", INVENTORY, plan, "--root", dir, "--brief", ...flags], { stdout: "pipe", stderr: "pipe" });
+      expect(p.exitCode).toBe(0);
+      return p.stdout.toString();
+    };
+    const planText = () => readFileSync(join(dir, plan), "utf8");
+    const todoDigest = (id: string): string => v.todoDigest(v.parsePlan(planText(), EVIDENCE).todos.find((t: { id: string }) => t.id === id));
+    const specDigest = (): string => v.canonicalSpecDigest(planText(), EVIDENCE);
+    return { dir, plan, planDir, v, commit, record, brief, todoDigest, specDigest };
+  }
+
+  test("--brief names the commit of an amend receipt and still lists a commit no receipt names", () => {
+    const f = fixture("2026-11-23-greet");
+    writeFileSync(join(f.dir, "app.py"), "print('hello')\n");
+    const greet = f.commit("feat(app): greet", "app.py");
+    f.record("T1", "pass", greet, { checks: [ACCEPTANCE], todoDigest: f.todoDigest("T1") });
+    // The plan change adds T2. Its plan-only commit is HEAD, which the amend receipt names.
+    appendFileSync(join(f.dir, f.plan), "\n### T2 — Say goodbye\n\n- [ ] Open\n- Do: say goodbye.\n- Strict: no\n- Commit: no\n");
+    const amend = f.commit("docs(plans): amend greet plan", f.planDir);
+    // The brief reads only the event and the commit of an amend receipt; the approval stands in for round 2's.
+    f.record("plan", "amend", amend, { note: "T2 says goodbye", approval: { specDigest: f.specDigest(), round: 2, verdict: "OKAY", gateRecordDigest: f.v.sha256("the gate record of round 2") } });
+    writeFileSync(join(f.dir, "stray.py"), "print('stray')\n");
+    const stray = f.commit("chore(app): add a stray script", "stray.py");
+
+    const brief = JSON.parse(f.brief("--json"));
+    expect(brief.unnamedCommits).toEqual([{ sha: stray, subject: "chore(app): add a stray script" }]);
+    expect(todoCommits(brief)).toEqual([
+      ["T1", ["pass"], greet],
+      ["T2", [], null],
+    ]);
+    // No new key or section, and the amend receipt is the owner of no changed path.
+    expect(Object.keys(brief)).toEqual(KEYS);
+    expect(Object.fromEntries(brief.changes.map((c: { path: string; todos: string[] }) => [c.path, c.todos]))).toEqual({ "app.py": ["T1"], "stray.py": [] });
+    const text = f.brief();
+    expect(text.match(/^## .+$/gm)).toEqual(["## Requirements", "## Todos", "## Changed paths", HEADING]);
+    expect(text.slice(text.indexOf(HEADING))).toBe(`${HEADING}\n\n- ${stray.slice(0, 12)} chore(app): add a stray script\n`);
+    expect(text).not.toContain("amend greet plan");
+  });
+
+  test("--brief of a build with no amend receipt still lists a commit that only a recovery receipt names", () => {
+    const f = fixture("2026-11-23-hello");
+    // A commit the record did not explain: the recovery receipt names it and leaves it alone.
+    writeFileSync(join(f.dir, "stray.py"), "print('stray')\n");
+    const stray = f.commit("chore(app): add a stray script", "stray.py");
+    f.record("T1", "recovery", stray, { note: "a commit after the baseline adds stray.py; left alone" });
+    writeFileSync(join(f.dir, "app.py"), "print('hello')\n");
+    const greet = f.commit("feat(app): greet", "app.py");
+    f.record("T1", "pass", greet, { checks: [ACCEPTANCE], todoDigest: f.todoDigest("T1") });
+
+    const brief = JSON.parse(f.brief("--json"));
+    expect(brief.unnamedCommits).toEqual([{ sha: stray, subject: "chore(app): add a stray script" }]);
+    expect(todoCommits(brief)).toEqual([["T1", ["recovery", "pass"], greet]]);
+    expect(Object.keys(brief)).toEqual(KEYS);
+    const text = f.brief();
+    expect(text.slice(text.indexOf(HEADING))).toBe(`${HEADING}\n\n- ${stray.slice(0, 12)} chore(app): add a stray script\n`);
   });
 });
