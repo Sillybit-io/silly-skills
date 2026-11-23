@@ -196,6 +196,34 @@ describe("capture-build-state", () => {
     );
     expect(text).toContain("## Slices\n\n- S1 — foundation; branch: feat/shop-foundation; todos: T1\n- S2 — greeting; todos: T2, T3\n");
   });
+
+  test("a baseline captured after git switch -c names the new branch", () => {
+    const dir = tempDir();
+    const stem = "2026-11-23-branch";
+    const planDir = `docs/plans/${stem}`;
+    const plan = `${planDir}/${stem}.md`;
+    const env = { ...process.env, GIT_AUTHOR_NAME: "Fixture", GIT_AUTHOR_EMAIL: "fixture@example.com", GIT_COMMITTER_NAME: "Fixture", GIT_COMMITTER_EMAIL: "fixture@example.com", GIT_CONFIG_NOSYSTEM: "1" };
+    const git = (...args: string[]): string => {
+      const p = Bun.spawnSync(["git", "-c", "commit.gpgSign=false", ...args], { cwd: dir, env, stdout: "pipe", stderr: "pipe" });
+      expect(p.exitCode).toBe(0);
+      return p.stdout.toString().trim();
+    };
+    git("init", "-q");
+    writeFileSync(join(dir, "app.py"), "print('hi')\n");
+    git("add", "app.py");
+    git("commit", "-q", "-m", "init");
+    const commit = git("rev-parse", "HEAD");
+    mkdirSync(join(dir, planDir), { recursive: true });
+    writeFileSync(join(dir, plan), "---\ntitle: Branch fixture\n---\n\nbody\n");
+    // git init picks the first branch; the test reads it and holds no name for it.
+    expect(git("branch", "--show-current")).not.toBe("feat/fixture-branch");
+    git("switch", "-c", "feat/fixture-branch");
+    const baseline = join(tempDir(), "baseline");
+    expect(run([plan, "--root", dir, "--output", baseline], dir).code).toBe(0);
+    const manifest = require(VALIDATOR).verifySnapshot(baseline).manifest;
+    expect(manifest.repository.branch).toBe("feat/fixture-branch");
+    expect(manifest.headRevision).toBe(commit);
+  });
 });
 
 describe("ignored plan directory", () => {

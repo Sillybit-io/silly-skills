@@ -2008,6 +2008,18 @@ describe("resume mode", () => {
     expect(result.nextTodo).toBe("T1");
   });
 
+  test("a branch created at the same HEAD after the last receipt is not drift", () => {
+    const { root } = buildScenario();
+    const head = git(root, "rev-parse", "HEAD").toString();
+    git(root, "switch", "-q", "-c", "feat/other");
+    expect(git(root, "branch", "--show-current").toString().trim()).toBe("feat/other");
+    expect(git(root, "rev-parse", "HEAD").toString()).toBe(head);
+    const result = run(root, ["--review", "--resume"]);
+    expect(result.errors).toEqual([]);
+    expect(result.resumeEligible).toBe(true);
+    expect(result.drift).toEqual([]);
+  });
+
   test("a Commit: yes todo needs its commit, and the after-state HEAD must be that commit", () => {
     const ok = buildScenario({ t1Commit: true });
     expect(ok.after).not.toBeNull();
