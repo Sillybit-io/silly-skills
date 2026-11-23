@@ -9,7 +9,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type PermissionRule, parseFrontmatter } from "./validate.ts";
+import { AGENT_WRAPPERS, type PermissionRule, parseFrontmatter } from "./validate.ts";
 
 const repo = join(import.meta.dir, "..");
 
@@ -31,7 +31,7 @@ const EXPECTED_DELEGATES: Record<Persona, Persona[]> = {
   "plan-writer": ["plan-scout"],
   "plan-reviewer": ["plan-scout"],
   "plan-scout": [],
-  "plan-builder": ["plan-builder", "plan-result-reviewer"],
+  "plan-builder": ["plan-builder", "plan-result-reviewer", "plan-writer", "plan-reviewer"],
   "plan-loop": ["plan-writer", "plan-reviewer"],
   "plan-result-reviewer": ["plan-scout"],
 };
@@ -137,6 +137,18 @@ describe("planning agents: OpenCode mode and delegation", () => {
     }
   });
 
+  test("plan-builder child launches no agent: each file states it", () => {
+    // OpenCode's rules are per agent and cannot tell the coordinator from its
+    // child, and a host may allow deeper launches, so the prompt holds the
+    // rule: as the agent's own, not as a claim about the host.
+    for (const file of AGENT_WRAPPERS) {
+      const body = readWrapper("plan-builder", file);
+      const states = body.includes("A child launches no agent");
+      const hostClaim = body.includes("cannot launch children");
+      expect({ file, states, hostClaim }).toEqual({ file, states: true, hostClaim: false });
+    }
+  });
+
   test("plan-loop never edits natively", () => {
     const fm = frontmatterOf("plan-loop", "opencode.md");
     expect(effect(fm.permissions, "edit", "*")).toBe("deny");
@@ -166,14 +178,20 @@ describe("planning agents: Claude Code question routing and subagent restriction
       expect({ persona, routesQuestion }).toEqual({ persona, routesQuestion: true });
     });
 
-    test(`${persona}/claude-code.md's delegation matches opencode.md's`, () => {
-      const body = readWrapper(persona, "claude-code.md");
+    test(`${persona} names every agent in its row`, () => {
       const expected = EXPECTED_DELEGATES[persona];
+      // Claude Code and Cursor hold the launch rule in the prompt only, so
+      // every file names each agent its OpenCode rules allow.
+      for (const file of AGENT_WRAPPERS) {
+        const body = readWrapper(persona, file);
+        const missing = expected.filter((other) => !body.includes(`\`${other}\``));
+        expect({ persona, file, missing }).toEqual({ persona, file, missing: [] });
+      }
+      const body = readWrapper(persona, "claude-code.md");
       if (expected.length === 0) {
         expect(body.includes("Agent")).toBe(false);
         return;
       }
-      for (const other of expected) expect(body.includes(`\`${other}\``)).toBe(true);
       // Claude Code enforces no subagent type list inside a subagent: the
       // wrapper's own prose must hold that restriction instead.
       expect(body.includes("does not enforce a subagent type list")).toBe(true);
@@ -258,6 +276,23 @@ describe("planning agents: mutation detection", () => {
       expect(order).toEqual(["plan-writer allow", "plan-reviewer allow", "* deny"]);
       // OpenCode takes the last matching rule, so the later "*" deny wins.
       expect(effect(fm.permissions, "subagent", "plan-writer")).toBe("deny");
+    });
+  });
+
+  test("a plan-builder file without the plan-writer rule is detected", () => {
+    const writerRule = '  - action: subagent\n    resource: "plan-writer"\n    effect: allow\n';
+    withMutated("plan-builder", "opencode.md", (t) => t.replace(writerRule, ""), (dir) => {
+      const fm = parseFrontmatter(readFileSync(join(dir, "opencode.md"), "utf8").split(/\r?\n/), { permissionList: true });
+      expect(fm.problems).toEqual([]);
+      // The copy really lost that one rule.
+      const order = fm.permissions.filter((r) => r.action === "subagent").map((r) => `${r.resource} ${r.effect}`);
+      expect(order).toEqual(["* deny", "plan-builder allow", "plan-result-reviewer allow", "plan-reviewer allow"]);
+      // The "*" deny now decides the writer, so the launch set misses an agent
+      // of plan-builder's row, which the delegation test reports.
+      expect(effect(fm.permissions, "subagent", "plan-writer")).toBe("deny");
+      const launches = PERSONAS.filter((other) => effect(fm.permissions, "subagent", other) === "allow");
+      const missing = EXPECTED_DELEGATES["plan-builder"].filter((other) => !launches.includes(other));
+      expect(missing).toEqual(["plan-writer"]);
     });
   });
 });

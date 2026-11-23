@@ -17,6 +17,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - `plan-result-review` 2.3.0: the plan-only commit of an approved plan change, `docs(plans): amend <slug> plan`, is not a difference. `inventory-changes.ts --brief` counts the commit that an `amend` receipt names as named, beside the commits of pass and fix receipts, so the brief does not list it under `Commits no receipt names`. A commit that only a block or a recovery receipt names is still listed there, and a build with no amend receipt gets the same brief as before. Step 7, which checks the execution commitments, says so.
 
+### Fixed
+
+- `plan-builder` persona: the coordinator may now launch `plan-writer` and `plan-reviewer` for a plan change during a build, as the skill's step 10 says. Before, OpenCode refused both launches. The OpenCode file allows both after its `plan-builder` and `plan-result-reviewer` allows. All three files name the four agents in the coordinator paragraph, and state that a plan-builder child launches no agent, as the agent's own rule rather than a limit of the host. An installed file does not change by itself: reinstall it with `sh scripts/agent-install.sh --tool <tool> --agent plan-builder --force`, and add `--global` for a user-wide install. A forced install replaces the whole file: hand edits to it are lost, and a model or effort set with `--model` or `--effort` needs those flags again. The agent tests check that each planning persona's three files name every agent it may launch.
+
 ## [1.1.0] - 2026-11-21
 
 ### Added
