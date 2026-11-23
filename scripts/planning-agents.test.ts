@@ -47,18 +47,28 @@ function frontmatterOf(persona: string, file: string) {
   return fm;
 }
 
-/** Last matching rule wins; an exact resource match outranks a "*" fallback
- * regardless of order, matching how every wrapper here is actually written
- * (a "*" deny baseline, then specific-resource exceptions). */
-function effect(rules: PermissionRule[], action: string, resource: string): string | null {
-  let wildcard: string | null = null;
-  let exact: string | null = null;
+/** Evaluates the rules as OpenCode does (https://opencode.ai/docs/permissions/):
+ * walk them in order and keep the effect of the last rule whose action equals
+ * `action` and whose resource pattern matches `resource`. Order decides, so a
+ * "*" rule after an exact one wins. With no matching rule the answer is
+ * "allow", OpenCode's base policy. */
+function effect(rules: PermissionRule[], action: string, resource: string): string {
+  let result = "allow";
   for (const r of rules) {
-    if (r.action !== action) continue;
-    if (r.resource === resource) exact = r.effect;
-    else if (r.resource === "*") wildcard = r.effect;
+    if (r.action === action && resourceMatches(r.resource, resource)) result = r.effect;
   }
-  return exact ?? wildcard;
+  return result;
+}
+
+/** Matches a whole resource against an OpenCode pattern: "*" is any run of
+ * characters, "/" included, "?" is one character, and every other character
+ * stands for itself. */
+function resourceMatches(pattern: string, resource: string): boolean {
+  const source = pattern
+    .replace(/[.+^${}()|[\]\\]/g, "\\$&")
+    .replace(/\*/g, ".*")
+    .replace(/\?/g, ".");
+  return new RegExp(`^${source}$`, "s").test(resource);
 }
 
 describe("planning agents: OpenCode mode and delegation", () => {
@@ -234,6 +244,20 @@ describe("planning agents: mutation detection", () => {
     withMutated("plan-loop", "cursor.md", (t) => t.replace(/ A subagent launched by another subagent cannot launch a third level[^.]*\./, ""), (dir) => {
       const body = readFileSync(join(dir, "cursor.md"), "utf8");
       expect(body.includes("third level")).toBe(false);
+    });
+  });
+
+  test("rule order: a deny on * after the allows denies the launch", () => {
+    const denyAll = '  - action: subagent\n    resource: "*"\n    effect: deny\n';
+    const lastAllow = '  - action: subagent\n    resource: "plan-reviewer"\n    effect: allow\n';
+    withMutated("plan-loop", "opencode.md", (t) => t.replace(denyAll, "").replace(lastAllow, lastAllow + denyAll), (dir) => {
+      const fm = parseFrontmatter(readFileSync(join(dir, "opencode.md"), "utf8").split(/\r?\n/), { permissionList: true });
+      expect(fm.problems).toEqual([]);
+      // The copy really moved the deny: it is now the last subagent rule.
+      const order = fm.permissions.filter((r) => r.action === "subagent").map((r) => `${r.resource} ${r.effect}`);
+      expect(order).toEqual(["plan-writer allow", "plan-reviewer allow", "* deny"]);
+      // OpenCode takes the last matching rule, so the later "*" deny wins.
+      expect(effect(fm.permissions, "subagent", "plan-writer")).toBe("deny");
     });
   });
 });
