@@ -731,12 +731,13 @@ function digestedScenario(options: ScenarioOptions = {}): Scenario {
  * A plan change under build and its OKAY round 2: `mutate` edits the spec,
  * the evidence index is stamped again from the current sources unless
  * `restamp` is false, and round 2 on the changed plan becomes the latest.
+ * `obligations` covers a changed plan with more targets than ALL_TARGETS.
  */
-function reviewChange(root: string, mutate: (t: string) => string, options: { restamp?: boolean } = {}): void {
+function reviewChange(root: string, mutate: (t: string) => string, options: { restamp?: boolean; obligations?: Obligation[] } = {}): void {
   if (options.restamp !== false) write(root, EVIDENCE, evidenceText([evidenceIndex(root)]));
   const text = mutate(read(root, PLAN)).replace("review_round: 1", "review_round: 2");
   writePlan(root, text);
-  const gate = gateRecord(root, specOf(root, text), { round: 2 });
+  const gate = gateRecord(root, specOf(root, text), { round: 2, obligations: options.obligations });
   writeGate(root, gate);
   const first = read(root, REVIEWS).split("### Round 1")[1];
   writeReviews(root, historyTable([[1, "OKAY", 0], [2, "OKAY", 0]]), [renderRound(gate), `### Round 1${first}`]);
@@ -3014,8 +3015,10 @@ describe("record-receipt", () => {
   };
   const obligation = (targets: string[]): Obligation[] => [{ id: "O1", targets, evidenceIds: ["C1", "P1"], observed: "traced", plannedQa: "Q1", status: "verified" }];
 
+  /** Runs the command for a todo or gate; an amend takes no --todo, so its `todo` is the plan. */
   const call = (root: string, todo: string, event: string, ...more: string[]) => {
-    const p = spawnSync("bun", [RECORD, PLAN, "--root", root, "--todo", todo, "--event", event, ...more], { encoding: "utf8" });
+    const target = event === "amend" ? [] : ["--todo", todo];
+    const p = spawnSync("bun", [RECORD, PLAN, "--root", root, ...target, "--event", event, ...more], { encoding: "utf8" });
     return { code: p.status, out: `${p.stdout}${p.stderr}`.trim() };
   };
   /** The receipts of the build file, read without the validator. */
@@ -3040,13 +3043,64 @@ describe("record-receipt", () => {
     write(s.root, BUILD, original);
     return found;
   };
+  /** T2's edit: the CLI gains the flag. */
+  const editT2 = (root: string): void => writeFileSync(join(root, "src/cli.ts"), `${CLI}// --greet\n`);
+  /** T2's Do gains a help text: a change to an open todo. */
+  const T2_HELP = (t: string): string => t.replace("- Do: add the flag.", "- Do: add the flag and its help text.");
+  /** T1's Do changes: a change a built todo may not take. */
+  const T1_DO = (t: string): string => t.replace("- Do: change start.", "- Do: change start and register.");
+  /** A new todo, T3, after T2 in a wave of its own. */
+  const ADD_T3 = (t: string): string =>
+    t.replace("- Wave 2: T2 — needs T1\n", "- Wave 2: T2 — needs T1\n- Wave 3: T3 — needs T2\n").replace(
+      "\n## Final verification wave",
+      [
+        "\n### T3 — Print the help text",
+        "",
+        "- [ ] Open",
+        "- Do: print the help text of the flag.",
+        "- Must not: change register.",
+        "- Closes gap: G2.",
+        "- Depends on: T2.",
+        "- References: `src/cli.ts:1-2`.",
+        "- Acceptance: `bun test` passes.",
+        "- QA scenario: happy — the help prints; failure — an unknown topic.",
+        "- Strict: no.",
+        "- Commit: no.",
+        "",
+        "## Final verification wave",
+      ].join("\n"),
+    );
+  /** The review targets of the plan with T3. */
+  const T3_TARGETS = [...ALL_TARGETS, "T3.start", "T3.acceptance", "T3.qa", "dep:T3:T2"];
+  /** A plan with `ui: yes`, whose last gate is the Automated UI QA todo. */
+  const UI_QA = (t: string): string =>
+    t
+      .replace("ui: no", "ui: yes")
+      .replace("- Do: compare the diff.\n", "- Do: compare the diff.\n\n### Automated UI QA\n\n- [ ] Open\n- Do: open the start page at 375 and 1280 pixels and save a screenshot of each.\n");
+  /** The coordinator's plan-only commit of a plan change. */
+  const commitPlan = (root: string): void => {
+    git(root, "add", "--", DIR);
+    git(root, "commit", "-q", "-m", "docs(plans): amend fixture plan");
+  };
+  const AMEND = [...NOTE("T2 also prints its help text"), "--commit", "HEAD"];
+  /** A build ready for its plan change: T0 and T1 passed with their digests, and an OKAY round 2 on a changed T2 is committed. */
+  const readyToAmend = (): Scenario => {
+    const s = digestedScenario();
+    reviewChange(s.root, T2_HELP);
+    commitPlan(s.root);
+    return s;
+  };
+  /** The box under each todo or gate heading, as Open or Done. */
+  const boxes = (root: string, ids: string[]): string[] =>
+    ids.map((id) => new RegExp(`\\n### ${id} — [^\\n]+\\n\\n- \\[[ x]\\] (Open|Done)\\n`).exec(read(root, PLAN))?.[1] ?? "none");
+  const manifestOf = (root: string, ref: { snapshot: string }) => JSON.parse(read(root, `.git/${ref.snapshot}/manifest.json`));
 
   test("record-receipt records a pass", () => {
     const { root } = buildScenario({ stopAfter: "T0" });
     editT1(root);
     expect(call(root, "T1", "pass", ...CHECKS)).toEqual({ code: 0, out: "RECEIPT: T1 pass seq 2; resumeEligible true; next T2" });
     const [t0, t1] = recorded(root);
-    expect(Object.keys(t1)).toEqual(["seq", "todo", "event", "state", "prev", "before", "after", "checks", "prerequisites", "commit", "note"]);
+    expect(Object.keys(t1)).toEqual(["seq", "todo", "event", "state", "prev", "before", "after", "checks", "prerequisites", "commit", "note", "todoDigest"]);
     expect([t1.seq, t1.todo, t1.event, t1.state, t1.prev, t1.before]).toEqual([2, "T1", "pass", "passed", sha(canon(t0)), t0.after]);
     expect(t1.after.snapshot).toBe("silly-skills/plan-builds/run/2-T1");
     expect(t1.checks).toEqual(["acceptance", "qa:happy", "qa:failure"].map((id) => ({ id, command: "bun test", exit: 0, expectedExit: 0, passed: true })));
@@ -3267,5 +3321,143 @@ describe("record-receipt", () => {
     expect(call(s.root, "T1", "pass", ...CHECKS).out).toBe("RECEIPT: T1 pass seq 3; resumeEligible true; next T2");
     expect(call(s.root, "T2", "pass", ...CHECKS).out).toBe("RECEIPT: T2 pass seq 4; resumeEligible true; next F1");
     expect(resume(s.root).errors).toEqual([]);
+  });
+
+  test("record-receipt writes the todo digest on a pass", () => {
+    const { root } = buildScenario({ stopAfter: "T0" });
+    editT1(root);
+    expect(call(root, "T1", "pass", ...CHECKS, "--log", "silly-skills/plan-builds/run/logs/2-T1.log").code).toBe(0);
+    expect(call(root, "T2", "recovery", ...NOTE("T2 edits found")).code).toBe(0);
+    expect(call(root, "T2", "block", ...NOTE("needs a credential")).code).toBe(0);
+    editT2(root);
+    expect(call(root, "T2", "pass", ...CHECKS).out).toBe("RECEIPT: T2 pass seq 5; resumeEligible true; next F1");
+    expect(call(root, "F4", "fix", ...arg("blocking:D1")).code).toBe(0);
+    const text = read(root, PLAN);
+    const digestOf = (id: string): string => todoDigest(parsePlan(text).todos.find((t) => t.id === id) as Todo);
+    const [, t1, recovery, block, t2, fix] = recorded(root);
+    // After note and before log: the digest of the todo's id, its title, and every field but References.
+    expect(Object.keys(t1).slice(-3)).toEqual(["note", "todoDigest", "log"]);
+    expect([t1.todoDigest, t2.todoDigest]).toEqual([digestOf("T1"), digestOf("T2")]);
+    expect([t1.todoDigest, t2.todoDigest]).toEqual([fixtureTodoDigest(text, "T1"), fixtureTodoDigest(text, "T2")]);
+    // A recovery, a block, and a fix receipt hold none.
+    expect([recovery, block, fix].map((r) => [r.event, "todoDigest" in r])).toEqual([["recovery", false], ["block", false], ["fix", false]]);
+    expect(resume(root).errors).toEqual([]);
+  });
+
+  test("record-receipt records an amend after an OKAY round, reopens the final gates, and resumes at the next todo", () => {
+    const { root } = digestedScenario({ stopAfter: "T0", mutatePlan: UI_QA });
+    editT1(root);
+    expect(call(root, "T1", "pass", ...CHECKS).code).toBe(0);
+    editT2(root);
+    expect(call(root, "T2", "pass", ...CHECKS).out).toBe("RECEIPT: T2 pass seq 3; resumeEligible true; next F1");
+    // The final wave set F1 to F3 and the UI QA gate Done. Then the owner asked for T3, and one OKAY round reviewed the changed plan.
+    setBoxes(root, ["F1", "F2", "F3"]);
+    writePlan(root, read(root, PLAN).replace("### Automated UI QA\n\n- [ ] Open", "### Automated UI QA\n\n- [x] Done"));
+    reviewChange(root, ADD_T3, { obligations: obligation(T3_TARGETS) });
+    expect(boxes(root, ["F1", "F2", "F3", "F4"])).toEqual(["Done", "Done", "Done", "Open"]);
+    expect(read(root, PLAN)).toContain("### Automated UI QA\n\n- [x] Done\n");
+    expect(codes(resume(root))).toEqual(expect.arrayContaining(["SPEC_CHANGED", "APPROVAL_CHANGED"]));
+    commitPlan(root);
+    expect(call(root, "plan", "amend", ...NOTE("T3 prints the help text"), "--commit", "HEAD")).toEqual({ code: 0, out: "RECEIPT: plan amend seq 4; resumeEligible true; next T3" });
+    const [, , t2, amend] = recorded(root);
+    expect(Object.keys(amend)).toEqual(["seq", "todo", "event", "state", "prev", "before", "after", "checks", "prerequisites", "commit", "note", "approval"]);
+    expect([amend.todo, amend.event, amend.state, amend.prev, amend.before, amend.checks, amend.prerequisites, amend.note]).toEqual(["plan", "amend", "amended", sha(canon(t2)), t2.after, [], [], "T3 prints the help text"]);
+    expect(amend.commit).toEqual({ sha: git(root, "rev-parse", "HEAD").toString().trim() });
+    // The approval of the round on the plan as it is, and an after-snapshot captured for it.
+    expect(amend.approval).toEqual({ specDigest: specOf(root, read(root, PLAN)), round: 2, verdict: "OKAY", gateRecordDigest: sha(canon(JSON.parse(read(root, GATE)))) });
+    expect(amend.after.snapshot).toBe("silly-skills/plan-builds/run/4-plan");
+    expect(manifestOf(root, amend.after).approvedSpecDigest).toBe(amend.approval.specDigest);
+    // The built todos stay Done, and the final gates, the UI QA gate among them, are open again.
+    expect(boxes(root, ["T0", "T1", "T2", "T3", "F1", "F2", "F3", "F4"])).toEqual(["Done", "Done", "Done", "Open", "Open", "Open", "Open", "Open"]);
+    expect(read(root, PLAN)).toContain("### Automated UI QA\n\n- [ ] Open\n");
+    // The build goes on with T3 alone, and its capture names the approval in force.
+    writeFileSync(join(root, "src/cli.ts"), `${read(root, "src/cli.ts")}// --help\n`);
+    expect(call(root, "T3", "pass", ...CHECKS).out).toBe("RECEIPT: T3 pass seq 5; resumeEligible true; next F1");
+    expect(manifestOf(root, recorded(root)[4].after).approvedSpecDigest).toBe(amend.approval.specDigest);
+    expect(resume(root).errors).toEqual([]);
+  });
+
+  test("record-receipt closes a failed recheck with a block receipt, then records the amend", () => {
+    const { root } = digestedScenario();
+    // T2's child finds that T1's change broke its premise, and records the failed recheck in a recovery receipt.
+    const failed = { targets: ["T2.start"], paths: ["src/app.ts"], status: "fails", observed: "start now greets; T2's flag premise no longer holds" };
+    expect(call(root, "T2", "recovery", ...NOTE("recheck before T2"), "--recheck", JSON.stringify(failed))).toEqual({ code: 1, out: "RECEIPT: T2 recovery seq 3; resumeEligible false; next T2; errors: PREREQUISITE_FAILED" });
+    // While T2 is active, no plan change is recorded.
+    expect(refused(root, "plan", "amend", ...AMEND)).toContain("T2 is active; close it with a block receipt before the plan changes");
+    // The block receipt closes T2. It is recorded, though the failed recheck still stops the build.
+    expect(call(root, "T2", "block", ...NOTE("T2's premise no longer holds; the plan changes"))).toEqual({ code: 1, out: "RECEIPT: T2 block seq 4; resumeEligible false; next T2; errors: PREREQUISITE_FAILED" });
+    expect(recorded(root)[3]).toMatchObject({ seq: 4, todo: "T2", event: "block", state: "blocked" });
+    // After an OKAY round on the changed plan, the amend lets the build go on with T2.
+    reviewChange(root, T2_HELP);
+    commitPlan(root);
+    expect(call(root, "plan", "amend", ...AMEND)).toEqual({ code: 0, out: "RECEIPT: plan amend seq 5; resumeEligible true; next T2" });
+    const result = resume(root);
+    expect([result.errors, result.activeTodo, result.requiredRechecks, result.unresolvedAction]).toEqual([[], null, [], null]);
+    // T2 is built from the changed plan, and its pass receipt holds the changed T2's digest.
+    editT2(root);
+    expect(call(root, "T2", "pass", ...CHECKS).out).toBe("RECEIPT: T2 pass seq 6; resumeEligible true; next F1");
+    expect(recorded(root)[5].todoDigest).toBe(fixtureTodoDigest(read(root, PLAN), "T2"));
+  });
+
+  test("record-receipt refuses an amend", () => {
+    // 1. The reviews file holds a result review round.
+    const reviewed = readyToAmend();
+    write(reviewed.root, REVIEWS, `${read(reviewed.root, REVIEWS)}\n## Result review\n\n### Result round 1\n\nMATCH\n`);
+    expect(refused(reviewed.root, "plan", "amend", ...AMEND)).toContain("the reviews file holds a result review round; a build takes no plan change after its first result review");
+    // 2. A pass receipt has no todoDigest: the build began before plan-builder 2.3.0.
+    const old = buildScenario();
+    reviewChange(old.root, T2_HELP);
+    commitPlan(old.root);
+    expect(refused(old.root, "plan", "amend", ...AMEND)).toContain("receipt 1, the pass receipt of T0, has no todoDigest; a build begun before plan-builder 2.3.0 finishes on its approved plan");
+    // 3. A todo is active.
+    const active = digestedScenario();
+    expect(call(active.root, "T2", "recovery", ...NOTE("recheck before T2")).code).toBe(0);
+    reviewChange(active.root, T2_HELP);
+    commitPlan(active.root);
+    expect(refused(active.root, "plan", "amend", ...AMEND)).toContain("T2 is active; close it with a block receipt before the plan changes");
+    // 4. Review mode does not report gateEligible: true, here because the change altered T1, which passed.
+    const built = digestedScenario();
+    reviewChange(built.root, T1_DO);
+    commitPlan(built.root);
+    expect(refused(built.root, "plan", "amend", ...AMEND)).toContain("review mode does not report gateEligible: true for the plan as it is (PASSED_TODO_CHANGED: T1 changed after its pass receipt (receipt 2)");
+    // 5. The reviewed round is not above the approval in force: the record's, and then an amend receipt's.
+    const unchanged = digestedScenario({ stopAfter: "T0" });
+    expect(refused(unchanged.root, "plan", "amend", ...AMEND)).toContain("the reviewed round 1 is not above round 1 of the approval in force");
+    const twice = readyToAmend();
+    expect(call(twice.root, "plan", "amend", ...AMEND).code).toBe(0);
+    expect(refused(twice.root, "plan", "amend", ...AMEND)).toContain("the reviewed round 2 is not above round 2 of the approval in force");
+    // 6. Outside the plan directory, something but HEAD changed since the last receipt: a new file that the review
+    // does not read, then the same file in the plan's commit. An edit to a cited file stops at refusal 4 instead.
+    const edited = readyToAmend();
+    write(edited.root, "notes.txt", "unrecorded work\n");
+    expect(refused(edited.root, "plan", "amend", ...AMEND)).toContain("a plan change may change only the plan directory and HEAD, but notes.txt [worktree] changed since the last receipt");
+    git(edited.root, "add", "--", "notes.txt");
+    git(edited.root, "commit", "-q", "-m", "docs(plans): amend fixture plan, with notes");
+    expect(refused(edited.root, "plan", "amend", ...AMEND)).toContain("but notes.txt [head], notes.txt [index], notes.txt [worktree] changed since the last receipt");
+    editT2(edited.root);
+    expect(refused(edited.root, "plan", "amend", ...AMEND)).toContain("(CITATION_DRIFT: citation C2: src/cli.ts changed since it was cited");
+    // 7. Git tracks the plan directory, and --commit is missing or does not name HEAD.
+    const uncommitted = readyToAmend();
+    for (const more of [[], ["--no-commit", "nothing to commit"]]) {
+      expect(refused(uncommitted.root, "plan", "amend", ...NOTE("T2 also prints its help text"), ...more)).toContain("git tracks the plan directory, so an amend names its plan-only commit with --commit HEAD");
+    }
+    expect(refused(uncommitted.root, "plan", "amend", ...NOTE("T2 also prints its help text"), "--commit", "HEAD~1")).toContain("which is not HEAD");
+    // The same call with its commit is recorded.
+    expect(call(uncommitted.root, "plan", "amend", ...AMEND).out).toBe("RECEIPT: plan amend seq 3; resumeEligible true; next T2");
+  });
+
+  test("record-receipt checks the arguments of an amend, which names no commit where git ignores the plan directory", () => {
+    const s = digestedScenario({ beforeBaseline: ignorePlans });
+    reviewChange(s.root, T2_HELP);
+    // An amend takes no --todo, --check, or --recheck: each is a bad argument, and nothing is written.
+    const recheck = { targets: ["T2.start"], paths: ["src/app.ts"], status: "holds", observed: "register is unchanged" };
+    for (const bad of [["--todo", "T2"], arg("acceptance"), ["--recheck", JSON.stringify(recheck)]]) {
+      const before = untouched(s.root);
+      expect({ bad, code: call(s.root, "plan", "amend", ...NOTE("T2 also prints its help text"), ...bad).code }).toEqual({ bad, code: 2 });
+      expect(untouched(s.root)).toEqual(before);
+    }
+    expect(refused(s.root, "plan", "amend", "--no-commit", "git ignores the plan directory")).toContain("an amend needs --note");
+    expect(call(s.root, "plan", "amend", ...NOTE("T2 also prints its help text"), "--no-commit", "git ignores the plan directory")).toEqual({ code: 0, out: "RECEIPT: plan amend seq 3; resumeEligible true; next T2" });
+    expect(recorded(s.root)[2]).toMatchObject({ todo: "plan", event: "amend", commit: { none: "git ignores the plan directory" } });
   });
 });

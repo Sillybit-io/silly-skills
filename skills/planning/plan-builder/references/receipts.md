@@ -145,6 +145,8 @@ since the baseline or its receipts: the coordinator passes it to that todo's
 child, which records the recheck, per the section above. A new build reaches
 the resume command with only T0's receipt; `nextTodo` names the first todo.
 
+`SPEC_CHANGED` and `APPROVAL_CHANGED` mean that the plan, or its live review, no longer matches the approval in force. They lead to Amend below: once an OKAY round on the plan as it is exists, the amend receipt records that round as the new approval, and the build goes on from its next todo. A changed plan never starts a second build file, run directory, or baseline.
+
 ## Recovery
 
 `recoveryRequired: true` and a non-empty `drift` mean the current project
@@ -170,6 +172,31 @@ A required premise that no longer holds — a dependency removed, an external
 contract that changed, a Must Have the current code contradicts — is not
 something a recovery receipt can wave through. It needs a new plan and a new
 review. Checkpoint and say so.
+
+## Amend
+
+An approved plan change is one `amend` receipt in the same build file and receipt chain. The plan-review contract's "Resume rules after a change" says what the resume check accepts.
+
+```text
+bun <this-skill-base>/scripts/record-receipt.ts <plan> --event amend --note <the change in one line>
+  [--commit HEAD | --no-commit <reason>] [--log <path>] [--root <project>]
+```
+
+The command takes no `--todo`, `--check`, or `--recheck`. The receipt names `plan` as its todo, holds no checks and no prerequisites, and holds `approval`: the spec digest, the round, the verdict, and the gate record digest that the validator's review mode reports for the plan as it is. Before the command writes anything, it refuses, in this order, when:
+
+1. the reviews file holds a result review round: a build takes no plan change after its first result review, so later work is a new plan;
+2. a pass receipt has no `todoDigest`: a build begun before plan-builder 2.3.0 finishes on its approved plan;
+3. a todo is active;
+4. review mode does not report `gateEligible: true` for the plan as it is, as when the change altered a todo that already passed;
+5. the reviewed round is not above the round of the approval in force;
+6. anything outside the plan directory, apart from HEAD, differs from the last recorded state;
+7. git tracks the plan directory, and `--commit` is missing or does not name HEAD.
+
+A refusal prints `RECEIPT: REFUSED plan amend; <reason>` and writes nothing. Otherwise the command captures the after-snapshot with the new spec digest as the approved spec, appends the receipt, sets every Done final gate box, `Automated UI QA` among them, back to Open, and runs the resume check. It prints `RECEIPT: plan amend seq <n>; resumeEligible <true|false>; next <id|none>`, plus `; errors: <CODE>, ...` when the resume check reports errors. Every later capture names the spec digest of the approval in force.
+
+The plan-only commit comes before the receipt. Commit the plan directory alone as `docs(plans): amend <slug> plan`, with `git --literal-pathspecs commit --only -- docs/plans/<stem>`, and pass `--commit HEAD`. When the plan directory has nothing to commit, pass `--commit HEAD` all the same. When git ignores the plan directory, make no commit and pass `--no-commit "git ignores the plan directory"`.
+
+A plan change starts with no todo active. A failed recheck is recorded in a recovery receipt, which leaves its todo active. Once that todo's child has replied, and with no drift, the coordinator closes the todo with a block receipt before the writer starts: `record-receipt.ts <plan> --todo <id> --event block --note <the reason in one line>`. The printed line may end with `errors: PREREQUISITE_FAILED`; the block receipt is recorded all the same, and the amend receipt clears the failed recheck. The todo stays open and is built after the change. Close a todo only before the plan changes: a block receipt recorded after the change would take in the changed plan. So a plan that changed while a todo was still active stays refused.
 
 ## Slices
 
