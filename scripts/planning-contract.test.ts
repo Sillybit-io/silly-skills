@@ -18,6 +18,11 @@
  * The two `plan-builder` tests find the coordinator's plan-change step the same
  * way and check that it names the writer, the reviewer, the block and amend
  * receipts, and the checkpoint.
+ *
+ * Two more `plan-builder` tests find the new-build step by its label and check
+ * that it reaches the Branch section before the baseline, and check that each
+ * reply block of a branch stop is found once in the skill and not in a copy
+ * without it.
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
@@ -144,15 +149,20 @@ function fencedBlocks(text: string): { info: string; lines: string[] }[] {
   return out;
 }
 
+/** The `markdown` blocks of a text whose first line is the verdict. */
+function replyBlocks(text: string, verdict: string): string[] {
+  return fencedBlocks(text)
+    .filter((b) => b.info === "markdown" && b.lines[0] === verdict)
+    .map((b) => b.lines.join("\n"));
+}
+
 /** The one `markdown` block of the skill's SKILL.md whose first line is the verdict. */
 function replyBlock(skill: string, verdict: string): string {
   const found = locate(skill);
   if (!found) throw new Error(`${skill}: no SKILL.md found`);
-  const blocks = fencedBlocks(readFileSync(join(found.dir, "SKILL.md"), "utf8")).filter(
-    (b) => b.info === "markdown" && b.lines[0] === verdict,
-  );
+  const blocks = replyBlocks(readFileSync(join(found.dir, "SKILL.md"), "utf8"), verdict);
   if (blocks.length !== 1) throw new Error(`${skill}: ${blocks.length} markdown blocks start with ${verdict}, expected 1`);
-  return blocks[0].lines.join("\n");
+  return blocks[0];
 }
 
 function reviewedReplies(): Map<string, string> {
@@ -281,4 +291,44 @@ test("plan-builder: a copy without the plan-change step is reported", () => {
   expect(numbers(text)).toContain(PLAN_CHANGE_STEP.number);
   expect(numbers(copy)).toEqual(numbers(text).filter((n) => n !== PLAN_CHANGE_STEP.number));
   expect(stepGaps(copy, PLAN_CHANGE_STEP)).toEqual([`no Workflow step starts with **${PLAN_CHANGE_STEP.label}**`]);
+});
+
+/** plan-builder's step for a new build, which checks the branch before the baseline. */
+const NEW_BUILD_STEP: LabelledStep = {
+  skill: "plan-builder",
+  number: 2,
+  label: "New build",
+  names: ["Branch section", "--todo T0"],
+};
+
+/** The verdict lines of plan-builder's two reply blocks for a stop of the branch rule. */
+const BRANCH_REPLIES = ["PLAN-BUILD: BLOCKED (branch <branch>)", "PLAN-BUILD: CHECKPOINT (<next todo>; git switch -c <branch> exited <code>)"];
+
+/** A copy of the text without the `markdown` block whose first line is the verdict. */
+function withoutReplyBlock(text: string, verdict: string): string {
+  const lines = text.split("\n");
+  const start = lines.findIndex((line, i) => line === "```markdown" && lines[i + 1] === verdict);
+  const end = start < 0 ? -1 : lines.indexOf("```", start + 1);
+  if (end < 0) return text;
+  return [...lines.slice(0, start), ...lines.slice(end + 1)].join("\n");
+}
+
+test("plan-builder: the new-build step checks the branch before the baseline", () => {
+  const text = skillText(NEW_BUILD_STEP.skill);
+  expect(stepGaps(text, NEW_BUILD_STEP)).toEqual([]);
+  const step = workflowSteps(text).find((s) => s.text.startsWith(`**${NEW_BUILD_STEP.label}**`))?.text ?? "";
+  const branch = step.indexOf("Branch section");
+  // The step reaches the Branch section before the baseline and before it writes the build file.
+  expect(step.indexOf("capture-build-state.ts")).toBeGreaterThan(branch);
+  expect(step.indexOf("`<stem>.build.md`")).toBeGreaterThan(branch);
+});
+
+test("plan-builder: a copy without a branch reply block is reported", () => {
+  const text = skillText("plan-builder");
+  for (const verdict of BRANCH_REPLIES) {
+    const copy = withoutReplyBlock(text, verdict);
+    // The copy drops that one block and keeps every other fenced block.
+    expect({ verdict, blocks: fencedBlocks(copy).length }).toEqual({ verdict, blocks: fencedBlocks(text).length - 1 });
+    expect({ verdict, skill: replyBlocks(text, verdict).length, copy: replyBlocks(copy, verdict).length }).toEqual({ verdict, skill: 1, copy: 0 });
+  }
 });

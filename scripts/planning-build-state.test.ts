@@ -702,4 +702,134 @@ describe("branch at a new build", () => {
     expect(commandsRan(again)).toEqual([commands[0]]);
     expect(again.write).toBeUndefined();
   });
+
+  const SKILL = join(repo, "skills/planning/plan-builder/SKILL.md");
+  /** The verdict line of the skill's reply block for each Reply cell of the Cases table. */
+  const VERDICTS: Record<string, string> = {
+    BLOCKED: "PLAN-BUILD: BLOCKED (branch <branch>)",
+    CHECKPOINT: "PLAN-BUILD: CHECKPOINT (<next todo>; git switch -c <branch> exited <code>)",
+  };
+  const PLACEHOLDER = /<[^<>\n]*>/;
+
+  /** The one `markdown` block of the skill's Output format whose first line is the verdict. */
+  function replyBlock(verdict: string): string {
+    const text = readFileSync(SKILL, "utf8");
+    const start = text.indexOf("\n## Output format\n");
+    if (start === -1) throw new Error("the skill has no Output format section");
+    const end = text.indexOf("\n## ", start + 1);
+    const section = text.slice(start + 1, end === -1 ? undefined : end);
+    const blocks = [...section.matchAll(/^```markdown\n([\s\S]*?)^```$/gm)].map((m) => m[1].trimEnd()).filter((b) => b.split("\n")[0] === verdict);
+    if (blocks.length !== 1) throw new Error(`${blocks.length} markdown blocks of the Output format start with ${verdict}, not one`);
+    return blocks[0];
+  }
+
+  /** How a reply names what the first command printed: the branch in backticks, or a detached HEAD. */
+  const checkedOut = (read: Run) => (read.stdout.trim() === "" ? "a detached HEAD" : `\`${read.stdout.trim()}\``);
+  /** The last line git printed. */
+  const lastLine = (r: Run) =>
+    `${r.stdout}\n${r.stderr}`
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line !== "")
+      .at(-1) ?? "";
+
+  /**
+   * The reply of a walk, composed as the coordinator composes it: the one
+   * `markdown` block of the skill's Output format that starts with the verdict
+   * line of the case's Reply cell, filled from the walk. The Reason cell goes in
+   * first, so its own placeholders are filled with the rest. After a create
+   * that fails, the second run of the reads gives the state now.
+   */
+  function reply(w: ReturnType<typeof walk>): string {
+    const verdict = VERDICTS[w.reply];
+    if (verdict === undefined) throw new Error(`the case ${w.id} has no reply block`);
+    const now = w.again ?? w.reads;
+    const paths = (now[2]?.stdout ?? "")
+      .split("\n")
+      .filter((line) => line !== "")
+      .map((line) => line.slice(3));
+    const listed = paths.slice(0, 5).join(", ");
+    const values: [string, string][] = [
+      ["<reason>", w.reason],
+      ["<command>", w.command],
+      ["<: `<paths>`>", paths.length > 0 ? `: \`${listed}\`` : ""],
+      ["<paths>", listed],
+      ["<n>", String(paths.length)],
+      ["<message>", w.write ? lastLine(w.write) : ""],
+      ["<next todo>", "T0"],
+      ["<code>", String(w.write?.exit)],
+      ["<checked out before>", checkedOut(w.reads[0])],
+      ["<start commit>", w.reads[3]?.stdout.trim() ?? ""],
+      ["<checked out>", checkedOut(now[0])],
+      ["<commit>", now[3]?.stdout.trim() ?? ""],
+      ["<exists | does not exist>", now[1]?.exit === 0 ? "exists" : "does not exist"],
+      ["<branch>", BRANCH],
+      ["<plan path>", PLAN],
+    ];
+    return values.reduce((text, [key, value]) => text.replaceAll(key, () => value), replyBlock(verdict));
+  }
+
+  test("branch reply: BLOCKED names the branch, each path, and the command when a path is not clean", () => {
+    const f = fixture();
+    notClean(f);
+    const start = f.git("branch", "--show-current").trim();
+    expect(start).not.toBe("");
+    const w = walk(f);
+    expect(w.id).toBe("not clean");
+    const text = reply(w);
+    expect(text).not.toMatch(PLACEHOLDER);
+    expect(text.split("\n")[0]).toBe(`PLAN-BUILD: BLOCKED (branch ${BRANCH})`);
+    expect(text).toContain(`\`${start}\``);
+    expect(text).toMatch(/\b3`? paths\b/);
+    for (const path of ["app.py", "lib.py", "notes/todo.txt"]) expect(text).toContain(path);
+    expect(text).toContain(`git switch -c ${BRANCH}`);
+    expect(text).toContain("on the current branch");
+    expect(text).toEndWith("Nothing was changed.");
+  });
+
+  test("branch reply: BLOCKED names git switch when the branch exists", () => {
+    const f = fixture();
+    f.git("branch", BRANCH);
+    const w = walk(f);
+    expect(w.id).toBe("exists");
+    const text = reply(w);
+    expect(text).not.toMatch(PLACEHOLDER);
+    expect(text.split("\n")[0]).toBe(`PLAN-BUILD: BLOCKED (branch ${BRANCH})`);
+    expect(text).toContain("It already exists.");
+    expect(text).toContain(`git switch ${BRANCH}`);
+    expect(text).not.toContain("git switch -c");
+    expect(text).toEndWith("Nothing was changed.");
+  });
+
+  test("branch reply: BLOCKED carries git's message when git refuses the create", () => {
+    const f = fixture();
+    f.git("branch", "feat");
+    const w = walk(f);
+    expect(w.id).toBe("refused");
+    // The last line git printed, read here without the helper the reply uses.
+    const printed = `${w.write?.stdout ?? ""}${w.write?.stderr ?? ""}`.trimEnd().split("\n").at(-1)?.trim() ?? "";
+    expect(printed).not.toBe("");
+    const text = reply(w);
+    expect(text).not.toMatch(PLACEHOLDER);
+    expect(text.split("\n")[0]).toBe(`PLAN-BUILD: BLOCKED (branch ${BRANCH})`);
+    expect(text).toContain(printed);
+    expect(text).toEndWith("Nothing was changed.");
+  });
+
+  test("branch reply: CHECKPOINT says the branch was created when a hook fails", () => {
+    const f = fixture();
+    writeFileSync(join(f.hooks, "post-checkout"), "#!/bin/sh\necho hook failed\nexit 1\n", { mode: 0o755 });
+    const start = f.git("branch", "--show-current").trim();
+    expect(start).not.toBe("");
+    const w = walk(f);
+    expect(w.id).toBe("changed");
+    const text = reply(w);
+    expect(text).not.toMatch(PLACEHOLDER);
+    expect(text.split("\n")[0]).toBe(`PLAN-BUILD: CHECKPOINT (T0; git switch -c ${BRANCH} exited 1)`);
+    expect(text).toContain("hook failed");
+    expect(text).toContain(`\`${start}\``);
+    expect(text).toContain(`\`${BRANCH}\` exists`);
+    expect(text).not.toContain("does not exist");
+    expect(text).not.toContain("Nothing was changed");
+  });
 });
