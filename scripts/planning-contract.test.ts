@@ -11,6 +11,9 @@
  *
  * The two `reviewed replies` tests check that the approved replies of
  * plan-review and plan-loop tell the owner to start the build in a new session.
+ *
+ * The two `plan-writer` tests find the writer's step for a plan under build by
+ * its bold label and check that it names what keeps a built todo as built.
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
@@ -178,4 +181,78 @@ test("reviewed replies: the check reports a copy of each reply without its last 
     expect({ skill, cut: copy.includes("\n") && whole.startsWith(copy) && copy.length < whole.length }).toEqual({ skill, cut: true });
   }
   expect(missingNewSession(cut)).toEqual(["plan-review", "plan-loop"]);
+});
+
+/** A numbered Workflow step that a test finds by its bold label, with the step number and the names it must hold. */
+type LabelledStep = { skill: string; number: number; label: string; names: string[] };
+
+/** plan-writer's step for a change to a plan that is being built. */
+const UNDER_BUILD_STEP: LabelledStep = {
+  skill: "plan-writer",
+  number: 23,
+  label: "Change under build.",
+  names: ["`References`", "`PASSED_TODO_CHANGED`", "`status: planned`"],
+};
+
+function skillText(skill: string): string {
+  const found = locate(skill);
+  if (!found) throw new Error(`${skill}: no SKILL.md found`);
+  return readFileSync(join(found.dir, "SKILL.md"), "utf8");
+}
+
+/** The numbered steps of the `## Workflow` section. A step runs on over its indented lines. */
+function workflowSteps(text: string): { number: number; text: string }[] {
+  const steps: { number: number; text: string }[] = [];
+  let inWorkflow = false;
+  let current: { number: number; text: string } | null = null;
+  for (const line of text.split("\n")) {
+    if (/^## /.test(line)) {
+      inWorkflow = line.slice(3).trim() === "Workflow";
+      current = null;
+      continue;
+    }
+    if (!inWorkflow) continue;
+    const item = /^(\d+)\. (.*)$/.exec(line);
+    if (item) {
+      current = { number: Number(item[1]), text: item[2] };
+      steps.push(current);
+    } else if (current && /^\s+\S/.test(line)) {
+      current.text += `\n${line.trim()}`;
+    } else if (line.trim() !== "") {
+      current = null;
+    }
+  }
+  return steps;
+}
+
+/** What the text lacks of the step: the step itself, its number, and each name the step does not hold. */
+function stepGaps(text: string, step: LabelledStep): string[] {
+  const found = workflowSteps(text).find((s) => s.text.startsWith(`**${step.label}**`));
+  if (!found) return [`no Workflow step starts with **${step.label}**`];
+  const gaps = found.number === step.number ? [] : [`**${step.label}** is step ${found.number}, not ${step.number}`];
+  return [...gaps, ...step.names.filter((name) => !found.text.includes(name)).map((name) => `step ${found.number} does not name ${name}`)];
+}
+
+/** A copy of the text without the numbered step that starts with the label. */
+function withoutStep(text: string, label: string): string {
+  const lines = text.split("\n");
+  const start = lines.findIndex((line) => /^\d+\. /.test(line) && line.replace(/^\d+\. /, "").startsWith(`**${label}**`));
+  if (start < 0) return text;
+  let end = start + 1;
+  while (end < lines.length && /^\s+\S/.test(lines[end])) end++;
+  return [...lines.slice(0, start), ...lines.slice(end)].join("\n");
+}
+
+test("plan-writer: the under-build step keeps done todos, ids, and boxes", () => {
+  expect(stepGaps(skillText(UNDER_BUILD_STEP.skill), UNDER_BUILD_STEP)).toEqual([]);
+});
+
+test("plan-writer: a copy without the under-build step is reported", () => {
+  const text = skillText(UNDER_BUILD_STEP.skill);
+  const copy = withoutStep(text, UNDER_BUILD_STEP.label);
+  // The copy drops that one step and keeps every other step.
+  const numbers = (t: string) => workflowSteps(t).map((s) => s.number);
+  expect(numbers(text)).toContain(UNDER_BUILD_STEP.number);
+  expect(numbers(copy)).toEqual(numbers(text).filter((n) => n !== UNDER_BUILD_STEP.number));
+  expect(stepGaps(copy, UNDER_BUILD_STEP)).toEqual([`no Workflow step starts with **${UNDER_BUILD_STEP.label}**`]);
 });
