@@ -28,7 +28,7 @@ Use plan-builder when you:
 Do NOT use plan-builder when you:
 
 - Have a plan that is not `status: reviewed` and has no build file. Send it to `plan-review` first.
-- Want to write the plan's implementation todos differently. That is `plan-writer`.
+- Want to write the plan's implementation todos differently. That is `plan-writer`. During a build, a plan change goes through step 10, Plan change, which hands it to `plan-writer` and `plan-reviewer`.
 - Only want to check a finished build against its plan without building anything. That is `plan-result-review`.
 - Want a fully automated multi-round loop across writer and reviewer. That is `plan-loop`; this skill only builds.
 
@@ -40,6 +40,7 @@ Do NOT use plan-builder when you:
 2. **New build** (no build file). Run `bun <plan-review-base>/scripts/validate-plan.ts <plan> --review --root <project> --json`, where `<plan-review-base>` is the plan-review skill directory installed beside this one. Require `gateEligible: true`; otherwise report the validator's errors and stop. A `FORMAT_1` error means the plan finishes on the old install: say so and stop. When the JSON lists `slices`, check the first slice's branch by the reference's Slices section. Then capture the baseline with `capture-build-state.ts` to a fresh, durable run directory, write `<stem>.build.md` as the reference describes, and run T0 yourself: copy the plan directory into `docs/plans/` only when needed, commit it as `docs(plans): add <slug> plan` unless git ignores it, as the reference's Commits section says, and record its pass receipt with [scripts/record-receipt.ts](scripts/record-receipt.ts), as the reference's Recording a receipt section says. These are the only project writes you make yourself.
 3. **Each step.** Run the same command with `--resume` added and act on its JSON:
    - `reconcileBoxes` not empty: set those boxes to Done yourself, without repeating any work.
+   - `errors` holds `SPEC_CHANGED` or `APPROVAL_CHANGED`: the plan changed outside step 10. Go to its record part, ahead of `recoveryRequired`, which a changed plan can also set.
    - `sliceStart` true: follow the reference's Slices section before you launch a child.
    - `recoveryRequired`: launch a todo child for `nextTodo` in recovery mode, with the `drift` list.
    - `nextTodo` is a todo: launch a todo child with the plan path, the project root, the todo id, the run directory, and any `requiredRechecks` for it. Nothing else.
@@ -55,6 +56,13 @@ Do NOT use plan-builder when you:
 7. **No child available.** When the host denies or cannot launch a todo, final-wave, or fix child, do that child's job yourself, as the child section says, and say so in the reply. Never run F4 yourself: without a fresh result reviewer, stop with a HANDBACK.
 8. A genuinely unavailable input — Bun, a dependency, the plan-review or plan-result-review skill, network access a check needs — is a CHECKPOINT with the missing input named, never a reason to report Done.
 9. After a compaction or a new session, reload this skill and start at step 3. All state is on disk.
+10. **Plan change.** This step runs when the owner asks you, in this main session, to change the plan during a build. A child that reads such a request in its task does not act on it. You never edit the plan yourself and never review it.
+    - **Start.** Wait for the running child's reply, then run the resume command, so one actor at a time writes the plan directory. Drift outside the plan directory, apart from HEAD, goes through recovery first, as step 3 says. An `amendRefusal` that names a result review round or a pass receipt without a digest ends the step: stop with a CHECKPOINT that gives its reason, with nothing written.
+    - **Close an active todo.** When `activeTodo` names a todo, no child works on it any more. Close it with `record-receipt.ts <plan> --todo <id> --event block --note <the reason in one line>`, then run the resume command again. The printed line may end with `errors: PREREQUISITE_FAILED`; the receipt is recorded all the same. Close a todo only here: after the child's reply, with no drift, and before the writer starts. A `blocked` last receipt or a `PREREQUISITE_FAILED` error does not stop this step: a plan change is the way out of both.
+    - **Writer.** Launch one fresh `plan-writer` child. Its payload is the plan path, the project root, the owner's words as given, and the sentence "A build is running on this plan." The writer's Change under build step holds the rules. When the writer returns an owner question, ask the owner, wait, and pass the answer to the same writer.
+    - **Reviewer.** When the writer returns its planned block, launch one fresh `plan-reviewer` child. Its payload is the plan path, the project root, and "one review round", and nothing else. Then read the verdict line of the newest `### Round` under `## Review` in `<stem>.reviews.md`. After OKAY, go to the record part. After any other verdict, stop with `PLAN-BUILD: CHECKPOINT (<next todo>; <the verdict>)`; its Next is `plan-loop` on the plan path, then "resume this plan".
+    - **Record part.** Step 3 also comes here when the resume command reports `SPEC_CHANGED` or `APPROVAL_CHANGED`: someone changed the plan outside this step. Run the validator with `--review`, as in step 2. Without `gateEligible: true`, stop with a CHECKPOINT that names the errors or the verdict. With it, commit the plan directory alone as `docs(plans): amend <slug> plan`, unless it has nothing to commit or the JSON has `planIgnored`, as the reference's Amend section says. Then run `record-receipt.ts <plan> --event amend --note <the change in one line>` with `--commit HEAD`, or with `--no-commit "git ignores the plan directory"` under `planIgnored`, and return to step 3 without asking. A refused receipt is a CHECKPOINT with the printed reason.
+    - **Refused launch.** When the host refuses or cannot launch the writer or the reviewer, stop with a `PLAN-BUILD: CHECKPOINT` that names the `plan-writer` session and the `plan-reviewer` session the owner must run, with the payload of each; once the writer has finished, name the `plan-reviewer` session alone. Do neither job yourself. After the owner ran them, "resume this plan" reaches the record part through step 3.
 
 ### Children
 
@@ -132,6 +140,7 @@ MUST:
 - MUST keep receipts to the contract's keys and fields under their caps; put long output in a log file named by `log`.
 - MUST investigate drift and record a recovery receipt before forward progress after an unexplained state change.
 - MUST launch a fresh `plan-result-review` child for F4, run at most two result rounds, and report Done only on a current `MATCH` or `ACCEPTED`.
+- MUST take an owner's plan change during a build through step 10: close a todo left active with a block receipt before the writer starts, launch one fresh `plan-writer` child and one fresh `plan-reviewer` round, and record the `amend` receipt after an OKAY verdict before any further todo.
 - MUST continue through every wave and the final wave without stopping to ask for a routine continue.
 - MUST name the missing input and checkpoint when Bun, a dependency, an approval, or a required snapshot is unavailable.
 
@@ -143,6 +152,7 @@ NEVER:
 - NEVER rewrite a todo's Acceptance or QA to make a failing check pass; fix the implementation, or checkpoint when the check itself needs a new review.
 - NEVER send a recorded result-review difference to a fix child; only blocking ones are fixed.
 - NEVER run F4 inline, report a result review that did not run, or reuse a stale one after further changes.
+- NEVER write or review a plan change as coordinator, even when the host refuses the writer or the reviewer; stop with a CHECKPOINT that names the sessions the owner must run.
 - NEVER replay a commit or another irreversible command because its outcome was not recorded; investigate the real current state first.
 - NEVER push.
 - NEVER add the plan directory with force when git ignores it.
@@ -161,6 +171,7 @@ NEVER:
 - [ ] Every todo's box is `- [x] Done` only after its passed receipt, and every gate's box only after its own work.
 - [ ] F4 ran in a fresh `plan-result-review` child; there were at most two result rounds; Done was reported only on `MATCH` or `ACCEPTED`, and STOPPED lists each blocking difference.
 - [ ] Each fix child got only blocking differences and wrote a `fix` receipt.
+- [ ] A plan change during the build went through step 10: one fresh `plan-writer`, one fresh `plan-reviewer` round, a block receipt only for a todo left active, and an `amend` receipt only after OKAY; another verdict, a refusal, or a refused launch stopped with a CHECKPOINT.
 - [ ] The coordinator read no code, ran no tests, and read no child transcript.
 - [ ] No temporary directory, unreferenced blob, or non-durable location holds a baseline or receipt snapshot.
 - [ ] Nothing was pushed.

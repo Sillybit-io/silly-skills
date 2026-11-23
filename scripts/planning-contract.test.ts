@@ -14,6 +14,10 @@
  *
  * The two `plan-writer` tests find the writer's step for a plan under build by
  * its bold label and check that it names what keeps a built todo as built.
+ *
+ * The two `plan-builder` tests find the coordinator's plan-change step the same
+ * way and check that it names the writer, the reviewer, the block and amend
+ * receipts, and the checkpoint.
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
@@ -255,4 +259,26 @@ test("plan-writer: a copy without the under-build step is reported", () => {
   expect(numbers(text)).toContain(UNDER_BUILD_STEP.number);
   expect(numbers(copy)).toEqual(numbers(text).filter((n) => n !== UNDER_BUILD_STEP.number));
   expect(stepGaps(copy, UNDER_BUILD_STEP)).toEqual([`no Workflow step starts with **${UNDER_BUILD_STEP.label}**`]);
+});
+
+/** plan-builder's step for a plan change that the owner asks for during a build. */
+const PLAN_CHANGE_STEP: LabelledStep = {
+  skill: "plan-builder",
+  number: 10,
+  label: "Plan change.",
+  names: ["plan-writer", "plan-reviewer", "--event block", "--event amend", "CHECKPOINT"],
+};
+
+test("plan-builder: the plan-change step names the writer, the reviewer, the amend receipt, and the checkpoint", () => {
+  expect(stepGaps(skillText(PLAN_CHANGE_STEP.skill), PLAN_CHANGE_STEP)).toEqual([]);
+});
+
+test("plan-builder: a copy without the plan-change step is reported", () => {
+  const text = skillText(PLAN_CHANGE_STEP.skill);
+  const copy = withoutStep(text, PLAN_CHANGE_STEP.label);
+  // The copy drops that one step, with its indented parts, and keeps every other step.
+  const numbers = (t: string) => workflowSteps(t).map((s) => s.number);
+  expect(numbers(text)).toContain(PLAN_CHANGE_STEP.number);
+  expect(numbers(copy)).toEqual(numbers(text).filter((n) => n !== PLAN_CHANGE_STEP.number));
+  expect(stepGaps(copy, PLAN_CHANGE_STEP)).toEqual([`no Workflow step starts with **${PLAN_CHANGE_STEP.label}**`]);
 });
