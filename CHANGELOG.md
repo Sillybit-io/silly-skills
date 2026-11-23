@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- `plan-review` 2.3.0, validator: a build can go on after a reviewed plan change. A new receipt event, `amend`, names `plan` as its todo and holds the new approval: the spec digest, the round, the verdict `OKAY`, and the gate record digest. The resume check then compares the spec and the live review with that approval, and the gate record's sources and the citations with the receipt's after snapshot. It accepts an amend receipt only when no todo is active, its round is above the approval before it, nothing outside the plan directory changed apart from HEAD, and it names the after-state HEAD as its commit, or none where git ignores the plan directory. The amend receipt clears earlier rechecks and a blocked state. A pass receipt may hold `todoDigest`, a digest of its todo without `References`, from the exported `todoDigest`. A built todo that the plan no longer has, or whose digest differs, is `PASSED_TODO_CHANGED` in plan, review, and resume modes, and a pass receipt without a digest before an amend receipt is `AMENDMENT`. Plan and review modes also check the Done boxes and the checks of each pass receipt against the build file. Resume mode adds `amendRefusal` when a plan change cannot be recorded now, and the same check is exported. `SPEC_CHANGED` now asks for a review round and an amend receipt instead of a new build run, and the skill's Check B verifies a built todo from its pass receipt. A build record with no amend receipt is checked as before. Update the planning skills together: an older validator reads an amend receipt as an unknown event and refuses the resume.
+
 ## [1.1.0] - 2026-11-21
 
 ### Added

@@ -167,8 +167,15 @@ export function proseWords(text: string): number {
     .filter((t) => /[\p{L}\p{N}]/u.test(t)).length;
 }
 
-/** Keys a receipt may carry. Anything else is an error: a receipt is a record, not a notebook. */
-export const RECEIPT_KEYS = ["seq", "todo", "event", "state", "prev", "before", "after", "checks", "prerequisites", "commit", "note", "log"] as const;
+/**
+ * Keys a receipt may carry. Anything else is an error: a receipt is a record,
+ * not a notebook. `todoDigest` belongs to a pass receipt alone, and
+ * `approval` to an amend receipt alone.
+ */
+export const RECEIPT_KEYS = ["seq", "todo", "event", "state", "prev", "before", "after", "checks", "prerequisites", "commit", "note", "log", "todoDigest", "approval"] as const;
+
+/** The keys of an approval: the build record's, and an amend receipt's. */
+const APPROVAL_KEYS = ["specDigest", "round", "verdict", "gateRecordDigest"] as const;
 
 export const TODO_FIELDS = [
   "Do",
@@ -209,7 +216,7 @@ export const CHECK_LETTERS = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"] 
 const EVIDENCE_KINDS = ["source", "probe", "documentation", "plan-inspection", "planned-qa"] as const;
 const OBLIGATION_STATUSES = ["verified", "contradicted", "unverified"] as const;
 const VERDICTS = ["OKAY", "REJECT", "INCOMPLETE"] as const;
-const RECEIPT_EVENTS = ["pass", "block", "recovery", "fix"] as const;
+const RECEIPT_EVENTS = ["pass", "block", "recovery", "fix", "amend"] as const;
 
 export type Verdict = (typeof VERDICTS)[number];
 export type Mode = "plan" | "review" | "resume";
@@ -245,6 +252,8 @@ export type ValidationResult = {
   nextSlice?: string | null;
   /** Only for a plan with slices, in resume mode: no todo is active and nextTodo is the first todo of nextSlice. */
   sliceStart?: boolean;
+  /** Only in resume mode, when the receipt command would refuse an amend receipt now: the first reason that applies. */
+  amendRefusal?: string;
   exitCode: 0 | 1 | 2;
 };
 
@@ -2272,6 +2281,118 @@ export function buildRecord(buildText: string | null): { value: unknown; no: num
   return jsonBlocksOf(buildText) ?? { error: "the build file holds no fenced json block", no: 1 };
 }
 
+/**
+ * The digest a pass receipt records of its todo: the SHA-256 of the canonical
+ * JSON `{"id", "title", "fields"}`, where `fields` holds every field the todo
+ * has but `References`, each value as parsed. The box is not part of it, and
+ * neither is `References`, which a built todo's own edits make stale. The
+ * receipt command writes it on every pass receipt; the validator compares it
+ * with the plan as it is.
+ */
+export function todoDigest(todo: Todo): string {
+  const fields = Object.fromEntries(Object.entries(todo.fields).filter(([name]) => name !== "References"));
+  return sha256(canonicalJson({ id: todo.id, title: todo.title, fields }));
+}
+
+/** The index of the last amend receipt, or -1 when there is none. */
+function lastAmendIndex(receipts: unknown[]): number {
+  for (let i = receipts.length - 1; i >= 0; i--) {
+    const r = receipts[i];
+    if (isObject(r) && r.event === "amend") return i;
+  }
+  return -1;
+}
+
+/** True when the reviews file holds a result review: a `## Result review` or a `### Result round <n>` heading outside a fence. */
+function holdsResultReview(reviewsText: string): boolean {
+  return scanLines(reviewsText).some((l) => !l.fenced && !l.fenceMarker && (/^## Result review\s*$/.test(l.text) || /^### Result round \d+\b/.test(l.text)));
+}
+
+/**
+ * Why the receipt command refuses to record a plan change now, or null. These
+ * are its first three refusals, and the first that applies is the reason: the
+ * reviews file holds a result review round; a pass receipt has no
+ * `todoDigest`; a todo is active, from its recovery receipt until its pass or
+ * block receipt. Resume mode reports the reason as `amendRefusal`.
+ */
+export function amendRefusal(receipts: unknown[], reviewsText: string | null): string | null {
+  if (reviewsText !== null && holdsResultReview(reviewsText)) {
+    return "the reviews file holds a result review round; a build takes no plan change after its first result review, so later work is a new plan";
+  }
+  const bare = receipts.findIndex((r) => isObject(r) && r.event === "pass" && !("todoDigest" in r));
+  if (bare !== -1) {
+    const todo = String((receipts[bare] as Record<string, unknown>).todo);
+    return `receipt ${bare + 1}, the pass receipt of ${todo}, has no todoDigest; a build begun before plan-builder 2.3.0 finishes on its approved plan`;
+  }
+  let active: string | null = null;
+  for (const r of receipts) {
+    if (!isObject(r) || typeof r.todo !== "string" || !/^T\d+$/.test(r.todo)) continue;
+    if (r.event === "recovery") active = r.todo;
+    else if ((r.event === "pass" || r.event === "block") && r.todo === active) active = null;
+  }
+  return active === null ? null : `${active} is active; close it with a block receipt before the plan changes`;
+}
+
+/** The check ids a todo's pass receipt lacks: each required id without a passing check. */
+function missingCheckIds(todo: Todo, plan: ParsedPlan, r: Record<string, unknown>): string[] {
+  const checks = (Array.isArray(r.checks) ? r.checks : []).filter(isObject);
+  return requiredCheckIds(todo, plan).filter((id) => !checks.some((c) => str(c.id) === id && checkPassed(c)));
+}
+
+/**
+ * The Passed todos rule for one pass receipt. A receipt with `todoDigest`
+ * needs its todo in the plan with that digest; otherwise the todo changed
+ * after it was built. A receipt without one is accepted only when no amend
+ * receipt follows it. Findings name the todo in the spec; the missing digest
+ * points into the build file.
+ */
+function checkPassedTodo(mainCtx: Context, plan: ParsedPlan, r: Record<string, unknown>, label: string, amendFollows: boolean, buildLine: number): void {
+  const id = String(r.todo);
+  const todo = plan.todos.find((t) => t.id === id);
+  if ("todoDigest" in r) {
+    if (!todo) {
+      err(mainCtx, "PASSED_TODO_CHANGED", section(plan, "Todos")?.headingLine ?? 1, `${id} has a pass receipt (${label}) but is no longer in the plan; a built todo stays, and undoing built work is a new todo`);
+    } else if (r.todoDigest !== todoDigest(todo)) {
+      err(mainCtx, "PASSED_TODO_CHANGED", todo.line, `${id} changed after its pass receipt (${label}); a built todo keeps its title and every field but References, and undoing built work is a new todo`);
+    }
+  } else if (amendFollows) {
+    err(inFile(mainCtx, mainCtx.files.build), "AMENDMENT", buildLine, `${label}: the pass receipt of ${id} has no todoDigest, so no amend receipt may follow it; a build begun before plan-builder 2.3.0 finishes on its approved plan`);
+  }
+}
+
+/**
+ * Plan and review modes: when the build file holds receipts, the Passed todos
+ * and Boxes rules of the resume check, and the check ids each pass receipt
+ * needs, read from the build file alone. So the writer's and the reviewer's
+ * runs refuse a changed built todo before the build resumes. A build file
+ * that cannot be parsed is left to resume mode, which reports it.
+ */
+function validateBuiltTodos(mainCtx: Context, plan: ParsedPlan, buildText: string | null): void {
+  const record = buildRecord(buildText);
+  if (record === null || "error" in record) return;
+  const b = record.value;
+  if (!isObject(b) || b.schemaVersion !== SCHEMA_VERSION || !Array.isArray(b.receipts) || b.receipts.length === 0) return;
+  const receipts: unknown[] = b.receipts;
+  const ctx = inFile(mainCtx, mainCtx.files.build);
+  const lastAmend = lastAmendIndex(receipts);
+  const passed = new Set<string>();
+  for (let i = 0; i < receipts.length; i++) {
+    const r = receipts[i];
+    if (!isObject(r) || r.event !== "pass" || /^F\d+$/.test(String(r.todo))) continue;
+    const label = `receipt ${i + 1}`;
+    checkPassedTodo(mainCtx, plan, r, label, i < lastAmend, record.no);
+    const todo = plan.todos.find((t) => t.id === r.todo);
+    if (!todo) continue;
+    passed.add(todo.id);
+    for (const id of missingCheckIds(todo, plan, r)) {
+      err(ctx, "MISSING_CHECK", record.no, `${label}: ${todo.id} has no passing '${id}' check, which the plan now asks of it; a plan change must not ask a built todo for a new check`);
+    }
+  }
+  for (const todo of plan.todos) {
+    if (todo.box === "Done" && !passed.has(todo.id)) err(mainCtx, "DONE_WITHOUT_RECEIPT", todo.line, `${todo.id} is marked Done without a passed receipt`);
+  }
+}
+
 type ResumeOutcome = {
   eligible: boolean;
   nextTodo: string | null;
@@ -2340,17 +2461,21 @@ function validateResume(
   const approval = isObject(b.approval) ? b.approval : {};
   const baselineRef = isObject(b.baseline) ? b.baseline : {};
   const receipts = (Array.isArray(b.receipts) ? b.receipts : []) as Receipt[];
+  // The approval in force: the last amend receipt's, or the record's when there is none.
+  const lastAmend = lastAmendIndex(receipts);
+  const amendApproval = lastAmend === -1 ? null : receipts[lastAmend].approval;
+  const inForce = lastAmend === -1 ? approval : isObject(amendApproval) ? amendApproval : {};
 
   // Spec and live approval.
   let blocked = false;
-  if (approval.specDigest !== currentDigest) {
-    err(ctx, "SPEC_CHANGED", line, "the plan's canonical spec differs from the approved spec; start a new review and a new build run");
+  if (inForce.specDigest !== currentDigest) {
+    err(ctx, "SPEC_CHANGED", line, "the plan's canonical spec differs from the approved spec; review the changed plan in a new round, and after an OKAY verdict record an amend receipt");
     blocked = true;
   }
   const latest = bundle.latest && bundle.record ? { round: bundle.latest, record: bundle.record } : null;
   const liveDigest = latest ? sha256(canonicalJson(latest.record)) : null;
-  if (plan.frontmatter.status !== "reviewed" || !latest || latest.round.number !== approval.round || latest.record.round !== approval.round || liveDigest !== approval.gateRecordDigest || latest.record.verdict !== "OKAY") {
-    err(ctx, "APPROVAL_CHANGED", line, "the live review no longer matches the approval this build started from; get an explicit re-reviewed handoff before continuing");
+  if (plan.frontmatter.status !== "reviewed" || !latest || latest.round.number !== inForce.round || latest.record.round !== inForce.round || liveDigest !== inForce.gateRecordDigest || latest.record.verdict !== "OKAY") {
+    err(ctx, "APPROVAL_CHANGED", line, "the live review no longer matches the approval in force; after an OKAY round on the plan as it is, record an amend receipt before continuing");
     blocked = true;
   }
 
@@ -2410,29 +2535,34 @@ function validateResume(
     }
   }
 
-  // The archived approval must describe the baseline bytes.
-  const baselineRows = new Map(baseline.manifest.paths.map((r) => [r.path, r]));
-  const baselineReader: SourceReader = (path) => {
-    const row = baselineRows.get(path);
-    if (!row || row.worktree.state !== "file") return null;
-    return readSnapshotBlob(baseline.dir, row.worktree.sha256);
-  };
-  if (latest?.record) {
-    for (const s of Array.isArray(latest.record.sources) ? latest.record.sources : []) {
-      if (!isObject(s)) continue;
-      const row = baselineRows.get(str(s.path));
-      const digest = row && row.worktree.state === "file" ? row.worktree.sha256 : null;
-      if (digest !== s.sha256) {
-        err(ctx, "APPROVAL_BASELINE_MISMATCH", line, `approved source ${str(s.path)} does not match the baseline snapshot`);
-        blocked = true;
+  // The approval in force must describe the reference snapshot's bytes: the
+  // baseline, or after a plan change the last amend receipt's after snapshot,
+  // which is checked once the receipt chain has loaded it.
+  const checkReference = (reference: { manifest: Manifest; dir: string }, name: string, prefix: string): void => {
+    const rows = new Map(reference.manifest.paths.map((r) => [r.path, r]));
+    const reader: SourceReader = (path) => {
+      const row = rows.get(path);
+      if (!row || row.worktree.state !== "file") return null;
+      return readSnapshotBlob(reference.dir, row.worktree.sha256);
+    };
+    if (latest?.record) {
+      for (const s of Array.isArray(latest.record.sources) ? latest.record.sources : []) {
+        if (!isObject(s)) continue;
+        const row = rows.get(str(s.path));
+        const digest = row && row.worktree.state === "file" ? row.worktree.sha256 : null;
+        if (digest !== s.sha256) {
+          err(ctx, "APPROVAL_BASELINE_MISMATCH", line, `approved source ${str(s.path)} does not match ${name}`);
+          blocked = true;
+        }
       }
     }
-  }
-  const baseCtx: Context = { ...mainCtx, errors: [], gaps: [], capGaps: [] };
-  validateEvidenceIndex(baseCtx, plan, baselineReader, { planned: "lenient" });
-  for (const e of baseCtx.errors) {
-    if (["CITATION", "EXCERPT", "CITATION_DRIFT"].includes(e.code)) err(inFile(ctx, e.file), e.code, e.line, `against the baseline: ${e.message}`);
-  }
+    const refCtx: Context = { ...mainCtx, errors: [], gaps: [], capGaps: [] };
+    validateEvidenceIndex(refCtx, plan, reader, { planned: "lenient" });
+    for (const e of refCtx.errors) {
+      if (["CITATION", "EXCERPT", "CITATION_DRIFT"].includes(e.code)) err(inFile(ctx, e.file), e.code, e.line, `${prefix}: ${e.message}`);
+    }
+  };
+  if (lastAmend === -1) checkReference(baseline, "the baseline snapshot", "against the baseline");
 
   // Receipt chain.
   const todoById = new Map(plan.todos.map((t) => [t.id, t]));
@@ -2445,6 +2575,10 @@ function validateResume(
   const changedByDone = new Map<string, number>();
   const rechecks: { targets: string[]; status: string; seq: number }[] = [];
   let prevManifest = baseline.manifest;
+  // The approval each amend receipt must rise above, and the last amend receipt's after snapshot.
+  let prevApproval: Record<string, unknown> = approval;
+  let reference: { manifest: Manifest; dir: string } | null = null;
+  const planDir = `${mainCtx.files.dir}/`;
   for (let i = 0; i < receipts.length; i++) {
     const r = receipts[i];
     const label = `receipt ${i + 1}`;
@@ -2456,6 +2590,8 @@ function validateResume(
     for (const key of Object.keys(r)) {
       if (!(RECEIPT_KEYS as readonly string[]).includes(key)) {
         err(ctx, "RECEIPT_FIELD", line, `${label} has unknown key '${key}'; the snapshots record what changed, and long output belongs in a log file named by 'log'`);
+      } else if ((key === "todoDigest" && r.event !== "pass") || (key === "approval" && r.event !== "amend")) {
+        err(ctx, "RECEIPT_FIELD", line, `${label} has the key '${key}', which only ${key === "approval" ? "an amend" : "a pass"} receipt holds`);
       }
     }
     if (str(r.note)) capCheck(ctx, line, `${label} note`, str(r.note), CAPS.recordProse);
@@ -2468,7 +2604,16 @@ function validateResume(
     if (r.prev !== prevDigest) err(ctx, "RECEIPT_CHAIN", line, `${label} does not chain to the previous receipt (tampered or reordered)`);
     prevDigest = sha256(canonicalJson(r));
     if (!(RECEIPT_EVENTS as readonly string[]).includes(r.event)) err(ctx, "RECEIPT_CHAIN", line, `${label} has unknown event '${String(r.event)}'`);
-    if (!todoById.has(r.todo) && !/^F\d+$/.test(r.todo)) err(ctx, "RECEIPT_CHAIN", line, `${label} names unknown todo ${String(r.todo)}`);
+    const amend = r.event === "amend";
+    // A block, recovery, or fix receipt before the last amend receipt may name a
+    // todo the plan no longer has, and its dependencies, or the todos before a
+    // fix, are not checked against the changed plan. A pass receipt keeps every rule.
+    const earlier = i < lastAmend && (r.event === "block" || r.event === "recovery" || r.event === "fix");
+    if (amend) {
+      if (r.todo !== "plan") err(ctx, "AMENDMENT", line, `${label}: an amend receipt names plan as its todo, not ${String(r.todo)}`);
+    } else if (!todoById.has(r.todo) && !/^F\d+$/.test(r.todo) && !(earlier && /^T\d+$/.test(r.todo))) {
+      err(ctx, "RECEIPT_CHAIN", line, `${label} names unknown todo ${String(r.todo)}`);
+    }
     if (!isObject(r.before) || r.before.stateDigest !== prevEnd.stateDigest) {
       err(ctx, "RECEIPT_CHAIN", line, `${label} (${r.todo} ${r.event}) does not start from the previous recorded state`);
     }
@@ -2476,18 +2621,54 @@ function validateResume(
     const afterSnap = r.after ? load(r.after, `${label} after`) : null;
     if (!r.after) err(ctx, "RECEIPT_CHAIN", line, `${label} (${r.event}) has no after state`);
     const planTodo = todoById.get(r.todo);
-    if (r.event === "fix") {
+    if (amend) {
+      // An approved plan change: the new approval, with only the plan directory and HEAD changed.
+      if (active) err(ctx, "RECEIPT_ORDER", line, `${label} records a plan change while ${active} is still active`);
+      const a = r.approval;
+      const digestLike = (x: unknown): boolean => typeof x === "string" && /^[0-9a-f]{64}$/.test(x);
+      if (!isObject(a) || Object.keys(a).some((k) => !(APPROVAL_KEYS as readonly string[]).includes(k)) || !digestLike(a.specDigest) || !Number.isInteger(a.round) || typeof a.verdict !== "string" || !digestLike(a.gateRecordDigest)) {
+        err(ctx, "AMENDMENT", line, `${label}: an amend receipt's approval holds specDigest, round, verdict, and gateRecordDigest, and nothing else`);
+      } else {
+        if (a.verdict !== "OKAY") err(ctx, "AMENDMENT", line, `${label}: the approval's verdict is ${a.verdict}; a plan change needs an OKAY round`);
+        if (typeof prevApproval.round !== "number" || (a.round as number) <= prevApproval.round) {
+          err(ctx, "AMENDMENT", line, `${label}: the approval's round ${String(a.round)} is not above round ${String(prevApproval.round)} of the approval in force`);
+        }
+      }
+      if (r.state !== "amended") err(ctx, "AMENDMENT", line, `${label}: an amend receipt's state is amended, not ${String(r.state)}`);
+      if (!Array.isArray(r.checks) || r.checks.length > 0 || !Array.isArray(r.prerequisites) || r.prerequisites.length > 0) {
+        err(ctx, "AMENDMENT", line, `${label}: an amend receipt records no checks and no prerequisites`);
+      }
+      if (str(r.note).trim() === "") err(ctx, "AMENDMENT", line, `${label}: an amend receipt's note names the change`);
+      if (afterSnap) {
+        // HEAD may move; diffStates names that move in this one line, and every path change ends with its layer.
+        // Only the reports the baseline declares are left out, so a later snapshot cannot excuse a source file.
+        const headMove = `HEAD ${prevManifest.headRevision ?? "none"} → ${afterSnap.manifest.headRevision ?? "none"}`;
+        const outside = diffStates(prevManifest, afterSnap.manifest, declared).filter((d) => d !== headMove && !d.startsWith(planDir));
+        if (outside.length > 0) {
+          err(ctx, "AMENDMENT", line, `${label}: a plan change may change only the plan directory and HEAD, but ${outside.slice(0, 5).join(", ")}${outside.length > 5 ? ", …" : ""} changed`);
+        }
+      }
+      const sha = isObject(r.commit) ? str(r.commit.sha) : "";
+      if (sha) {
+        if (afterSnap && afterSnap.manifest.headRevision !== sha) err(ctx, "COMMIT", line, `${label}: after-state HEAD is not the recorded commit ${sha.slice(0, 12)}`);
+      } else if (!isObject(r.commit) || str(r.commit.none) === "") {
+        err(ctx, "COMMIT", line, `${label}: an amend receipt names its plan-only commit, or none with the reason`);
+      } else if (inGit && !ignored) {
+        err(ctx, "COMMIT", line, `${label}: an amend receipt names its plan-only commit unless git ignores the plan directory or there is no git`);
+      }
+      prevApproval = isObject(a) ? a : {};
+    } else if (r.event === "fix") {
       // A fix child repairs blocking result-review differences after every todo passed.
       if (!/^F\d+$/.test(r.todo)) err(ctx, "RECEIPT_ORDER", line, `${label}: a fix receipt names a final gate such as F4, not ${r.todo}`);
       if (active) err(ctx, "RECEIPT_ORDER", line, `${label} records a fix while ${active} is still active`);
-      const open = executionOrder(plan).filter((id) => !passed.has(id));
+      const open = earlier ? [] : executionOrder(plan).filter((id) => !passed.has(id));
       if (open.length > 0) err(ctx, "RECEIPT_ORDER", line, `${label} records a fix before ${open.join(", ")} passed`);
-    } else if (planTodo) {
+    } else if (planTodo || (earlier && /^T\d+$/.test(r.todo))) {
       // One record per todo: a pass or block may be a todo's first receipt; a
       // recovery receipt makes its todo active until that todo passes or blocks.
       if (active && active !== r.todo) err(ctx, "RECEIPT_ORDER", line, `${label} records ${r.todo} while ${active} is still active`);
       if (passed.has(r.todo)) err(ctx, "RECEIPT_ORDER", line, `${label} records ${r.event} for ${r.todo}, which already passed`);
-      if (active !== r.todo) {
+      if (active !== r.todo && planTodo && !earlier) {
         for (const dep of planTodo.dependsOn) {
           if (!passed.has(dep)) err(ctx, "DEPENDENCY_ORDER", line, `${r.todo} has a ${r.event} receipt before its dependency ${dep} passed`);
         }
@@ -2515,11 +2696,8 @@ function validateResume(
       }
     }
     if (r.event === "pass" && planTodo) {
-      const checks = (Array.isArray(r.checks) ? r.checks : []).filter(isObject);
-      for (const id of requiredCheckIds(planTodo, plan)) {
-        if (!checks.some((c) => str(c.id) === id && checkPassed(c))) {
-          err(ctx, "MISSING_CHECK", line, `${label}: ${r.todo} has no passing '${id}' check, so it is not done; run it and record it`);
-        }
+      for (const id of missingCheckIds(planTodo, plan, r)) {
+        err(ctx, "MISSING_CHECK", line, `${label}: ${r.todo} has no passing '${id}' check, so it is not done; run it and record it`);
       }
       if (planTodo.commit) {
         const commit = isObject(r.commit) ? str(r.commit.sha) : "";
@@ -2531,7 +2709,15 @@ function validateResume(
       passed.set(r.todo, r);
       if (active === r.todo) active = null;
     }
+    if (r.event === "pass" && !/^F\d+$/.test(r.todo)) checkPassedTodo(mainCtx, plan, r, label, i < lastAmend, line);
     if (r.event === "block" && active === r.todo) active = null;
+    if (amend) {
+      // The new review read the code as it is: the recorded rechecks and the
+      // paths changed so far no longer count, and the state is no longer blocked.
+      rechecks.length = 0;
+      changedByDone.clear();
+      if (i === lastAmend) reference = afterSnap;
+    }
     lastState = r.state;
     lastNote = str(r.note);
     if (end) {
@@ -2539,6 +2725,7 @@ function validateResume(
       prevManifest = end.manifest;
     }
   }
+  if (reference) checkReference(reference, `the amend snapshot of receipt ${lastAmend + 1}`, `against the amend snapshot of receipt ${lastAmend + 1}`);
 
   // Boxes.
   for (const todo of plan.todos) {
@@ -3089,8 +3276,11 @@ export function validatePlan(planPath: string, options: Options = {}): Validatio
       return b === null ? null : sha256(b);
     })();
   }
+  // The writer's and the reviewer's runs refuse a changed built todo; resume mode checks the whole record.
+  if (mode !== "resume") validateBuiltTodos(ctx, plan, buildText);
 
-  const bundle = mode === "plan" ? null : loadReview(sibling(files.reviews), sibling(files.gateRecord));
+  const reviewsText = mode === "plan" ? null : sibling(files.reviews);
+  const bundle = mode === "plan" ? null : loadReview(reviewsText, sibling(files.gateRecord));
   if (bundle) {
     const reviewCtx = mode === "resume" ? { ...ctx, errors: [] as Finding[] } : ctx;
     const review = validateReview(reviewCtx, plan, bundle, citations, digest, currentReader);
@@ -3121,6 +3311,12 @@ export function validatePlan(planPath: string, options: Options = {}): Validatio
       const slice = resume.nextTodo === null ? undefined : sliceOf(plan, resume.nextTodo);
       result.nextSlice = slice?.id ?? null;
       result.sliceStart = slice !== undefined && resume.activeTodo === null && slice.todos[0] === resume.nextTodo;
+    }
+    // Only a build whose plan change the receipt command would refuse now gets the key.
+    const record = buildRecord(buildText);
+    if (record !== null && !("error" in record) && isObject(record.value) && record.value.schemaVersion === SCHEMA_VERSION && Array.isArray(record.value.receipts)) {
+      const refusal = amendRefusal(record.value.receipts, reviewsText);
+      if (refusal !== null) result.amendRefusal = refusal;
     }
     if (resume.exit2) {
       result.gaps.push(...ctx.capGaps);
