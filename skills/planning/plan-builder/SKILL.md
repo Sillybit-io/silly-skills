@@ -3,7 +3,7 @@ name: plan-builder
 description: Builds a reviewed plan from the main session, which coordinates while a fresh child session builds each todo, keeping a durable, resumable record of one receipt per todo. Captures a byte-exact baseline snapshot before touching anything, requires each todo's real Acceptance and QA, commits only that todo's owned paths, and never claims Done without a passed receipt. Resumes an interrupted build from its last record. Runs an independent result review with at most two rounds before reporting complete. Use when asked to build this plan, implement this reviewed plan, or resume this plan.
 license: CC-BY-ND-4.0
 metadata:
-  version: "2.3.0"
+  version: "2.4.0"
   category: planning
   suggested-model: anthropic/claude-opus-5-5
   suggested-effort: max
