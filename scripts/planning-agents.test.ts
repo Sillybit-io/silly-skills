@@ -3,10 +3,12 @@
  * goes beyond `validate.ts`'s generic AGENT_WRAPPERS shape check: it asserts
  * the actual semantics each host needs — OpenCode mode and effective
  * delegation, Claude Code's question-routing and subagent-restriction text,
- * and Cursor's readonly flag and depth-limit fallback.
+ * and Cursor's readonly flag and depth-limit fallback. The last describe
+ * checks every directory under `agents/`, planning or not, against the Launch
+ * table: its OpenCode mode and the exact set of agents it may launch.
  */
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AGENT_WRAPPERS, type PermissionRule, parseFrontmatter } from "./validate.ts";
@@ -35,6 +37,17 @@ const EXPECTED_DELEGATES: Record<Persona, Persona[]> = {
   "plan-loop": ["plan-writer", "plan-reviewer"],
   "plan-result-reviewer": ["plan-scout"],
 };
+
+// The Launch table: for each directory under agents/, its OpenCode mode and
+// the exact set of agents it may launch. The six planning rows are the
+// fixtures above; tech-writer and ui-engineer launch no agent.
+type LaunchRow = { mode: string; launches: readonly string[] };
+
+const LAUNCH_TABLE: ReadonlyMap<string, LaunchRow> = new Map<string, LaunchRow>([
+  ...PERSONAS.map((persona): [string, LaunchRow] => [persona, { mode: EXPECTED_MODE[persona], launches: EXPECTED_DELEGATES[persona] }]),
+  ["tech-writer", { mode: "subagent", launches: [] }],
+  ["ui-engineer", { mode: "subagent", launches: [] }],
+]);
 
 function readWrapper(persona: string, file: string): string {
   return readFileSync(join(repo, "agents", persona, file), "utf8");
@@ -69,6 +82,42 @@ function resourceMatches(pattern: string, resource: string): boolean {
     .replace(/\*/g, ".*")
     .replace(/\?/g, ".");
   return new RegExp(`^${source}$`, "s").test(resource);
+}
+
+/** Lists the agent directories under `agentsRoot`, sorted. Like validate.ts,
+ * it counts every entry that is a directory as a persona. */
+function listAgentDirs(agentsRoot: string): string[] {
+  return readdirSync(agentsRoot)
+    .filter((name) => statSync(join(agentsRoot, name), { throwIfNoEntry: false })?.isDirectory() === true)
+    .sort();
+}
+
+/** Checks the OpenCode file of one agent directory under `agentsRoot` against
+ * its Launch table row, and returns each difference as a line that names the
+ * agent; an empty list means it matches. "mode" compares the mode. "launch"
+ * wants a first `subagent` rule that denies "*", allow for each agent in the
+ * row, and deny for every other agent directory or row and for "general", a
+ * name no row lists. A directory without a row gets one line that says so,
+ * for either part. */
+function launchTableDifferences(agentsRoot: string, persona: string, part: "mode" | "launch"): string[] {
+  const row = LAUNCH_TABLE.get(persona);
+  if (row === undefined) return [`${persona}: no Launch table row`];
+  const text = readFileSync(join(agentsRoot, persona, "opencode.md"), "utf8");
+  const fm = parseFrontmatter(text.split(/\r?\n/), { permissionList: true });
+  if (fm.problems.length > 0) return fm.problems.map((p) => `${persona}: opencode.md line ${p.line}: ${p.message}`);
+  if (part === "mode") return fm.top.mode === row.mode ? [] : [`${persona}: mode is ${fm.top.mode ?? "unset"}, not ${row.mode}`];
+  const differences: string[] = [];
+  const first = fm.permissions.find((r) => r.action === "subagent");
+  if (first?.resource !== "*" || first.effect !== "deny") {
+    differences.push(`${persona}: the first subagent rule is not a deny on "*"`);
+  }
+  const names = new Set([...row.launches, ...listAgentDirs(agentsRoot), ...LAUNCH_TABLE.keys(), "general"]);
+  for (const name of names) {
+    const expected = row.launches.includes(name) ? "allow" : "deny";
+    const actual = effect(fm.permissions, "subagent", name);
+    if (actual !== expected) differences.push(`${persona}: subagent ${name} is ${actual}, not ${expected}`);
+  }
+  return differences;
 }
 
 describe("planning agents: OpenCode mode and delegation", () => {
@@ -294,5 +343,42 @@ describe("planning agents: mutation detection", () => {
       const missing = EXPECTED_DELEGATES["plan-builder"].filter((other) => !launches.includes(other));
       expect(missing).toEqual(["plan-writer"]);
     });
+  });
+});
+
+describe("every persona: mode and launch set", () => {
+  const agentsRoot = join(repo, "agents");
+
+  // One pair of tests per directory, not per row, so a new persona without a
+  // row fails both by name instead of going unchecked.
+  for (const persona of listAgentDirs(agentsRoot)) {
+    test(`${persona}/opencode.md mode matches the Launch table`, () => {
+      expect(launchTableDifferences(agentsRoot, persona, "mode")).toEqual([]);
+    });
+
+    test(`${persona}/opencode.md launch set matches the Launch table`, () => {
+      expect(launchTableDifferences(agentsRoot, persona, "launch")).toEqual([]);
+    });
+  }
+
+  test("a persona directory with no table row is reported", () => {
+    const root = mkdtempSync(join(tmpdir(), "planning-agents-root-"));
+    try {
+      for (const persona of listAgentDirs(agentsRoot)) {
+        cpSync(join(agentsRoot, persona), join(root, persona), { recursive: true });
+      }
+      // A complete persona under a new name: valid files, but no row.
+      cpSync(join(agentsRoot, "plan-scout"), join(root, "new-persona"), { recursive: true });
+      const listed = listAgentDirs(root);
+      expect(listed).toEqual([...listAgentDirs(agentsRoot), "new-persona"].sort());
+      // Each listed directory gets a mode test and a launch test. Only the new
+      // one's report a missing row, and they name it.
+      const noRow = listed
+        .flatMap((persona) => [...launchTableDifferences(root, persona, "mode"), ...launchTableDifferences(root, persona, "launch")])
+        .filter((line) => line.endsWith(": no Launch table row"));
+      expect(noRow).toEqual(["new-persona: no Launch table row", "new-persona: no Launch table row"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

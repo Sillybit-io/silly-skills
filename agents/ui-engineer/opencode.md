@@ -27,7 +27,7 @@ permissions:
     effect: allow
   - action: subagent
     resource: "*"
-    effect: allow
+    effect: deny
   - action: skill
     resource: "*"
     effect: deny
