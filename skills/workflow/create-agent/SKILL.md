@@ -3,7 +3,7 @@ name: create-agent
 description: Writes or updates a persona folder under agents/ for one existing skill, with a Claude Code file, an OpenCode file, and a Cursor file. Sets the description, the mode (agent, subagent, or all), a system prompt that loads the skill, the matching model per tool, delegation to named child personas, and the tool permissions each product can enforce. Use when creating an agent, adding or updating a persona, or wrapping a skill for Claude Code, Cursor, or OpenCode.
 license: CC-BY-ND-4.0
 metadata:
-  version: "0.2.0"
+  version: "0.2.1"
   category: workflow
 ---
 
@@ -37,7 +37,7 @@ Do NOT use create-agent when you:
 6. When the workflow delegates to named child personas, allow exactly those children. OpenCode: `subagent` denied on `*`, then allowed for each child persona. Claude Code: add `Agent` to `tools`. Inside a Claude Code subagent, `Agent(<type>)` lists are not enforced, so name the allowed children in the prompt and say that the prompt, not the tool list, holds that rule. Cursor: name the children in the prompt. Nesting has limits: Claude Code allows three child levels by default, and a Cursor child's own child cannot launch another. When a child cannot launch the next persona, it returns a handback to its parent: the next persona, its inputs, and the reason.
 7. When the skill sets `metadata.suggested-model`, pin `model` from it in each tool's own form:
    - **Claude Code** takes an alias: `haiku`, `sonnet`, `opus`, or `fable` for `anthropic/claude-haiku-*`, `anthropic/claude-sonnet-*`, `anthropic/claude-opus-*`, or `anthropic/claude-fable-*`. Claude Code runs Claude models only, so any other provider gets `opus`, and the file says which model it stands in for. Write `effort:` only when the skill sets `metadata.suggested-effort`.
-   - **OpenCode** takes `provider/model`, plus `#<effort>` when `metadata.suggested-effort` is set: `openai/gpt-6-astra#max`. Never write a separate `reasoningEffort` line.
+   - **OpenCode** takes `provider/model`, plus `#<effort>` when `metadata.suggested-effort` is set: `openai/gpt-6.2-astra#max`. Never write a separate `reasoningEffort` line.
    - **Cursor** takes the model id without the provider, plus `[effort=<level>]` when the effort is set and that model offers it. When the model does not offer that effort, omit the bracket and say so in the file.
 
    When the skill has no hint, omit `model` in every file and say that no model is pinned. When the hint has a model but no effort, write no effort anywhere.

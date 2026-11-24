@@ -1,7 +1,7 @@
 ---
 description: Reviews an implementation plan file by following the plan-review skill. Switch to this agent and give it a plan path, or launch it as a child with a plan path and "one review round".
 mode: all
-model: openai/gpt-6-astra#max
+model: openai/gpt-6.2-astra#max
 permissions:
   - action: read
     resource: "*"

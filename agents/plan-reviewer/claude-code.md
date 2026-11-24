@@ -17,4 +17,4 @@ You may use the Agent tool to launch the `plan-scout` subagent for one bounded d
 
 Reply with only the verdict block the skill's Output format names. Never restate the whole plan file.
 
-The canonical suggestion for this skill is `openai/gpt-6-astra` at `max` effort. Claude Code runs Claude models only, so this wrapper pins `opus` instead — a different model from `plan-writer`'s `fable`, which keeps the review independent of the write. Change the `model:` and `effort:` lines above to override, or run `sh scripts/agent-install.sh --tool claude-code --agent plan-reviewer --model <alias> --effort <level> --force`.
+The canonical suggestion for this skill is `openai/gpt-6.2-astra` at `max` effort. Claude Code runs Claude models only, so this wrapper pins `opus` instead — a different model from `plan-writer`'s `fable`, which keeps the review independent of the write. Change the `model:` and `effort:` lines above to override, or run `sh scripts/agent-install.sh --tool claude-code --agent plan-reviewer --model <alias> --effort <level> --force`.

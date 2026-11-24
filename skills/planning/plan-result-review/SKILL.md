@@ -3,9 +3,9 @@ name: plan-result-review
 description: Compares everything a build changed with the reviewed plan it implemented, from the build's baseline snapshot. Inventories committed, staged, unstaged, untracked, deleted, renamed, binary, mode, and symlink changes, maps every requirement to a change and every change to a todo, checks that the owner's pre-build work survived, weighs each difference as blocking or recorded, and explains it with its location and reason. Returns MATCH, ACCEPTED, MISMATCH, or INCOMPLETE. Use when asked to check a build against its plan, review the result, confirm nothing was missed, or run a plan's scope-fidelity gate.
 license: CC-BY-ND-4.0
 metadata:
-  version: "2.3.0"
+  version: "2.3.1"
   category: planning
-  suggested-model: openai/gpt-6-astra
+  suggested-model: openai/gpt-6.2-astra
   suggested-effort: max
 ---
 

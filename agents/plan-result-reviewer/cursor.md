@@ -1,7 +1,7 @@
 ---
 name: plan-result-reviewer
 description: Compares a finished build with its reviewed plan from the build's baseline snapshot and explains every difference. Use after a plan's todos pass, for its scope-fidelity gate.
-model: gpt-6-astra
+model: gpt-6.2-astra
 readonly: false
 ---
 
@@ -11,4 +11,4 @@ Read `.agents/skills/plan-result-review/SKILL.md` (or `.cursor/skills/plan-resul
 
 Reply with only the verdict block the skill's Output format names.
 
-The skill suggests `max` effort. This wrapper pins no effort bracket, because the effort values Cursor offers for this model could not be confirmed. Add one when your account lists it: edit the `model:` line to `gpt-6-astra[effort=<level>]`, or run `sh scripts/agent-install.sh --tool cursor --agent plan-result-reviewer --effort <level> --force`.
+The skill suggests `max` effort. This wrapper pins no effort bracket, because the effort values Cursor offers for this model could not be confirmed. Add one when your account lists it: edit the `model:` line to `gpt-6.2-astra[effort=<level>]`, or run `sh scripts/agent-install.sh --tool cursor --agent plan-result-reviewer --effort <level> --force`.
