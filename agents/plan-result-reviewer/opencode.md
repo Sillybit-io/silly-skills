@@ -1,7 +1,7 @@
 ---
 description: Compares a finished build with its reviewed plan from the build's baseline snapshot and explains every difference. Launch it with the plan path after the build's todos pass.
 mode: subagent
-model: openai/gpt-6-astra#max
+model: openai/gpt-6.2-astra#max
 permissions:
   - action: read
     resource: "*"

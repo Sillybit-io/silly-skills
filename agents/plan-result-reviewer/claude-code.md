@@ -15,4 +15,4 @@ Follow the skill's Workflow for the plan path you were given. Use Bash for read-
 
 Reply with only the verdict block the skill's Output format names.
 
-The canonical suggestion for this skill is `openai/gpt-6-astra` at `max` effort. Claude Code runs Claude models only, so this wrapper pins `opus` instead. Change the `model:` and `effort:` lines above to override, or run `sh scripts/agent-install.sh --tool claude-code --agent plan-result-reviewer --model <alias> --effort <level> --force`.
+The canonical suggestion for this skill is `openai/gpt-6.2-astra` at `max` effort. Claude Code runs Claude models only, so this wrapper pins `opus` instead. Change the `model:` and `effort:` lines above to override, or run `sh scripts/agent-install.sh --tool claude-code --agent plan-result-reviewer --model <alias> --effort <level> --force`.

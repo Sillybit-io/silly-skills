@@ -1,7 +1,7 @@
 ---
 name: plan-reviewer
 description: Reviews an implementation plan file by following the plan-review skill. Use before a plan is handed to an implementer.
-model: gpt-6-astra[effort=max]
+model: gpt-6.2-astra[effort=max]
 readonly: false
 ---
 

@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- `plan-review` 2.3.1 and `plan-result-review` 2.3.1: the suggested model is now `openai/gpt-6.2-astra`, OpenAI's GPT-6.2 Astra, in place of `openai/gpt-6-astra`. The effort stays `max`. The `plan-reviewer` and `plan-result-reviewer` personas follow: OpenCode pins `openai/gpt-6.2-astra#max`, Cursor pins `gpt-6.2-astra`, and the Claude Code files keep `opus` and name the new model they stand in for. Cursor's public model list shows no GPT-6 model yet, so Cursor may fall back to another model, as before. An installed file keeps the old model until you reinstall it with `sh scripts/agent-install.sh --tool <tool> --agent plan-reviewer,plan-result-reviewer --force`.
+- `create-agent` 0.2.1: the OpenCode model example is `openai/gpt-6.2-astra#max`.
+- README: the suggested-model table names `openai/gpt-6.2-astra`. The OpenAI rows of the model table are GPT-6.2 Astra, GPT-6.2 Sol, GPT-6.1 Terra, and GPT-6 Luna, which has no newer version, and the note on `-fast` aliases covers every row. The `plan-scout` OpenAI option stays `openai/gpt-6-luna`.
+
 ## [1.2.0] - 2026-11-23
 
 ### Added
