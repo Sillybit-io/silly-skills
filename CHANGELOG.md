@@ -11,6 +11,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `plan-writer` 2.4.0: plan source files by concern, using project rules and required framework paths first. Move flat modules when their behavior changes, but leave import-only callers in place. Put the layout rule in Must Have and check that planned commands use the right paths.
 - `plan-review` 2.4.0: Check A independently checks source layout and scheduled file paths. A demonstrated layout violation or a command that still points to a moved file blocks approval. The plan and review formats stay the same.
 
+## [1.2.1] - 2026-11-24
+
 ### Changed
 
 - `plan-review` 2.3.1 and `plan-result-review` 2.3.1: the suggested model is now `openai/gpt-6.2-astra`, OpenAI's GPT-6.2 Astra, in place of `openai/gpt-6-astra`. The effort stays `max`. The `plan-reviewer` and `plan-result-reviewer` personas follow: OpenCode pins `openai/gpt-6.2-astra#max`, Cursor pins `gpt-6.2-astra`, and the Claude Code files keep `opus` and name the new model they stand in for. Cursor's public model list shows no GPT-6 model yet, so Cursor may fall back to another model, as before. An installed file keeps the old model until you reinstall it with `sh scripts/agent-install.sh --tool <tool> --agent plan-reviewer,plan-result-reviewer --force`.
