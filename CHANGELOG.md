@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-11-27
+
 ### Added
 
 - `plan-writer` 2.4.0: plan source files by concern, using project rules and required framework paths first. Move flat modules when their behavior changes, but leave import-only callers in place. Put the layout rule in Must Have and check that planned commands use the right paths.
