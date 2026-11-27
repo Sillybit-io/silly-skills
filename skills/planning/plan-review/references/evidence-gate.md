@@ -30,6 +30,27 @@ Assign each required row one status:
 
 Mark optional observations `Required? no` and keep them out of approval totals. A required obligation cannot become optional merely because checking it is difficult. Report verified/required counts derived from ledger IDs, with separate critical-flow counts derived from unique flow IDs and their statuses. Do not substitute todo counts for coverage counts or count a subcase twice.
 
+## Source layout
+
+Read the applicable project and scoped instructions yourself. Check relevant owner decisions recorded in the plan or otherwise available to you. Inspect a nearby comparable module. Where the project has no rule, use one folder per concern, with tests and fixtures beside the code they cover. Keep files at paths the language, framework, or tool requires. A required path is an exception for that file, not for unrelated modules. A flat neighbor alone does not override the default.
+
+For open work, check new paths, move destinations, and behavior changes to flat modules. Where the layout disallows a flat path, a behavior change must move that module and its tests. Do not require an import-only caller or unrelated module to move. Verify Done todos from their receipts; do not require a rewrite of built work.
+
+Compare the Must Have rule and any exceptions with the applicable instructions. Check that the proposed paths agree across the plan and that commands point to the right files for their wave. A command that still targets an old path after a planned move is a defect even if Design is right. An old path used as source evidence or in a pre-move check is not a defect.
+
+Record the comparison under Check A, citing the inspected source or contract and the exact plan location. Use `plan-inspection` evidence for what the plan says or for a default from this skill; a future test is not proof. Reject a demonstrated violation or a missing decision the builder needs, and give a concrete correction. If evidence needed to resolve an exception is unavailable, use the normal INCOMPLETE rule. Do not turn personal layout preferences into blockers.
+
+For example, in an app with no layout rule of its own:
+
+| Proposed change | Layout check |
+| --- | --- |
+| Add a module and put its test at `src/invoice-totals.integration.test.ts` | Block. Put the test under `src/invoice-totals/` with the module. |
+| Move the test under `src/invoice-totals/`, but leave Acceptance pointing at its old path | Block. Change the post-move command. A baseline command may keep the old path. |
+| Put the module and test in `src/invoice-totals/` and use the new path in Acceptance | Pass the layout check. |
+| Change the behavior of flat `src/invoice-totals.ts` without moving it | Block. Move the module and its tests, and account for callers. |
+| Update only the import in flat `src/runner.ts` | Allow it to stay. |
+| Edit a TanStack route that must keep its filename-driven path | Allow it to stay when the route contract supports the exception. |
+
 ## Select critical flows
 
 The plan traces the flows in a strict area and the flows that write or migrate stored data. Trace each of them across todo boundaries. When the plan touches a strict area or stored data and traces no flow there, that is a blocker. Small file-only changes can have zero flows; the evidence index says why. Do not manufacture migration, network, or UI checks for a plan that has none.

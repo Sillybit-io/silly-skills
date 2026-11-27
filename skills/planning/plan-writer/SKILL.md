@@ -3,7 +3,7 @@ name: plan-writer
 description: Writes an implementation plan after investigating the codebase one step around the change, and to the end in security and production areas. Classifies the request, checks the changed inventory, verifies external contracts at the target version, and asks product questions before technical ones. Writes a plan directory, docs/plans/<date>-<slug>/, with hashed line citations, strict-area flows, a baseline, todos tested one at a time, and a final verification wave, then validates it. Resumes a draft from its open frontier. Use when writing a plan, planning a feature or refactor, making an implementation plan, breaking work into tasks, resuming a draft plan, or fixing a rejected plan.
 license: CC-BY-ND-4.0
 metadata:
-  version: "2.3.0"
+  version: "2.4.0"
   category: planning
   suggested-model: anthropic/claude-fable-5-2
   suggested-effort: xhigh
@@ -301,6 +301,7 @@ MUST:
 
 - MUST run idea refinement before exploring when a fresh, chat-sourced request is idea-level vague, and cap that early round at three questions in one message.
 - MUST investigate one step from the changed code, always cover the changed inventory, follow a strict area to the end, verify every required contract at its version, and leave an empty frontier.
+- MUST resolve the source layout before proposing new paths or changing a flat module's behavior. Apply the Source layout section of [references/coverage.md](references/coverage.md) on drafts, fixes, and changes under build.
 - MUST cite every source by path and line range, stamp the hashes with `stamp-evidence.ts`, and cover every backticked `path:line` in the plan with an evidence index citation.
 - MUST say each thing once: a flow traced in the evidence index only, a decision argued in `## Questions` only.
 - MUST keep every capped field under its hard cap. A field past its soft cap is advice and never needs another validator run.
@@ -353,6 +354,7 @@ NEVER:
 - [ ] The reply names the intent and the tier on its first line, or the `trivial` short-circuit fired instead.
 - [ ] Idea refinement ran, was explicitly skipped as already-concrete, or does not apply — and that early round never asked more than three questions in one message.
 - [ ] Every edge one step from the changed code, every changed inventory, and every edge in a strict area is inspected or excluded with a cited reason; the frontier is empty on a planned file, or the draft names the next action.
+- [ ] The applicable source layout rule and its exceptions are in Must Have. Every affected todo and scheduled check uses the right paths for its wave, without rewriting built todos.
 - [ ] Every source citation has a path, a line range, and a stamped SHA-256; every backticked `path:line` falls inside one.
 - [ ] Each strict-area or stored-data flow is traced once, in the evidence index, with a counterexample, and `### Critical flows` names it in one line; or it states why there is none.
 - [ ] Every todo has a `Strict:` field, and its QA scenario labels each part or marks it `n/a`.
