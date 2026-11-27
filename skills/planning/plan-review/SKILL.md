@@ -3,7 +3,7 @@ name: plan-review
 description: Reviews implementation plans against repository evidence and critical end-to-end flows. Records coverage, source traces, probes, and unresolved assumptions before returning OKAY, REJECT, or INCOMPLETE. Checks dependencies, QA, research, questions, diagrams, and execution gates. Rechecks whole-plan readiness after fixes and can run a two-round fix loop. Use when reviewing a plan, checking readiness for implementation, challenging an earlier approval, or asking for the plan-review verdict.
 license: CC-BY-ND-4.0
 metadata:
-  version: "2.3.1"
+  version: "2.4.0"
   category: planning
   suggested-model: openai/gpt-6.2-astra
   suggested-effort: max
@@ -42,7 +42,7 @@ Do NOT use plan-review when you:
 2. Record the review identity: the spec digest over the spec and its evidence index, as validator-contract.md defines it; repository revision and dirty state; and content digests for the source files used as evidence, including untracked files. For non-git fixtures, use file digests alone. A prior approval is historical evidence, not proof that the current plan is checked.
 3. Count rounds since the last consent, or since the first round when none exists. After two rounds without approval, stop: list each open blocker in one line with what would close it, and ask whether to continue for up to two more rounds or stop. Owner acceptance of risk is recorded separately; it never changes an unsupported result to OKAY.
 4. Build the coverage ledger before investigating. Run `validate-plan.ts <plan> --gate-skeleton --root <project>`: it prints this round's gate record with every required target already in an obligation and every status `unverified`. Fill it in as you check; split an obligation when its targets' evidence or status differs. Read [references/validator-contract.md](references/validator-contract.md) only when the validator reports an error you need to understand. Map every Must Have, todo dependency, and necessary external contract to its owning todo, required evidence, and QA. Identify critical flows using [references/evidence-gate.md](references/evidence-gate.md). Include the entire plan, not just the current fixes.
-5. Check A — references and contracts. Open the citations each todo relies on: a format 2 citation has no excerpt, so this is how the review confirms the writer read the right lines. Inspect the code that controls behavior one step beyond the cited lines, and to the end in a strict area. Verify external contracts against sources for the exact target version. Finish every check the budget names before returning; a location left unopened because effort ran out, not because it is inaccessible, is not a basis for INCOMPLETE. T0 may cite `this file`.
+5. Check A — references and contracts. Open the citations each todo relies on: a format 2 citation has no excerpt, so this is how the review confirms the writer read the right lines. Inspect the code that controls behavior one step beyond the cited lines, and to the end in a strict area. Verify external contracts against sources for the exact target version. Independently check planned paths using the Source layout section of [references/evidence-gate.md](references/evidence-gate.md), even when the writer did not name a rule. Finish every check the budget names before returning; a location left unopened because effort ran out, not because it is inaccessible, is not a basis for INCOMPLETE. T0 may cite `this file`.
 6. Check B — startability. For every todo, check inputs, decisions, APIs, dependencies, and whether Acceptance and QA can pass at its scheduled position. Check dependencies needed by tests as well as by implementation. A future file is valid when a prior or owning todo explicitly creates it; an invented existing API is not. A todo with a Done box and a pass receipt in `<stem>.build.md` is built: verify it from that receipt, as one `plan-inspection` entry, instead of judging its start again.
 7. Check C — contradictions and flow. Trace every evidence index flow (strict areas and stored-data changes) from entry point through preconditions, ordered side effects, persistence, external artifacts, and failure/recovery. Compare each trace with the plan's guarantees and file ownership. Record a concrete counterexample attempt for each flow; use an isolated probe when source inspection cannot resolve an ordering or state question.
 8. Check D — QA executability. Require commands or tools, concrete inputs, and observable outcomes. Verify that QA reaches the real integration path, not only a stub or a file's existence. Future tests are planned checks, never evidence that the implementation passes. A grep for documentation headings does not establish documentation accuracy.
@@ -214,7 +214,7 @@ MUST:
 
 NEVER:
 
-- NEVER block on architecture preference, naming, code style, or optimality alone.
+- NEVER block on architecture preference, naming, code style, or optimality alone. A demonstrated violation of the applicable source layout is a plan defect, not a reviewer preference.
 - NEVER edit the spec beyond the two frontmatter keys it owns, or the evidence index at all, except through `plan-writer`'s own fix-only follow-up step during the fix loop. The reviews file and the gate record file are the files a round writes.
 - NEVER delete or rewrite an earlier round.
 - NEVER block on a rule the "Not a blocker" list in evidence-gate.md names.
@@ -240,6 +240,7 @@ NEVER:
 - [ ] The round number is correct and no more than 2 since the last consent.
 - [ ] The plan identity and whole-plan obligation ledger are recorded; unopened evidence is listed honestly.
 - [ ] All ten checks (A–J) have a gate record `checks` entry whose `observed` states this plan's result. Check J's covers the todo boxes, the test-before-next instruction, the waves rule, and T0.
+- [ ] Check A compares planned source paths with the applicable layout and checks commands against the paths in their scheduled wave. It does not reapply the rule to built todos.
 - [ ] Every unresolved blocker is described in detail, with evidence and a fix; there is no cap.
 - [ ] Notes are capped at five.
 - [ ] The verdict is OKAY, REJECT, or INCOMPLETE under the gate, and is the final reply's first line.

@@ -12,6 +12,18 @@ Start from everything the request touches:
 - Invariants the change alters: inventory membership, counts, identifiers, and generated lists.
 - The tests and fixtures that pin the current behavior.
 
+## Source layout
+
+For each affected app or package, read the applicable project and scoped instructions before choosing paths. Check relevant owner decisions, including project memory when available, and inspect a nearby comparable module. Follow explicit project rules and owner decisions, and keep files at paths the language, framework, or tool requires. If those requirements appear to conflict, verify the required path or ask the owner to settle the conflict. A flat neighbor alone is not an exception.
+
+When the project is silent, put source modules in one folder per concern. Reuse the folder that owns the behavior. Keep tests and fixtures with their concern, using the project's names and the language's public entry conventions. Do not make a folder per role file. For example, a TypeScript project may use `invoice-totals/index.ts` for its public surface and put `invoice-totals.ts`, `schema.ts`, and `invoice-totals.integration.test.ts` next to it.
+
+For a todo that changes a flat module's behavior, plan the move and colocate its tests, unless the applicable layout permits the flat path. Include the affected imports, exports, registrations, and test discovery or commands in the changed inventory. An import-only edit in a caller does not trigger another move. Leave unrelated flat files alone.
+
+Record the applicable layout and each exception once under `### Must have` so each todo child can see the rule. The rule constrains the gaps whose todos add or move source files, so the slop check keeps it. Keep each bullet within the Must have word cap: put the rule in one bullet and each exception in its own bullet. Words inside backticks, such as paths, do not count. Cite repository instructions or the tool contract where they establish the rule. If an owner decision is the basis, state the decision in the plan so review can proceed without access to the writer's session or memory. Do not add a layout requirement when the plan has no applicable source changes.
+
+Before validating a draft, resume, fix, or change under build, reconcile the destinations in scope, design, todos, slice tests, Acceptance, QA, and final checks. Each command must use the path that exists when it runs. An old path can still be a source citation or a pre-move check. Honor pass receipts: do not retrofit Done todos. If a remaining change needs a move from built work, give the move to an open or new todo.
+
 ## One step from the seeds
 
 For each seed, find what it depends on (producers) and what depends on it (consumers). Stop there, with three exceptions:
